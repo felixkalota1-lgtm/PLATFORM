@@ -23,15 +23,17 @@ function AppRoutes() {
 function App() {
   const [mounted, setMounted] = useState(false)
   const loadAuthFromStorage = useAppStore((state) => state.loadAuthFromStorage)
+  const loadDarkModePreference = useAppStore((state) => state.loadDarkModePreference)
 
   useEffect(() => {
-    // Load persisted auth on app mount
+    // Load persisted auth and dark mode on app mount
     loadAuthFromStorage()
+    loadDarkModePreference()
     setMounted(true)
-  }, [loadAuthFromStorage])
+  }, [loadAuthFromStorage, loadDarkModePreference])
 
   if (!mounted) {
-    return <div className="w-full h-screen flex items-center justify-center bg-white">Loading...</div>
+    return <div className="w-full h-screen flex items-center justify-center bg-white dark:bg-gray-900">Loading...</div>
   }
 
   return (

@@ -183,49 +183,49 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-600 to-blue-900 flex items-center justify-center p-4">
-      <div className="bg-white rounded-lg shadow-2xl p-8 w-full max-w-md">
+    <div className="min-h-screen bg-gradient-to-br from-blue-600 to-blue-900 dark:from-gray-800 dark:to-gray-900 flex items-center justify-center p-4">
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl p-8 w-full max-w-md">
         <div className="text-center mb-8">
-          <div className="inline-block bg-blue-600 text-white rounded-lg px-4 py-2 mb-4">
+          <div className="inline-block bg-blue-600 dark:bg-blue-700 text-white rounded-lg px-4 py-2 mb-4">
             <h1 className="text-2xl font-bold">PSPM</h1>
           </div>
-          <p className="text-gray-600 text-sm">Platform Sales & Procurement Marketplace</p>
-          <p className="text-gray-500 text-xs mt-2">
+          <p className="text-gray-600 dark:text-gray-400 text-sm">Platform Sales & Procurement Marketplace</p>
+          <p className="text-gray-500 dark:text-gray-500 text-xs mt-2">
             {isRegistering ? 'Create a new account' : 'Sign in to your account'}
           </p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
               Company Code
             </label>
             <div className="relative">
-              <Building2 className="absolute left-3 top-3 text-gray-400" size={20} />
+              <Building2 className="absolute left-3 top-3 text-gray-400 dark:text-gray-500" size={20} />
               <input
                 type="text"
                 value={companyCode}
                 onChange={(e) => setCompanyCode(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
+                className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
                 placeholder="e.g., ABC123"
                 disabled={loading}
                 required
               />
             </div>
-            <p className="text-xs text-gray-500 mt-1">Unique identifier for your company</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Unique identifier for your company</p>
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
               Email Address
             </label>
             <div className="relative">
-              <Mail className="absolute left-3 top-3 text-gray-400" size={20} />
+              <Mail className="absolute left-3 top-3 text-gray-400 dark:text-gray-500" size={20} />
               <input
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
+                className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
                 placeholder="you@company.com"
                 disabled={loading}
                 required
@@ -234,16 +234,16 @@ export default function LoginPage() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
               Password
             </label>
             <div className="relative">
-              <Lock className="absolute left-3 top-3 text-gray-400" size={20} />
+              <Lock className="absolute left-3 top-3 text-gray-400 dark:text-gray-500" size={20} />
               <input
                 type={showPassword ? 'text' : 'password'}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full pl-10 pr-10 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
+                className="w-full pl-10 pr-10 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
                 placeholder="••••••••"
                 disabled={loading}
                 required
@@ -251,18 +251,18 @@ export default function LoginPage() {
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-3 text-gray-400 hover:text-gray-600"
+                className="absolute right-3 top-3 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-400"
               >
                 {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
               </button>
             </div>
-            <p className="text-xs text-gray-500 mt-1">Minimum 6 characters</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Minimum 6 characters</p>
           </div>
 
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-semibold py-2 rounded-lg transition-colors duration-200"
+            className="w-full bg-blue-600 hover:bg-blue-700 dark:bg-blue-700 dark:hover:bg-blue-600 disabled:bg-gray-400 text-white font-semibold py-2 rounded-lg transition-colors duration-200"
           >
             {loading ? (
               <span className="flex items-center justify-center gap-2">
@@ -275,21 +275,21 @@ export default function LoginPage() {
           </button>
         </form>
 
-        <div className="mt-6 pt-6 border-t border-gray-200">
-          <p className="text-center text-sm text-gray-600">
+        <div className="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">
+          <p className="text-center text-sm text-gray-600 dark:text-gray-400">
             {isRegistering ? 'Already have an account? ' : "Don't have an account? "}
             <button
               onClick={() => setIsRegistering(!isRegistering)}
               disabled={loading}
-              className="text-blue-600 hover:text-blue-700 font-semibold disabled:text-gray-400 transition"
+              className="text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 font-semibold disabled:text-gray-400 transition"
             >
               {isRegistering ? 'Sign In' : 'Register Here'}
             </button>
           </p>
         </div>
 
-        <div className="mt-6 p-4 bg-blue-50 rounded-lg">
-          <p className="text-xs text-gray-600 text-center">
+        <div className="mt-6 p-4 bg-blue-50 dark:bg-blue-900 dark:bg-opacity-30 rounded-lg">
+          <p className="text-xs text-gray-600 dark:text-gray-400 text-center">
             <span className="font-semibold">Demo Mode:</span> Enter any email and company code to test the platform
           </p>
         </div>

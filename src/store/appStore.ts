@@ -30,6 +30,9 @@ interface AppStore {
   toggleSidebar: () => void;
   activeModule: string | null;
   setActiveModule: (module: string | null) => void;
+  darkMode: boolean;
+  toggleDarkMode: () => void;
+  loadDarkModePreference: () => void;
 }
 
 export const useAppStore = create<AppStore>((set) => {
@@ -142,6 +145,32 @@ export const useAppStore = create<AppStore>((set) => {
     toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
     activeModule: null,
     setActiveModule: (module) => set({ activeModule: module }),
+    
+    // Dark Mode
+    darkMode: false,
+    toggleDarkMode: () => set((state) => {
+      const newDarkMode = !state.darkMode;
+      localStorage.setItem('pspm_darkMode', JSON.stringify(newDarkMode));
+      // Update HTML element class for Tailwind dark mode
+      if (newDarkMode) {
+        document.documentElement.classList.add('dark');
+      } else {
+        document.documentElement.classList.remove('dark');
+      }
+      return { darkMode: newDarkMode };
+    }),
+    loadDarkModePreference: () => {
+      try {
+        const savedPreference = localStorage.getItem('pspm_darkMode');
+        const isDarkMode = savedPreference ? JSON.parse(savedPreference) : false;
+        set({ darkMode: isDarkMode });
+        if (isDarkMode) {
+          document.documentElement.classList.add('dark');
+        }
+      } catch (error) {
+        console.error('Failed to load dark mode preference:', error);
+      }
+    },
   }
 });
 
