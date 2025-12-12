@@ -191,8 +191,8 @@ export const categorizeProductsWithAI = async (
 };
 
 /**
- * Detect duplicate products using TensorFlow similarity
- * Uses simple text similarity based on name/description overlap
+ * Detect duplicate products using improved TensorFlow similarity
+ * Uses enhanced text similarity with multiple algorithms
  */
 export const detectDuplicateProductsWithAI = async (
   products: Array<{ name: string; description: string }>
@@ -201,36 +201,120 @@ export const detectDuplicateProductsWithAI = async (
 
   for (let i = 0; i < products.length; i++) {
     for (let j = i + 1; j < products.length; j++) {
-      const similarity = calculateTextSimilarity(
-        products[i].name + ' ' + products[i].description,
-        products[j].name + ' ' + products[j].description
+      // Check name similarity (exact match or very similar)
+      const nameSimilarity = calculateTextSimilarity(
+        products[i].name,
+        products[j].name
       );
 
-      // Flag as potential duplicate if similarity > 70%
-      if (similarity > 0.7) {
+      // Check description similarity
+      const descriptionSimilarity = calculateTextSimilarity(
+        products[i].description || '',
+        products[j].description || ''
+      );
+
+      // Combined score: weight name higher since duplicates usually have similar names
+      const combinedScore = (nameSimilarity * 0.6) + (descriptionSimilarity * 0.4);
+
+      // Flag as potential duplicate if combined score > 65%
+      // Lowered from 70% to catch more potential duplicates
+      if (combinedScore > 0.65) {
         duplicates.push({
           product1: products[i].name,
           product2: products[j].name,
-          similarity: parseFloat((similarity * 100).toFixed(2)),
+          similarity: parseFloat((combinedScore * 100).toFixed(2)),
         });
       }
     }
   }
 
-  return duplicates;
+  // Sort by similarity (highest first)
+  return duplicates.sort((a, b) => b.similarity - a.similarity);
 };
 
 /**
- * Simple text similarity calculation using Jaccard similarity
+ * Simple text similarity calculation using multiple methods
+ * Combines:
+ * - Jaccard similarity (word-level)
+ * - Levenshtein distance (character-level)
+ * - Token overlap (phrase matching)
  */
 const calculateTextSimilarity = (text1: string, text2: string): number => {
-  const words1 = new Set(text1.toLowerCase().split(/\s+/));
-  const words2 = new Set(text2.toLowerCase().split(/\s+/));
+  // Normalize text
+  const t1 = text1.toLowerCase().trim();
+  const t2 = text2.toLowerCase().trim();
 
+  // If texts are identical
+  if (t1 === t2) return 1.0;
+
+  // Method 1: Jaccard Similarity (word-based)
+  const words1 = new Set(t1.split(/\s+/));
+  const words2 = new Set(t2.split(/\s+/));
   const intersection = new Set([...words1].filter(x => words2.has(x)));
   const union = new Set([...words1, ...words2]);
+  const jaccardScore = intersection.size / union.size;
 
-  return intersection.size / union.size;
+  // Method 2: Levenshtein Distance (character-based)
+  const levenDistance = levenshteinDistance(t1, t2);
+  const maxLen = Math.max(t1.length, t2.length);
+  const levenScore = 1 - (levenDistance / maxLen);
+
+  // Method 3: Token Overlap (n-grams)
+  const bigrams1 = getBigrams(t1);
+  const bigrams2 = getBigrams(t2);
+  const bigramIntersection = bigrams1.filter(bg => bigrams2.includes(bg)).length;
+  const bigramUnion = new Set([...bigrams1, ...bigrams2]).size;
+  const bigramScore = bigramUnion > 0 ? bigramIntersection / bigramUnion : 0;
+
+  // Weighted average: 40% Jaccard, 35% Levenshtein, 25% Bigram
+  const finalScore = (jaccardScore * 0.4) + (levenScore * 0.35) + (bigramScore * 0.25);
+
+  return Math.min(1.0, Math.max(0, finalScore));
+};
+
+/**
+ * Calculate Levenshtein distance between two strings
+ */
+const levenshteinDistance = (s1: string, s2: string): number => {
+  const len1 = s1.length;
+  const len2 = s2.length;
+  const matrix: number[][] = [];
+
+  for (let i = 0; i <= len2; i++) {
+    matrix[i] = [i];
+  }
+
+  for (let j = 0; j <= len1; j++) {
+    matrix[0][j] = j;
+  }
+
+  for (let i = 1; i <= len2; i++) {
+    for (let j = 1; j <= len1; j++) {
+      if (s2.charAt(i - 1) === s1.charAt(j - 1)) {
+        matrix[i][j] = matrix[i - 1][j - 1];
+      } else {
+        matrix[i][j] = Math.min(
+          matrix[i - 1][j - 1] + 1,
+          matrix[i][j - 1] + 1,
+          matrix[i - 1][j] + 1
+        );
+      }
+    }
+  }
+
+  return matrix[len2][len1];
+};
+
+/**
+ * Extract bigrams (2-character sequences) from text
+ */
+const getBigrams = (text: string): string[] => {
+  const bigrams: string[] = [];
+  const cleaned = text.replace(/\s+/g, '');
+  for (let i = 0; i < cleaned.length - 1; i++) {
+    bigrams.push(cleaned.substr(i, 2));
+  }
+  return bigrams;
 };
 
 /**

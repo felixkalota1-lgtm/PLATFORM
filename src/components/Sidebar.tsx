@@ -34,7 +34,7 @@ const menuItems: MenuItem[] = [
     label: 'Inventory',
     icon: <Package size={20} />,
     submenu: [
-      { label: 'Products', href: '/inventory/products' },
+      { label: 'Products and Services', href: '/inventory/products' },
       { label: 'Bulk Upload', href: '/inventory/bulk-upload' },
       { label: 'Categories', href: '/inventory/categories' },
       { label: 'Stock Levels', href: '/inventory/stock' },

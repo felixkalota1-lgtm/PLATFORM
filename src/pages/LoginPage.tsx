@@ -12,7 +12,13 @@ export default function LoginPage() {
     }
     setLoading(true)
     await new Promise(resolve => setTimeout(resolve, 500))
-    localStorage.setItem("pspm_user", JSON.stringify({ email }))
+    // Save user with tenantId (default for testing)
+    localStorage.setItem("pspm_user", JSON.stringify({ 
+      email: email.trim(),
+      tenantId: 'default',
+      role: 'admin',
+      id: Date.now().toString()
+    }))
     window.location.href = "/"
   }
 

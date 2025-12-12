@@ -19,7 +19,7 @@ import {
   extractProductMetadata,
 } from './aiService';
 import { db } from './firebase';
-import { collection, writeBatch, doc } from 'firebase/firestore';
+import { collection, writeBatch, doc, query, where, getDocs } from 'firebase/firestore';
 
 export interface ExcelProduct {
   name: string;
@@ -117,7 +117,8 @@ export const parseExcelFile = async (file: File): Promise<ExcelProduct[]> => {
  * - Ollama LLM validation (if available)
  */
 export const validateExcelProducts = async (
-  products: ExcelProduct[]
+  products: ExcelProduct[],
+  tenantId: string = ''
 ): Promise<ValidationResult> => {
   const errors: string[] = [];
   const warnings: string[] = [];
@@ -171,7 +172,7 @@ export const validateExcelProducts = async (
     validProducts.push(product);
   });
 
-  // Detect duplicates
+  // Detect duplicates within uploaded file
   const duplicateData = await detectDuplicateProductsWithAI(
     validProducts.map(p => ({ name: p.name, description: p.description }))
   );
@@ -182,8 +183,21 @@ export const validateExcelProducts = async (
     similarity: d.similarity,
   }));
 
+  // Treat duplicates as ERRORS - block upload
   if (duplicates.length > 0) {
-    warnings.push(`Found ${duplicates.length} potentially duplicate products`);
+    duplicates.forEach(d => {
+      errors.push(`❌ Duplicate detected: "${d.name1}" is ${d.similarity}% similar to "${d.name2}"`);
+    });
+  }
+
+  // Check against existing products in database
+  if (errors.length === 0 && validProducts.length > 0 && tenantId) {
+    const existingDuplicates = await checkExistingDuplicates(validProducts, tenantId);
+    if (existingDuplicates.length > 0) {
+      existingDuplicates.forEach(dup => {
+        errors.push(`❌ Product "${dup.name}" already exists in database (${dup.similarity}% match)`);
+      });
+    }
   }
 
   // Run Ollama validation if products are valid
@@ -204,6 +218,106 @@ export const validateExcelProducts = async (
     suggestions,
     duplicates,
   };
+};
+
+/**
+ * Check if products already exist in the database
+ * Uses similarity matching to detect duplicates
+ */
+const checkExistingDuplicates = async (
+  products: ExcelProduct[],
+  tenantId: string
+): Promise<Array<{ name: string; similarity: number }>> => {
+  const existingDuplicates: Array<{ name: string; similarity: number }> = [];
+
+  try {
+    // Fetch all existing products for this tenant
+    const productsRef = collection(db, 'tenants', tenantId, 'products');
+    const q = query(productsRef, where('active', '==', true));
+    const snapshot = await getDocs(q);
+    const existingProducts = snapshot.docs.map(doc => ({
+      name: doc.data().name,
+      description: doc.data().description || '',
+    }));
+
+    // Check each uploaded product against existing ones
+    for (const product of products) {
+      for (const existing of existingProducts) {
+        // Calculate similarity
+        const similarity = calculateProductSimilarity(product, existing);
+        
+        // Flag if very similar (>80% match)
+        if (similarity > 0.8) {
+          existingDuplicates.push({
+            name: product.name,
+            similarity: parseFloat((similarity * 100).toFixed(2)),
+          });
+          break; // Found a match, move to next product
+        }
+      }
+    }
+  } catch (error) {
+    console.error('Error checking existing duplicates:', error);
+  }
+
+  return existingDuplicates;
+};
+
+/**
+ * Calculate similarity between uploaded and existing products
+ */
+const calculateProductSimilarity = (
+  uploaded: ExcelProduct,
+  existing: { name: string; description: string }
+): number => {
+  // Simple similarity: compare names and descriptions
+  const nameSimilarity = stringSimilarity(uploaded.name, existing.name);
+  const descSimilarity = stringSimilarity(
+    uploaded.description || '',
+    existing.description || ''
+  );
+
+  // Weight name higher for exact duplicates
+  return (nameSimilarity * 0.7) + (descSimilarity * 0.3);
+};
+
+/**
+ * Calculate string similarity using Levenshtein-like approach
+ */
+const stringSimilarity = (s1: string, s2: string): number => {
+  const longer = s1.length > s2.length ? s1 : s2;
+  const shorter = s1.length > s2.length ? s2 : s1;
+
+  if (longer.length === 0) return 1.0;
+
+  const editDistance = getEditDistance(longer, shorter);
+  return (longer.length - editDistance) / longer.length;
+};
+
+/**
+ * Get edit distance (Levenshtein distance)
+ */
+const getEditDistance = (s1: string, s2: string): number => {
+  const costs: number[] = [];
+
+  for (let i = 0; i <= s1.length; i++) {
+    let lastValue = i;
+    for (let j = 0; j <= s2.length; j++) {
+      if (i === 0) {
+        costs[j] = j;
+      } else if (j > 0) {
+        let newValue = costs[j - 1];
+        if (s1.charAt(i - 1) !== s2.charAt(j - 1)) {
+          newValue = Math.min(Math.min(newValue, lastValue), costs[j]) + 1;
+        }
+        costs[j - 1] = lastValue;
+        lastValue = newValue;
+      }
+    }
+    if (i > 0) costs[s2.length] = lastValue;
+  }
+
+  return costs[s2.length];
 };
 
 /**
@@ -283,6 +397,7 @@ export const uploadProductsToFirestore = async (
           updatedAt: new Date(),
           tenantId,
           active: true,
+          source: 'inventory', // Mark as inventory product (not marketplace)
         };
 
         // Only add imageUrl if it exists
@@ -367,7 +482,7 @@ export const importProductsFromExcel = async (
   };
 
   if (!skipValidation) {
-    validation = await validateExcelProducts(products);
+    validation = await validateExcelProducts(products, tenantId);
   }
 
   // Step 3: Upload

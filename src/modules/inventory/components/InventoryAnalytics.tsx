@@ -1,23 +1,60 @@
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line } from 'recharts'
-
-const stockData = [
-  { name: 'Desk Lamp', stock: 45, sold: 120 },
-  { name: 'Wireless Mouse', stock: 120, sold: 95 },
-  { name: 'Keyboard', stock: 60, sold: 78 },
-  { name: 'Monitor', stock: 15, sold: 42 },
-  { name: 'Headphones', stock: 89, sold: 156 },
-]
-
-const inventoryTrend = [
-  { month: 'Jan', value: 450 },
-  { month: 'Feb', value: 520 },
-  { month: 'Mar', value: 480 },
-  { month: 'Apr', value: 610 },
-  { month: 'May', value: 580 },
-  { month: 'Jun', value: 700 },
-]
+import { useState, useEffect } from 'react'
+import { db } from '../../../services/firebase'
+import { collection, query, where, onSnapshot } from 'firebase/firestore'
+import { useAuth } from '../../../hooks/useAuth'
 
 export default function InventoryAnalytics() {
+  const { user } = useAuth()
+  const [stockData, setStockData] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    if (!user?.tenantId) {
+      setLoading(false)
+      return
+    }
+
+    try {
+      const q = query(
+        collection(db, 'tenants', user.tenantId, 'products'),
+        where('source', '==', 'inventory'), // Only inventory products
+        where('active', '==', true)
+      )
+
+      const unsubscribe = onSnapshot(q, (snapshot) => {
+        const data = snapshot.docs.map((doc) => ({
+          name: doc.data().name,
+          stock: doc.data().stock || 0,
+          sold: Math.floor((doc.data().stock || 0) * 0.5), // Mock: assume 50% sold
+          price: doc.data().price || 0,
+        }))
+
+        setStockData(data)
+        setLoading(false)
+      })
+
+      return () => unsubscribe()
+    } catch (error) {
+      console.error('Error loading analytics:', error)
+      setLoading(false)
+      setStockData([])
+    }
+  }, [user?.tenantId])
+
+  const inventoryTrend = [
+    { month: 'Jan', value: 450 },
+    { month: 'Feb', value: 520 },
+    { month: 'Mar', value: 480 },
+    { month: 'Apr', value: 610 },
+    { month: 'May', value: 580 },
+    { month: 'Jun', value: 700 },
+  ]
+
+  // Calculate metrics from actual data
+  const totalStockValue = stockData.reduce((sum, item) => sum + (item.stock * item.price), 0)
+  const totalStock = stockData.reduce((sum, item) => sum + item.stock, 0)
+  const skuCount = stockData.length
   return (
     <div className="space-y-6">
       {/* Key Metrics */}

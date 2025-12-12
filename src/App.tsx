@@ -1,4 +1,4 @@
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { useEffect, useState } from 'react'
 import LoginPage from './pages/LoginPage'
 import DashboardPage from './pages/DashboardPage'
@@ -9,6 +9,34 @@ import ProtectedRoute from './components/ProtectedRoute'
 import MarketplaceModule from './modules/marketplace'
 import ProcurementModule from './modules/procurement'
 import InventoryModule from './modules/inventory'
+
+// Route persistence wrapper component
+function RouteWrapper() {
+  const navigate = useNavigate()
+  const location = useLocation()
+  const [initialized, setInitialized] = useState(false)
+
+  useEffect(() => {
+    // On first load, check if there's a saved route
+    if (!initialized) {
+      const savedRoute = localStorage.getItem('pspm_last_route')
+      if (savedRoute && location.pathname === '/') {
+        // Redirect to saved route if we're at root
+        navigate(savedRoute, { replace: true })
+      }
+      setInitialized(true)
+    }
+  }, [])
+
+  // Save current route whenever location changes
+  useEffect(() => {
+    if (location.pathname !== '/login') {
+      localStorage.setItem('pspm_last_route', location.pathname)
+    }
+  }, [location])
+
+  return null
+}
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false)
@@ -40,8 +68,12 @@ function App() {
     )
   }
 
+  // Debug: Log auth state
+  console.log('isAuthenticated:', isAuthenticated, 'user:', localStorage.getItem('pspm_user'))
+
   return (
     <Router>
+      <RouteWrapper />
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route

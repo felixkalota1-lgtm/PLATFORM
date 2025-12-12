@@ -32,7 +32,8 @@ export default function ProductsList() {
     try {
       const q = query(
         collection(db, 'tenants', user.tenantId, 'products'),
-        where('active', '==', true)
+        where('active', '==', true),
+        where('source', '==', 'inventory') // Only show inventory products, not marketplace
       )
 
       const unsubscribe = onSnapshot(q, (snapshot) => {

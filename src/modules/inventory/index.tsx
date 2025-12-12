@@ -60,7 +60,7 @@ export default function InventoryModule() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Inventory Management</h1>
-          <p className="text-gray-600 dark:text-gray-400 mt-1">Manage products, stock levels, and bulk imports</p>
+          <p className="text-gray-600 dark:text-gray-400 mt-1">Manage products, services, stock levels, and bulk imports</p>
         </div>
         <button
           onClick={() => setIsUploadOpen(true)}
@@ -109,7 +109,7 @@ export default function InventoryModule() {
           <div className="flex gap-0">
             {[
               { id: 'overview', label: 'Overview', icon: '📋' },
-              { id: 'products', label: 'Products', icon: '📦' },
+              { id: 'products', label: 'Products and Services', icon: '📦' },
               { id: 'stock', label: 'Stock Management', icon: '📊' },
               { id: 'analytics', label: 'Analytics', icon: '📈' },
             ].map((tab) => (
@@ -139,9 +139,9 @@ export default function InventoryModule() {
                   <div>
                     <h3 className="font-semibold text-gray-900 dark:text-white mb-2">Getting Started with Inventory</h3>
                     <ul className="text-sm text-gray-700 dark:text-gray-300 space-y-2">
-                      <li>✓ Click "Bulk Import" to upload products from Excel file</li>
+                      <li>✓ Click "Bulk Import" to upload products and services from Excel file</li>
                       <li>✓ The system will validate data, detect duplicates, and optionally generate AI images</li>
-                      <li>✓ View imported products in the "Products" tab</li>
+                      <li>✓ View imported items in the "Products and Services" tab</li>
                       <li>✓ Manage stock levels and track inventory in "Stock Management" tab</li>
                     </ul>
                   </div>
