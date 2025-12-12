@@ -1,6 +1,7 @@
 import { Mail, Lock, Building2, Eye, EyeOff } from 'lucide-react'
 import { useState } from 'react'
 import { useAppStore } from '../store/appStore'
+import { auditLogger } from '../services/auditLogger'
 import toast from 'react-hot-toast'
 
 export default function LoginPage() {
@@ -61,9 +62,32 @@ export default function LoginPage() {
       setCurrentCompany(newCompany)
       console.log('setCurrentCompany called')
       
+      // Log successful login
+      auditLogger.log(
+        newUser.id,
+        newUser.email,
+        newUser.companyId,
+        'LOGIN',
+        'authentication',
+        `User logged in successfully from company ${companyCode}`,
+        'success'
+      )
+      
       toast.success('Login successful!')
     } catch (error) {
       console.error('Login error:', error)
+      
+      // Log failed login
+      auditLogger.log(
+        `temp_user_${Date.now()}`,
+        email.trim(),
+        companyCode.trim(),
+        'LOGIN',
+        'authentication',
+        `Login failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        'failed'
+      )
+      
       toast.error('Login failed. Please try again.')
     } finally {
       setLoading(false)
@@ -115,9 +139,34 @@ export default function LoginPage() {
       setCurrentUser(newUser)
       setCurrentCompany(newCompany)
       
+      // Log successful registration
+      auditLogger.log(
+        newUser.id,
+        newUser.email,
+        newUser.companyId,
+        'LOGIN',
+        'authentication',
+        `New company registered: ${companyCode}`,
+        'success',
+        'company',
+        newCompany.id
+      )
+      
       toast.success('Registration successful! Welcome aboard!')
     } catch (error) {
       console.error('Register error:', error)
+      
+      // Log failed registration
+      auditLogger.log(
+        `temp_user_${Date.now()}`,
+        email.trim(),
+        companyCode.trim(),
+        'LOGIN',
+        'authentication',
+        `Registration failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        'failed'
+      )
+      
       toast.error('Registration failed. Please try again.')
     } finally {
       setLoading(false)

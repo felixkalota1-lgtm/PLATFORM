@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { User, Company, CartItem, Notification } from '../types';
+import { notificationService } from '../services/notificationService';
 
 interface AppStore {
   // Auth
@@ -19,6 +20,9 @@ interface AppStore {
   notifications: Notification[];
   addNotification: (notification: Notification) => void;
   markNotificationAsRead: (notificationId: string) => void;
+  markAllNotificationsAsRead: () => void;
+  deleteNotification: (notificationId: string) => void;
+  loadNotificationsFromStorage: (companyId: string) => void;
   clearNotifications: () => void;
 
   // UI State
@@ -89,15 +93,49 @@ export const useAppStore = create<AppStore>((set) => {
 
     // Notifications
     notifications: [],
-    addNotification: (notification) => set((state) => ({
-      notifications: [notification, ...state.notifications]
-    })),
-    markNotificationAsRead: (notificationId) => set((state) => ({
-      notifications: state.notifications.map(notif =>
-        notif.id === notificationId ? { ...notif, read: true } : notif
-      )
-    })),
-    clearNotifications: () => set({ notifications: [] }),
+    addNotification: (notification) => set((state) => {
+      const updated = [notification, ...state.notifications]
+      if (state.currentCompany) {
+        notificationService.addNotification(notification, state.currentCompany.id)
+      }
+      return { notifications: updated }
+    }),
+    markNotificationAsRead: (notificationId) => set((state) => {
+      if (state.currentCompany) {
+        notificationService.markAsRead(notificationId, state.currentCompany.id)
+      }
+      return {
+        notifications: state.notifications.map(notif =>
+          notif.id === notificationId ? { ...notif, read: true } : notif
+        )
+      }
+    }),
+    markAllNotificationsAsRead: () => set((state) => {
+      if (state.currentCompany) {
+        notificationService.markAllAsRead(state.currentCompany.id)
+      }
+      return {
+        notifications: state.notifications.map(notif => ({ ...notif, read: true }))
+      }
+    }),
+    deleteNotification: (notificationId) => set((state) => {
+      if (state.currentCompany) {
+        notificationService.deleteNotification(notificationId, state.currentCompany.id)
+      }
+      return {
+        notifications: state.notifications.filter(n => n.id !== notificationId)
+      }
+    }),
+    loadNotificationsFromStorage: (companyId) => {
+      notificationService.loadFromStorage(companyId)
+      set({ notifications: notificationService.getAll() })
+    },
+    clearNotifications: () => set((state) => {
+      if (state.currentCompany) {
+        notificationService.clearAll(state.currentCompany.id)
+      }
+      return { notifications: [] }
+    }),
 
     // UI State
     sidebarOpen: true,
