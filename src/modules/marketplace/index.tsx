@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ShoppingCart, Grid, List } from 'lucide-react'
+import { ShoppingCart, Grid, List, Search } from 'lucide-react'
 import ProductGrid from './components/ProductGrid'
 import ProductDetail from './components/ProductDetail'
 import ShoppingCartComponent from './components/ShoppingCart'
@@ -10,6 +10,8 @@ export default function MarketplacePage() {
   const [activeTab, setActiveTab] = useState<'browse' | 'cart'>('browse')
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid')
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [selectedCategory, setSelectedCategory] = useState<string>('all')
   const { cart } = useMarketplaceStore()
 
   // Mock data for demonstration
@@ -85,6 +87,21 @@ export default function MarketplacePage() {
     },
   ]
 
+  // Filter products based on search and category
+  const getFilteredProducts = () => {
+    return mockProducts.filter((product) => {
+      const matchesSearch = 
+        product.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        product.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        product.tags.some((tag) => tag.toLowerCase().includes(searchQuery.toLowerCase()))
+      
+      const matchesCategory = 
+        selectedCategory === 'all' || product.category === selectedCategory
+      
+      return matchesSearch && matchesCategory
+    })
+  }
+
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
       {/* Header */}
@@ -139,6 +156,42 @@ export default function MarketplacePage() {
       <div className="max-w-7xl mx-auto px-6 py-8">
         {activeTab === 'browse' && (
           <div className="space-y-6">
+            {/* Search and Filters */}
+            {!selectedProduct && (
+              <div className="space-y-4">
+                {/* Search Bar */}
+                <div className="relative">
+                  <Search className="absolute left-3 top-3 w-5 h-5 text-gray-400" />
+                  <input
+                    type="text"
+                    placeholder="Search products..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+
+                {/* Category Filter */}
+                <div className="flex gap-2 flex-wrap">
+                  {['all', 'office-supplies', 'furniture', 'electronics', 'documents'].map(
+                    (cat) => (
+                      <button
+                        key={cat}
+                        onClick={() => setSelectedCategory(cat)}
+                        className={`px-3 py-1 rounded-full text-sm font-medium transition-colors ${
+                          selectedCategory === cat
+                            ? 'bg-blue-500 text-white'
+                            : 'bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-600'
+                        }`}
+                      >
+                        {cat === 'all' ? 'All Categories' : cat.replace('-', ' ')}
+                      </button>
+                    )
+                  )}
+                </div>
+              </div>
+            )}
+
             {/* View Mode Toggle */}
             {!selectedProduct && (
               <div className="flex justify-end gap-2">
@@ -177,10 +230,16 @@ export default function MarketplacePage() {
                 <ProductDetail product={selectedProduct} />
               </div>
             ) : (
-              <ProductGrid
-                products={mockProducts}
-                onProductClick={setSelectedProduct}
-              />
+              <>
+                {/* Filter Stats */}
+                <div className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                  Showing {getFilteredProducts().length} products
+                </div>
+                <ProductGrid
+                  products={getFilteredProducts()}
+                  onProductClick={setSelectedProduct}
+                />
+              </>
             )}
           </div>
         )}
