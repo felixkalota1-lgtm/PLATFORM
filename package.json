@@ -12,6 +12,8 @@
   "dependencies": {
     "@hookform/resolvers": "^3.3.4",
     "@huggingface/inference": "^4.13.5",
+    "@react-three/drei": "^10.7.7",
+    "@react-three/fiber": "^9.4.2",
     "@tensorflow/tfjs": "^4.22.0",
     "axios": "^1.6.7",
     "clsx": "^2.0.0",
@@ -46,6 +48,7 @@
     "recharts": "^2.10.3",
     "socket.io-client": "^4.8.1",
     "tailwindcss": "^3.3.6",
+    "three": "^0.182.0",
     "xlsx": "^0.18.5",
     "zod": "^3.22.4",
     "zustand": "^4.4.7"
