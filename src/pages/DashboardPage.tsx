@@ -2,10 +2,12 @@ import { TrendingUp, AlertCircle, Package, ShoppingCart, Upload } from 'lucide-r
 import { useState } from 'react'
 import AnalyticsDashboard from '../components/AnalyticsDashboard'
 import ProductUploadModal from '../components/ProductUploadModal'
+import { useAuth } from '../hooks/useAuth'
 
 export default function DashboardPage() {
   const [activeTab, setActiveTab] = useState<'overview' | 'analytics'>('overview')
-  const [isUploadModalOpen, setIsUploadModalOpen] = useState(false)
+  const [isUploadOpen, setIsUploadOpen] = useState(false)
+  const { user } = useAuth()
   
   const stats = [
     { label: 'Total Orders', value: '1,234', icon: ShoppingCart, change: '+12%' },
@@ -50,13 +52,24 @@ export default function DashboardPage() {
           <div className="flex justify-between items-center mb-8">
             <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Dashboard</h1>
             <button
-              onClick={() => setIsUploadModalOpen(true)}
-              className="inline-flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-lg hover:from-blue-700 hover:to-indigo-700 transition font-medium shadow-lg"
+              onClick={() => setIsUploadOpen(true)}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 dark:hover:bg-blue-600 transition-colors"
             >
               <Upload size={20} />
               📊 Import Products
             </button>
           </div>
+
+          {/* Product Upload Modal */}
+          <ProductUploadModal
+            isOpen={isUploadOpen}
+            onClose={() => setIsUploadOpen(false)}
+            tenantId={user?.tenantId || 'default'}
+            onSuccess={(result) => {
+              console.log('✅ Import successful:', result.upload);
+              // Refresh products or show success message
+            }}
+          />
 
           {/* Stats Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
@@ -112,19 +125,6 @@ export default function DashboardPage() {
 
       {/* Analytics Tab */}
       {activeTab === 'analytics' && <AnalyticsDashboard />}
-
-      {/* Product Upload Modal */}
-      <ProductUploadModal
-        isOpen={isUploadModalOpen}
-        onClose={() => setIsUploadModalOpen(false)}
-        tenantId="default"
-        onSuccess={(result) => {
-          console.log('✅ Products imported successfully:', result);
-          // Show success message
-          alert(`✅ ${result.upload.uploaded} products uploaded successfully!`);
-          // You can refresh the product list here
-        }}
-      />
     </div>
   )
 }
