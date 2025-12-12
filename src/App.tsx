@@ -22,10 +22,13 @@ function AppRoutes() {
 
 function App() {
   const [mounted, setMounted] = useState(false)
+  const loadAuthFromStorage = useAppStore((state) => state.loadAuthFromStorage)
 
   useEffect(() => {
+    // Load persisted auth on app mount
+    loadAuthFromStorage()
     setMounted(true)
-  }, [])
+  }, [loadAuthFromStorage])
 
   if (!mounted) {
     return <div className="w-full h-screen flex items-center justify-center bg-white">Loading...</div>

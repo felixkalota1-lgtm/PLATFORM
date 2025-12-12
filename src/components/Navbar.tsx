@@ -2,21 +2,38 @@ import { Menu, LogOut, Bell } from 'lucide-react'
 import { useAppStore } from '../store/appStore'
 import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
+import { useState } from 'react'
 
 interface NavbarProps {
   onMenuClick: () => void
 }
 
 export default function Navbar({ onMenuClick }: NavbarProps) {
-  const { currentUser, currentCompany, notifications, setCurrentUser, setCurrentCompany } = useAppStore()
+  const { 
+    currentUser, 
+    currentCompany, 
+    notifications, 
+    setCurrentUser, 
+    setCurrentCompany,
+    clearCart,
+    clearNotifications,
+  } = useAppStore()
   const navigate = useNavigate()
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
   const unreadCount = notifications.filter(n => !n.read).length
 
   const handleLogout = () => {
+    console.log('User logging out...')
+    // Clear all user data
     setCurrentUser(null)
     setCurrentCompany(null)
+    clearCart()
+    clearNotifications()
+    
     toast.success('Logged out successfully')
+    console.log('User logged out, auth cleared from storage')
     navigate('/login')
+    setShowLogoutConfirm(false)
   }
 
   return (
@@ -51,7 +68,7 @@ export default function Navbar({ onMenuClick }: NavbarProps) {
               <p className="text-xs text-gray-500 capitalize">{currentUser?.role}</p>
             </div>
             <button 
-              onClick={handleLogout}
+              onClick={() => setShowLogoutConfirm(true)}
               className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
               title="Logout"
             >
@@ -60,6 +77,33 @@ export default function Navbar({ onMenuClick }: NavbarProps) {
           </div>
         </div>
       </div>
+
+      {/* Logout Confirmation Modal */}
+      {showLogoutConfirm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl p-6 max-w-sm">
+            <h2 className="text-lg font-bold text-gray-900 mb-2">Confirm Logout</h2>
+            <p className="text-gray-600 mb-6">Are you sure you want to log out?</p>
+            
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => setShowLogoutConfirm(false)}
+                className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleLogout}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition flex items-center gap-2"
+              >
+                <LogOut size={18} />
+                Logout
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </nav>
   )
 }
+

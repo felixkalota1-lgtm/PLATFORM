@@ -7,6 +7,7 @@ interface AppStore {
   currentCompany: Company | null;
   setCurrentUser: (user: User | null) => void;
   setCurrentCompany: (company: Company | null) => void;
+  loadAuthFromStorage: () => void;
 
   // Cart
   cart: CartItem[];
@@ -38,10 +39,42 @@ export const useAppStore = create<AppStore>((set) => {
     setCurrentUser: (user) => {
       console.log('setCurrentUser called:', user)
       set({ currentUser: user })
+      // Persist to localStorage
+      if (user) {
+        localStorage.setItem('pspm_user', JSON.stringify(user))
+      } else {
+        localStorage.removeItem('pspm_user')
+      }
     },
     setCurrentCompany: (company) => {
       console.log('setCurrentCompany called:', company)
       set({ currentCompany: company })
+      // Persist to localStorage
+      if (company) {
+        localStorage.setItem('pspm_company', JSON.stringify(company))
+      } else {
+        localStorage.removeItem('pspm_company')
+      }
+    },
+    loadAuthFromStorage: () => {
+      console.log('Loading auth from localStorage...')
+      try {
+        const savedUser = localStorage.getItem('pspm_user')
+        const savedCompany = localStorage.getItem('pspm_company')
+        
+        if (savedUser) {
+          set({ currentUser: JSON.parse(savedUser) })
+          console.log('Restored user from storage:', JSON.parse(savedUser))
+        }
+        if (savedCompany) {
+          set({ currentCompany: JSON.parse(savedCompany) })
+          console.log('Restored company from storage:', JSON.parse(savedCompany))
+        }
+      } catch (error) {
+        console.error('Failed to load auth from storage:', error)
+        localStorage.removeItem('pspm_user')
+        localStorage.removeItem('pspm_company')
+      }
     },
 
     // Cart
