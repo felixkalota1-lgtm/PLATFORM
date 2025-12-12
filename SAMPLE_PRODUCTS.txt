@@ -1,0 +1,36 @@
+This is a sample Excel template for testing the AI product upload feature.
+
+Download this format and fill in your products, then upload to test:
+
+Product Name | Description | Price | SKU | Category | Stock | Supplier | Tags
+---|---|---|---|---|---|---|---
+Premium Coffee Maker | High-quality stainless steel coffee maker with programmable timer and 12-cup capacity | 79.99 | SKU-001 | Kitchen Appliances | 50 | AcmeCorp | coffee, brewing, automatic
+Wireless Bluetooth Speaker | Portable waterproof speaker with 20-hour battery life and premium sound quality | 49.99 | SKU-002 | Electronics | 100 | TechSupply Inc | audio, wireless, portable
+Ergonomic Office Chair | Professional ergonomic chair with lumbar support, adjustable height, and breathable mesh | 199.99 | SKU-003 | Office Furniture | 25 | FurniturePlus | office, ergonomic, comfort
+Stainless Steel Water Bottle | Insulated stainless steel bottle keeps drinks cold for 24 hours or hot for 12 hours | 29.99 | SKU-004 | Sports & Outdoors | 200 | SportGear Ltd | hydration, insulated, eco-friendly
+LED Desk Lamp | Energy-efficient LED lamp with adjustable brightness and color temperature for work | 34.99 | SKU-005 | Electronics | 75 | LightTech Solutions | lighting, led, office
+
+INSTRUCTIONS:
+1. Copy this table
+2. Paste into Excel (or Google Sheets)
+3. Add more rows as needed
+4. Save as .xlsx file
+5. Upload using the "Import Products" button in the dashboard
+
+COLUMN REQUIREMENTS:
+- Product Name: Required (min 3 characters)
+- Description: Required (min 10 characters)  
+- Price: Optional (must be >= 0)
+- SKU: Optional (will be auto-generated if missing)
+- Category: Optional (AI will auto-categorize if missing)
+- Stock: Optional (must be integer >= 0)
+- Supplier: Optional
+- Tags: Optional (comma-separated)
+
+AI FEATURES THAT WILL RUN:
+✅ Image Generation: If enabled, creates product photos from descriptions
+✅ Validation: Checks for errors, duplicates, format issues
+✅ Categorization: Auto-assigns category based on description
+✅ Duplicate Detection: Flags similar products before upload
+✅ Metadata Extraction: Pulls out materials, colors, sizes, features
+✅ Firestore Upload: Saves all data to your database
