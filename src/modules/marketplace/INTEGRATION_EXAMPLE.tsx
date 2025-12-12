@@ -7,8 +7,8 @@
 
 import React, { useState } from 'react';
 import { Upload } from 'lucide-react';
-import ProductUploadModal from '../components/ProductUploadModal';
-import { useAuth } from '../hooks/useAuth'; // Your auth hook
+import ProductUploadModal from '../../components/ProductUploadModal';
+import { useAuth } from '../../hooks/useAuth'; // Your auth hook
 
 /**
  * Example: Marketplace Admin Panel with Excel Upload
@@ -44,7 +44,7 @@ export const MarketplaceAdminExample: React.FC = () => {
         isOpen={isUploadModalOpen}
         onClose={() => setIsUploadModalOpen(false)}
         tenantId={tenantId}
-        onSuccess={(result) => {
+        onSuccess={(result: any) => {
           console.log('✅ Import successful:', result);
           // Refresh product list, show success message, etc.
         }}
@@ -90,7 +90,7 @@ export const advancedServiceExamples = {
    * Example: Generate a single product image
    */
   generateImage: async () => {
-    const { generateProductImage } = await import('../services/aiService');
+    const { generateProductImage } = await import('../../services/aiService');
     
     const blob = await generateProductImage(
       'Premium stainless steel coffee maker with programmable timer',
@@ -104,7 +104,7 @@ export const advancedServiceExamples = {
    * Example: Validate Excel data with local LLM
    */
   validateWithOllama: async () => {
-    const { validateExcelDataWithOllama } = await import('../services/aiService');
+    const { validateExcelDataWithOllama } = await import('../../services/aiService');
     
     const validation = await validateExcelDataWithOllama([
       {
@@ -127,7 +127,7 @@ export const advancedServiceExamples = {
    */
   parseExcel: async (file: File) => {
     const { parseExcelFile, validateExcelProducts } = await import(
-      '../services/excelUploadService'
+      '../../services/excelUploadService'
     );
     
     const products = await parseExcelFile(file);
@@ -141,7 +141,7 @@ export const advancedServiceExamples = {
    * Example: Get product recommendations
    */
   getRecommendations: async () => {
-    const { getProductRecommendations } = await import('../services/aiService');
+    const { getProductRecommendations } = await import('../../services/aiService');
     
     const recommendations = await getProductRecommendations(
       'product-123',
@@ -159,7 +159,7 @@ export const advancedServiceExamples = {
    * Example: Predict product demand
    */
   predictDemand: async () => {
-    const { predictDemand } = await import('../services/aiService');
+    const { predictDemand } = await import('../../services/aiService');
     
     const nextMonths = await predictDemand([
       { month: 1, sales: 100 },

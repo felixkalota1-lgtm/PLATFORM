@@ -1,45 +1,74 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
-import { useAppStore } from './store/appStore'
-import Layout from './components/Layout'
+import { useEffect, useState } from 'react'
 import LoginPage from './pages/LoginPage'
 import DashboardPage from './pages/DashboardPage'
-import Toaster from './components/Toaster'
-import { useEffect, useState } from 'react'
+import Layout from './components/Layout'
+import ProtectedRoute from './components/ProtectedRoute'
 
-function AppRoutes() {
-  const currentUser = useAppStore((state) => state.currentUser)
-
-  console.log('AppRoutes rendering, currentUser:', currentUser)
-
-  if (currentUser) {
-    console.log('User is logged in, showing Layout')
-    return <Layout />
-  } else {
-    console.log('User is NOT logged in, showing LoginPage')
-    return <LoginPage />
-  }
-}
+// Lazy imports for module pages
+import MarketplaceModule from './modules/marketplace'
+import ProcurementModule from './modules/procurement'
+import InventoryModule from './modules/inventory'
 
 function App() {
+  const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [mounted, setMounted] = useState(false)
-  const loadAuthFromStorage = useAppStore((state) => state.loadAuthFromStorage)
-  const loadDarkModePreference = useAppStore((state) => state.loadDarkModePreference)
 
   useEffect(() => {
-    // Load persisted auth and dark mode on app mount
-    loadAuthFromStorage()
-    loadDarkModePreference()
+    // Check if user is logged in from localStorage
+    const savedUser = localStorage.getItem('pspm_user')
+    if (savedUser) {
+      try {
+        JSON.parse(savedUser)
+        setIsAuthenticated(true)
+      } catch (e) {
+        localStorage.removeItem('pspm_user')
+      }
+    }
     setMounted(true)
-  }, [loadAuthFromStorage, loadDarkModePreference])
+  }, [])
 
   if (!mounted) {
-    return <div className="w-full h-screen flex items-center justify-center bg-white dark:bg-gray-900">Loading...</div>
+    return (
+      <div className="w-full h-screen flex items-center justify-center bg-gradient-to-r from-blue-500 to-purple-600">
+        <div className="text-white text-center">
+          <h1 className="text-5xl font-bold mb-4">Platform Sales & Procurement</h1>
+          <p className="text-xl mb-8">Initializing...</p>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white mx-auto"></div>
+        </div>
+      </div>
+    )
   }
 
   return (
     <Router>
-      <Toaster />
-      <AppRoutes />
+      <Routes>
+        <Route path="/login" element={<LoginPage />} />
+        <Route
+          path="/*"
+          element={
+            isAuthenticated ? (
+              <Layout>
+                <Routes>
+                  <Route path="/" element={<DashboardPage />} />
+                  <Route path="/marketplace/*" element={<MarketplaceModule />} />
+                  <Route path="/procurement/*" element={<ProcurementModule />} />
+                  <Route path="/inventory/*" element={<InventoryModule />} />
+                  <Route path="/warehouse" element={<div className="p-6"><h1>Warehouse Module</h1></div>} />
+                  <Route path="/hr" element={<div className="p-6"><h1>HR Module</h1></div>} />
+                  <Route path="/accounting" element={<div className="p-6"><h1>Accounting Module</h1></div>} />
+                  <Route path="/analytics" element={<div className="p-6"><h1>Analytics Module</h1></div>} />
+                  <Route path="/communication" element={<div className="p-6"><h1>Communication Module</h1></div>} />
+                  <Route path="/logistics" element={<div className="p-6"><h1>Logistics Module</h1></div>} />
+                  <Route path="*" element={<Navigate to="/" replace />} />
+                </Routes>
+              </Layout>
+            ) : (
+              <LoginPage />
+            )
+          }
+        />
+      </Routes>
     </Router>
   )
 }

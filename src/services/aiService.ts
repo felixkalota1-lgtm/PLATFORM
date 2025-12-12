@@ -11,7 +11,7 @@ import * as tf from '@tensorflow/tfjs';
 import { HfInference } from '@huggingface/inference';
 
 // Initialize Hugging Face client (requires VITE_HF_TOKEN)
-const hf = new HfInference(import.meta.env.VITE_HF_TOKEN || '');
+const hf = new HfInference((import.meta as any).env.VITE_HF_TOKEN || '');
 
 /**
  * Generate product image from text description using Hugging Face
@@ -31,12 +31,12 @@ export const generateProductImage = async (
       : `Professional product photo: ${description}. High quality, clean background, professional lighting.`;
 
     // Generate image using Hugging Face Inference API
-    const blob = await hf.textToImage({
+    const result = await hf.textToImage({
       inputs: enhancedPrompt,
       model: 'stabilityai/stable-diffusion-2',
     });
 
-    return blob;
+    return result as unknown as Blob;
   } catch (error) {
     console.error('Error generating product image:', error);
     throw new Error('Failed to generate product image. Check API key and try again.');
@@ -281,12 +281,16 @@ export const extractProductMetadata = async (description: string): Promise<{
     }
   });
 
-  return {
+  const metadata: any = {
     features: features.length > 0 ? features : ['Standard product'],
-    material,
-    color,
-    size,
   };
+
+  // Only add fields if they have values
+  if (material) metadata.material = material;
+  if (color) metadata.color = color;
+  if (size) metadata.size = size;
+
+  return metadata;
 };
 
 /**

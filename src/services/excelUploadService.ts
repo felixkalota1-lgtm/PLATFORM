@@ -10,7 +10,7 @@
  * - Batch Firestore upload with error handling
  */
 
-import XLSX from 'xlsx';
+import * as XLSX from 'xlsx';
 import {
   validateExcelDataWithOllama,
   categorizeProductsWithAI,
@@ -19,7 +19,7 @@ import {
   extractProductMetadata,
 } from './aiService';
 import { db } from './firebase';
-import { collection, addDoc, writeBatch, doc } from 'firebase/firestore';
+import { collection, writeBatch, doc } from 'firebase/firestore';
 
 export interface ExcelProduct {
   name: string;
@@ -134,8 +134,8 @@ export const validateExcelProducts = async (
       return;
     }
 
-    if (!product.description || product.description.length < 10) {
-      errors.push(`Row ${rowNum}: Description is required and must be at least 10 characters`);
+    if (!product.description || product.description.length < 5) {
+      errors.push(`Row ${rowNum}: Description is required and must be at least 5 characters`);
       return;
     }
 
@@ -269,7 +269,7 @@ export const uploadProductsToFirestore = async (
         }
 
         // Prepare product document
-        const productDoc = {
+        const productDoc: any = {
           name: product.name,
           description: product.description,
           price: product.price || 0,
@@ -278,13 +278,17 @@ export const uploadProductsToFirestore = async (
           stock: product.stock || 0,
           supplier: product.supplier || 'Unknown',
           tags: product.tags ? product.tags.split(',').map((t: string) => t.trim()) : [],
-          imageUrl,
           metadata,
           createdAt: new Date(),
           updatedAt: new Date(),
           tenantId,
           active: true,
         };
+
+        // Only add imageUrl if it exists
+        if (imageUrl) {
+          productDoc.imageUrl = imageUrl;
+        }
 
         // Add to batch
         const docRef = doc(productsRef);
@@ -368,7 +372,7 @@ export const importProductsFromExcel = async (
 
   // Step 3: Upload
   onProgress?.('Uploading to database...');
-  const upload = await uploadProductsToFirestore(tenantId, validation.products, {
+  const upload = await uploadProductsToFirestore(validation.products, tenantId, {
     generateImages,
     onProgress: (current, total) => onProgress?.('Uploading products...', current, total),
   });

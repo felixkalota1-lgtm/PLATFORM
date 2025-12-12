@@ -1,12 +1,12 @@
-import { useState } from 'react'
-import { Routes, Route } from 'react-router-dom'
+import { useState, ReactNode } from 'react'
 import Sidebar from './Sidebar'
 import Navbar from './Navbar'
-import DashboardPage from '../pages/DashboardPage'
-import MarketplacePage from '../modules/marketplace'
-import ProcurementPage from '../modules/procurement'
 
-export default function Layout() {
+interface LayoutProps {
+  children: ReactNode
+}
+
+export default function Layout({ children }: LayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(true)
 
   return (
@@ -15,11 +15,7 @@ export default function Layout() {
       <div className="flex-1 flex flex-col overflow-hidden">
         <Navbar onMenuClick={() => setSidebarOpen(!sidebarOpen)} />
         <main className="flex-1 overflow-auto bg-gray-50 dark:bg-gray-900">
-          <Routes>
-            <Route path="/" element={<DashboardPage />} />
-            <Route path="/marketplace" element={<MarketplacePage />} />
-            <Route path="/procurement" element={<ProcurementPage />} />
-          </Routes>
+          {children}
         </main>
       </div>
     </div>
