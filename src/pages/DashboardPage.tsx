@@ -103,3 +103,4 @@ export default function DashboardPage() {
       {activeTab === 'analytics' && <AnalyticsDashboard />}
     </div>
   )
+}

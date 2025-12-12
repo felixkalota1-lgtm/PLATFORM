@@ -1,5 +1,4 @@
-import { ShoppingCart, Trash2, ArrowRight } from 'lucide-react'
-import { useMarketplaceStore } from '../types'
+import { ShoppingCart as ShoppingCartIcon, Trash2, ArrowRight } from 'lucide-react'
 import { useMarketplaceStore as useStore } from '../store'
 
 export default function ShoppingCart() {
@@ -8,7 +7,7 @@ export default function ShoppingCart() {
   if (cart.length === 0) {
     return (
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-12 text-center">
-        <ShoppingCart className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+        <ShoppingCartIcon className="w-16 h-16 text-gray-400 mx-auto mb-4" />
         <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
           Your cart is empty
         </h2>

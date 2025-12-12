@@ -5,10 +5,9 @@ import { useMarketplaceStore } from '../store'
 
 interface ProductDetailProps {
   product: Product
-  onClose?: () => void
 }
 
-export default function ProductDetail({ product, onClose }: ProductDetailProps) {
+export default function ProductDetail({ product }: ProductDetailProps) {
   const [quantity, setQuantity] = useState(1)
   const [selectedImage, setSelectedImage] = useState(0)
   const { addToCart, toggleFavorite, isFavorited } = useMarketplaceStore()

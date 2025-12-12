@@ -1,1 +1,0 @@
-{"root":["./src/app.tsx","./src/firebase.config.ts","./src/main.tsx","./src/hooks/useauth.ts","./src/hooks/useauthform.ts","./src/pages/dashboard.tsx","./src/pages/home.tsx","./src/pages/login.tsx","./src/services/authservice.ts","./src/services/firebase.ts","./src/services/firestoreservice.ts","./src/services/storageservice.ts"],"version":"5.9.3"}

@@ -9,7 +9,7 @@ interface SidebarProps {
 
 interface MenuItem {
   label: string
-  icon: React.ReactNode
+  icon?: React.ReactNode
   href?: string
   submenu?: MenuItem[]
 }

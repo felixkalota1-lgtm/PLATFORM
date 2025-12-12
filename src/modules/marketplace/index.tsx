@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ShoppingCart, Plus, Grid, List } from 'lucide-react'
+import { ShoppingCart, Grid, List } from 'lucide-react'
 import ProductGrid from './components/ProductGrid'
 import ProductDetail from './components/ProductDetail'
 import ShoppingCartComponent from './components/ShoppingCart'
@@ -10,7 +10,7 @@ export default function MarketplacePage() {
   const [activeTab, setActiveTab] = useState<'browse' | 'cart'>('browse')
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid')
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
-  const { products, cart } = useMarketplaceStore()
+  const { cart } = useMarketplaceStore()
 
   // Mock data for demonstration
   const mockProducts: Product[] = [
@@ -174,7 +174,7 @@ export default function MarketplacePage() {
                 >
                   ← Back to Products
                 </button>
-                <ProductDetail product={selectedProduct} onClose={() => setSelectedProduct(null)} />
+                <ProductDetail product={selectedProduct} />
               </div>
             ) : (
               <ProductGrid

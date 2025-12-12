@@ -1,29 +1,25 @@
 import { useState, useCallback } from 'react'
-import { Product, CartItem, SearchFilter } from './types'
+import { CartItem, SearchFilter } from './types'
 
 export function useMarketplaceSearch() {
   const [filters, setFilters] = useState<SearchFilter>({})
-  const [results, setResults] = useState<Product[]>([])
-  const [loading, setLoading] = useState(false)
 
   const search = useCallback(async (newFilters: SearchFilter) => {
-    setLoading(true)
     setFilters(newFilters)
     try {
       // TODO: Call API service
       // const data = await apiService.post('/marketplace/search', newFilters)
-      // setResults(data)
-    } finally {
-      setLoading(false)
+      // Return results
+    } catch (error) {
+      console.error('Search failed:', error)
     }
   }, [])
 
-  return { filters, results, loading, search, setFilters }
+  return { filters, search, setFilters }
 }
 
 export function useMarketplaceCart() {
   const [items, setItems] = useState<CartItem[]>([])
-  const [loading, setLoading] = useState(false)
 
   const addToCart = useCallback((item: CartItem) => {
     setItems((prev) => {
@@ -70,7 +66,6 @@ export function useMarketplaceCart() {
 
   return {
     items,
-    loading,
     addToCart,
     removeFromCart,
     updateQuantity,
