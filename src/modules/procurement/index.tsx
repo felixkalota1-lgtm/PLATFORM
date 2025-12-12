@@ -1,11 +1,14 @@
 import { useState } from 'react'
 import { Plus, FileText, CheckCircle, Clock, AlertCircle } from 'lucide-react'
 import { useProcurementStore } from './store'
+import NewRequestModal from './components/NewRequestModal'
+import RequestsList from './components/RequestsList'
 
 export default function ProcurementPage() {
   const [activeTab, setActiveTab] = useState<
     'requests' | 'rfqs' | 'purchase-orders'
   >('requests')
+  const [isModalOpen, setIsModalOpen] = useState(false)
   const { requests } = useProcurementStore()
 
   const stats = [
@@ -44,7 +47,9 @@ export default function ProcurementPage() {
             <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
               Procurement Management
             </h1>
-            <button className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-semibold transition-colors">
+            <button 
+              onClick={() => setIsModalOpen(true)}
+              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-semibold transition-colors">
               <Plus className="w-5 h-5" />
               New Request
             </button>
@@ -120,57 +125,7 @@ export default function ProcurementPage() {
       {/* Content */}
       <div className="max-w-7xl mx-auto px-6 py-8">
         {activeTab === 'requests' && (
-          <div>
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
-              <div className="p-6">
-                <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-4">
-                  Procurement Requests
-                </h2>
-                {requests.length === 0 ? (
-                  <p className="text-gray-600 dark:text-gray-400">
-                    No procurement requests yet. Click "New Request" to create one.
-                  </p>
-                ) : (
-                  <div className="space-y-4">
-                    {requests.map((request) => (
-                      <div
-                        key={request.id}
-                        className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors cursor-pointer"
-                      >
-                        <div className="flex items-center justify-between">
-                          <div className="flex-1">
-                            <h3 className="font-semibold text-gray-900 dark:text-white">
-                              {request.title}
-                            </h3>
-                            <p className="text-sm text-gray-600 dark:text-gray-400">
-                              {request.requestNumber} • {request.requester.name} •
-                              {request.lineItems.length} items
-                            </p>
-                          </div>
-                          <div className="text-right">
-                            <p className="font-semibold text-gray-900 dark:text-white">
-                              ${request.estimatedCost.toFixed(2)}
-                            </p>
-                            <span
-                              className={`inline-block px-3 py-1 rounded text-xs font-semibold mt-2 ${
-                                request.status === 'approved'
-                                  ? 'bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300'
-                                  : request.status === 'rejected'
-                                    ? 'bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300'
-                                    : 'bg-yellow-100 dark:bg-yellow-900 text-yellow-700 dark:text-yellow-300'
-                              }`}
-                            >
-                              {request.status}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
+          <RequestsList requests={requests} />
         )}
 
         {activeTab === 'rfqs' && (
@@ -195,6 +150,9 @@ export default function ProcurementPage() {
           </div>
         )}
       </div>
+
+      {/* Modal */}
+      <NewRequestModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} />
     </div>
   )
 }

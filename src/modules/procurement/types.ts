@@ -2,24 +2,31 @@
 
 export interface ProcurementRequest {
   id: string
-  requestNumber: string
-  title: string
-  description: string
-  requester: {
+  requestNumber?: string
+  title?: string
+  description?: string
+  requester?: {
     id: string
     name: string
     department: string
     email: string
   }
-  lineItems: ProcurementLineItem[]
+  lineItems?: ProcurementLineItem[]
+  supplier?: string
+  items?: {
+    description: string
+    quantity: number
+    unitPrice: number
+  }[]
+  total?: number
   status: 'draft' | 'submitted' | 'approved' | 'rejected' | 'ordered' | 'received' | 'cancelled'
-  budget: number
-  estimatedCost: number
-  approvalLevel: number
-  approvalHistory: ApprovalStep[]
+  budget?: number
+  estimatedCost?: number
+  approvalLevel?: number
+  approvalHistory?: ApprovalStep[]
   createdAt: Date
   updatedAt: Date
-  dueDate?: Date
+  dueDate: Date
   priority: 'low' | 'medium' | 'high' | 'urgent'
 }
 

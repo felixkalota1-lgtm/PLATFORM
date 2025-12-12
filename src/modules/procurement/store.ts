@@ -11,9 +11,11 @@ interface ProcurementStore {
   // Requests
   requests: ProcurementRequest[]
   setRequests: (requests: ProcurementRequest[]) => void
-  addRequest: (request: ProcurementRequest) => void
+  addRequest: (request: Omit<ProcurementRequest, 'id' | 'status' | 'createdAt' | 'updatedAt'>) => void
   updateRequest: (id: string, updates: Partial<ProcurementRequest>) => void
   deleteRequest: (id: string) => void
+  removeRequest: (id: string) => void
+  updateRequestStatus: (id: string, status: ProcurementRequest['status']) => void
 
   // RFQs
   rfqs: RFQ[]
@@ -40,7 +42,16 @@ export const useProcurementStore = create<ProcurementStore>()(
       setRequests: (requests) => set({ requests }),
       addRequest: (request) =>
         set((state) => ({
-          requests: [...state.requests, request],
+          requests: [
+            ...state.requests,
+            {
+              ...request,
+              id: Date.now().toString(),
+              status: 'submitted' as const,
+              createdAt: new Date(),
+              updatedAt: new Date(),
+            },
+          ],
         })),
       updateRequest: (id, updates) =>
         set((state) => ({
@@ -51,6 +62,16 @@ export const useProcurementStore = create<ProcurementStore>()(
       deleteRequest: (id) =>
         set((state) => ({
           requests: state.requests.filter((r) => r.id !== id),
+        })),
+      removeRequest: (id) =>
+        set((state) => ({
+          requests: state.requests.filter((r) => r.id !== id),
+        })),
+      updateRequestStatus: (id, status) =>
+        set((state) => ({
+          requests: state.requests.map((r) =>
+            r.id === id ? { ...r, status, updatedAt: new Date() } : r
+          ),
         })),
 
       // RFQs
