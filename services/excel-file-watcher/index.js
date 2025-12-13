@@ -3,11 +3,12 @@
  * 
  * Implements the same validation and duplicate detection logic as bulk upload
  * Features:
- * - Real-time monitoring of Excel files
- * - Duplicate file detection (skip re-processing same file)
+ * - Real-time monitoring of Excel files using FileTracker (mtime-based)
+ * - Automatic change detection without manual hash calculation
  * - Same validation logic as bulk upload
  * - Duplicate detection within file and against inventory
  * - Batch Firestore uploads
+ * - Foundation ready for warehouse integration
  */
 
 import fs from 'fs';
@@ -18,6 +19,7 @@ import dotenv from 'dotenv';
 import https from 'https';
 import admin from 'firebase-admin';
 import crypto from 'crypto';
+import FileTracker from './FileTracker.js';
 
 dotenv.config();
 
@@ -29,7 +31,14 @@ const FILE_LOCK_TIMEOUT = parseInt(process.env.FILE_LOCK_TIMEOUT || '5000');
 const processingFiles = new Set();
 const debounceTimers = new Map();
 const columnMappingCache = new Map();
-const processedFileHashes = new Map();
+
+// Initialize file tracker with mtime-based detection
+const fileTracker = new FileTracker({
+  skipWindow: 2000,           // Skip duplicates within 2 seconds
+  reprocessWindow: 30000,     // Allow reprocess after 30 seconds
+  lockRetryDelay: 1000,       // Retry locked files after 1 second
+  systemType: 'inventory'     // For multi-system support
+});
 
 function initializeFirebase() {
   try {
@@ -57,35 +66,29 @@ function initializeFirebase() {
   }
 }
 
-function calculateFileHash(filePath) {
-  try {
-    const content = fs.readFileSync(filePath);
-    return crypto.createHash('md5').update(content).digest('hex');
-  } catch (error) {
-    return null;
-  }
-}
-
-function shouldSkipFile(filePath) {
-  const hash = calculateFileHash(filePath);
-  if (!hash) return false;
-
-  const fileName = path.basename(filePath);
+/**
+ * Check if file should be processed using FileTracker
+ * FileTracker handles all mtime-based logic centrally
+ */
+function shouldProcessFile(filePath) {
+  const check = fileTracker.checkFile(filePath);
   
-  if (processedFileHashes.has(hash)) {
-    const lastProcessedTime = processedFileHashes.get(hash);
-    const timeSinceLastProcess = Date.now() - lastProcessedTime;
-    
-    // Only skip if processed within last 5 seconds AND file didn't change
-    // If more than 5 seconds have passed, reprocess even with same hash
-    if (timeSinceLastProcess < 5000) {
-      console.log(`⏭️ Skipping duplicate file: ${fileName}`);
-      return true;
+  if (!check.should) {
+    if (check.reason === 'File locked') {
+      console.log(`⏳ ${path.basename(filePath)}: ${check.reason}`);
+    } else if (check.reason !== 'No file changes detected') {
+      console.log(`⏭️ ${path.basename(filePath)}: ${check.reason}`);
     }
   }
+  
+  return check.should;
+}
 
-  processedFileHashes.set(hash, Date.now());
-  return false;
+/**
+ * Mark file as successfully processed
+ */
+function markFileProcessed(filePath) {
+  fileTracker.markAsProcessed(filePath);
 }
 
 async function detectColumnMapping(columns) {
@@ -572,7 +575,7 @@ async function handleFileChange(filePath) {
     return;
   }
 
-  if (shouldSkipFile(filePath)) {
+  if (!shouldProcessFile(filePath)) {
     return;
   }
   
@@ -597,10 +600,15 @@ async function handleFileChange(filePath) {
       const columnMapping = await detectColumnMapping(columns);
       const result = await processProductsForUpload(products, columnMapping, fileName);
       console.log(`\n📊 Result: ${result.synced} synced, ${result.failed} failed, ${result.dupFound} duplicates detected`);
+      
+      // Mark file as successfully processed
+      markFileProcessed(filePath);
     } catch (error) {
       console.error('❌ Error:', error.message);
     } finally {
       processingFiles.delete(filePath);
+      // Periodic cleanup of old tracking entries
+      fileTracker.cleanup();
     }
   }, DEBOUNCE_TIME);
   
