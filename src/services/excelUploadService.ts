@@ -497,17 +497,6 @@ export const uploadProductsToFirestore = async (
         
         console.log(`  ➕ Created: "${product.name}" (SKU: ${finalSku}) with ${alternateSkusList.length} alternate SKUs`);
         uploadedCount++;
-        // Check if SKU exists in current batch
-        if (existingSkuMap.has(finalSku)) {
-          // Already processed in this upload
-          continue;
-        }
-
-        // Add to batch as new product
-        const docRef = doc(productsRef);
-        batch.set(docRef, productDoc);
-        existingSkuMap.set(finalSku, docRef.id); // Track for duplicates in same batch
-        uploadedCount++;
       } catch (error) {
         failedCount++;
         errors.push(`Row ${i + 2}: ${error instanceof Error ? error.message : 'Unknown error'}`);
