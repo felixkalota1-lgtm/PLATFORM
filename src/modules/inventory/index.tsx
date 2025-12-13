@@ -1,8 +1,9 @@
 import { useState } from 'react'
-import { Upload, Package, AlertCircle, CheckCircle2, TrendingUp, Plus } from 'lucide-react'
+import { Upload, Package, AlertCircle, CheckCircle2, TrendingUp, Plus, Download } from 'lucide-react'
 import { useAuth } from '../../hooks/useAuth'
 import ProductUploadModal from '../../components/ProductUploadModal'
 import ManualProductModal from '../../components/ManualProductModal'
+import { downloadProductsExcel } from '../../services/excelExportService'
 import ProductsList from './components/ProductsList.tsx'
 import StockManagement from './components/StockManagement.tsx'
 import InventoryAnalytics from './components/InventoryAnalytics.tsx'
@@ -15,11 +16,25 @@ export default function InventoryModule() {
   const [activeTab, setActiveTab] = useState<Tab>('products')
   const [isUploadOpen, setIsUploadOpen] = useState(false)
   const [isManualOpen, setIsManualOpen] = useState(false)
+  const [isExporting, setIsExporting] = useState(false)
   const [uploadStats, setUploadStats] = useState({
     totalProducts: 0,
     lastUpload: null as Date | null,
     successRate: 0,
   })
+
+  const handleExportExcel = async () => {
+    setIsExporting(true)
+    try {
+      await downloadProductsExcel({ tenantId })
+      console.log('✅ Inventory exported to Excel successfully')
+    } catch (error) {
+      console.error('❌ Export failed:', error)
+      alert('Failed to export inventory')
+    } finally {
+      setIsExporting(false)
+    }
+  }
 
   const handleUploadSuccess = (result: any) => {
     setUploadStats({
@@ -79,6 +94,15 @@ export default function InventoryModule() {
           >
             <Upload size={20} />
             📊 Bulk Import
+          </button>
+          <button
+            onClick={handleExportExcel}
+            disabled={isExporting}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50"
+            title="Download current inventory as Excel"
+          >
+            <Download size={20} />
+            📥 {isExporting ? 'Exporting...' : 'Export Excel'}
           </button>
         </div>
       </div>

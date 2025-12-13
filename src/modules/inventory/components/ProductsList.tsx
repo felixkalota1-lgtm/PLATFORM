@@ -2,9 +2,10 @@ import { useState, useEffect } from 'react'
 import { collection, query, where, onSnapshot, addDoc, setDoc, deleteDoc, doc } from 'firebase/firestore'
 import { db } from '../../../services/firebase'
 import { useAuth } from '../../../hooks/useAuth'
-import { Eye, Edit2, Trash2, Package, FileText, Grid3x3, List, X, ShoppingCart } from 'lucide-react'
+import { Eye, Edit2, Trash2, Package, FileText, Grid3x3, List, X, ShoppingCart, Download } from 'lucide-react'
 import CreateSaleQuoteModal from '../../sales/components/CreateSaleQuoteModal'
 import ProductEditorModal from '../../../components/ProductEditorModal'
+import { downloadProductsExcel } from '../../../services/excelExportService'
 
 interface Product {
   id: string
@@ -104,6 +105,8 @@ export const ProductsList = () => {
       }, { merge: true })
       
       console.log('✅ Product updated:', editingProduct.id)
+      console.log('📝 Syncing to Excel: This change will be reflected in Excel if file-watcher is running')
+      
       setShowEditor(false)
       setEditingProduct(null)
     } catch (error) {
@@ -118,9 +121,11 @@ export const ProductsList = () => {
     if (!user?.tenantId) return
     
     try {
+      const product = products.find(p => p.id === productId)
       const productRef = doc(db, 'tenants', user.tenantId, 'products', productId)
       await deleteDoc(productRef)
       console.log('✅ Product deleted:', productId)
+      console.log('🗑️ Syncing to Excel: This deletion will be reflected in Excel if file-watcher is running')
       setDeleteConfirm(null)
     } catch (error) {
       console.error('Error deleting product:', error)
