@@ -26,6 +26,7 @@ export interface ExcelProduct {
   description: string;
   price?: number;
   sku?: string;
+  alternateSkus?: string; // Comma-separated alternative SKUs/part numbers
   category?: string;
   stock?: number;
   supplier?: string;
@@ -57,11 +58,12 @@ export interface UploadResult {
  * - A: Product Name (required)
  * - B: Description (required)
  * - C: Price (optional)
- * - D: SKU (optional)
- * - E: Category (optional)
- * - F: Stock Quantity (optional)
- * - G: Supplier (optional)
- * - H: Tags (optional)
+ * - D: SKU (optional - primary identifier)
+ * - E: Alternate SKUs (optional - comma-separated alternative part numbers)
+ * - F: Category (optional)
+ * - G: Stock Quantity (optional)
+ * - H: Supplier (optional)
+ * - I: Tags (optional)
  */
 export const parseExcelFile = async (file: File): Promise<ExcelProduct[]> => {
   return new Promise((resolve, reject) => {
@@ -73,9 +75,9 @@ export const parseExcelFile = async (file: File): Promise<ExcelProduct[]> => {
         const workbook = XLSX.read(data, { type: 'array' });
         const worksheet = workbook.Sheets[workbook.SheetNames[0]];
         
-        // Convert to JSON with headers from first row
+        // Convert to JSON with headers from first row - auto-detect columns
         const jsonData = XLSX.utils.sheet_to_json<ExcelProduct>(worksheet, {
-          header: ['name', 'description', 'price', 'sku', 'category', 'stock', 'supplier', 'tags'],
+          header: ['name', 'description', 'price', 'sku', 'alternateSkus', 'category', 'stock', 'supplier', 'tags'],
           defval: '',
         });
 
@@ -87,6 +89,7 @@ export const parseExcelFile = async (file: File): Promise<ExcelProduct[]> => {
             description: String(row.description).trim(),
             price: row.price ? parseFloat(row.price) : undefined,
             sku: row.sku ? String(row.sku).trim() : undefined,
+            alternateSkus: row.alternateSkus ? String(row.alternateSkus).trim() : undefined,
             category: row.category ? String(row.category).trim() : undefined,
             stock: row.stock ? parseInt(row.stock) : undefined,
             supplier: row.supplier ? String(row.supplier).trim() : undefined,
@@ -223,8 +226,9 @@ export const validateExcelProducts = async (
 
 /**
  * Check if products already exist in the database
- * PRIMARY: Check by SKU (exact match)
- * SECONDARY: Check by similar names (for data quality warning)
+ * STRICT: Only flag as duplicate if SKU is 100% EXACTLY the same
+ * Allows multiple SKUs per product via alternateSkus
+ * Allows same product name with different SKUs (different brands/versions)
  */
 const checkExistingDuplicates = async (
   products: ExcelProduct[],
@@ -237,40 +241,33 @@ const checkExistingDuplicates = async (
     const productsRef = collection(db, 'tenants', tenantId, 'products');
     const q = query(productsRef, where('active', '==', true));
     const snapshot = await getDocs(q);
-    const existingProducts = snapshot.docs.map(doc => ({
-      sku: doc.data().sku,
-      name: doc.data().name,
-      description: doc.data().description || '',
-    }));
+    const existingProducts = snapshot.docs.map(doc => {
+      const data = doc.data();
+      return {
+        sku: data.sku,
+        alternateSkus: data.alternateSkus ? data.alternateSkus.split(',').map((s: string) => s.trim()) : [],
+        name: data.name,
+        description: data.description || '',
+      };
+    });
 
     // Check each uploaded product against existing ones
     for (const product of products) {
-      // PRIMARY CHECK: Exact SKU match (hard duplicate)
+      // STRICT CHECK: Only exact SKU match (100% same)
       if (product.sku) {
-        const skuMatch = existingProducts.find(e => e.sku === product.sku);
+        const skuMatch = existingProducts.find(
+          e => e.sku === product.sku || e.alternateSkus.includes(product.sku)
+        );
         if (skuMatch) {
           existingDuplicates.push({
-            name: `${product.name} (SKU: ${product.sku}) - Same SKU as ${skuMatch.name}`,
+            name: `${product.name} (SKU: ${product.sku}) - Exact match exists in inventory`,
             similarity: 100,
           });
           continue; // Move to next product
         }
       }
 
-      // SECONDARY CHECK: Similar names (warning, not hard duplicate)
-      // This allows same name with different SKU (e.g., different brands/versions)
-      for (const existing of existingProducts) {
-        const similarity = calculateProductSimilarity(product, existing);
-        
-        // Only flag if >90% similar AND different SKU
-        if (similarity > 0.9 && product.sku !== existing.sku) {
-          existingDuplicates.push({
-            name: `${product.name} similar to ${existing.name} (different SKUs)`,
-            similarity: parseFloat((similarity * 100).toFixed(2)),
-          });
-          break;
-        }
-      }
+      // No secondary name similarity check - allow same names with different SKUs
     }
   } catch (error) {
     console.error('Error checking existing duplicates:', error);
@@ -373,18 +370,40 @@ export const uploadProductsToFirestore = async (
     // Batch upload with Firestore
     const productsRef = collection(db, 'tenants', tenantId, 'products');
 
-    // FIRST PASS: Get all existing SKUs to avoid duplicates
+    // FIRST PASS: Get all existing SKUs and alternate SKUs to avoid duplicates
     const existingSnapshot = await getDocs(productsRef);
-    const existingSkuMap = new Map<string, string>();
+    const existingSkuMap = new Map<string, string>(); // SKU -> docId
+    const existingProducts: any[] = [];
+    
     existingSnapshot.forEach(doc => {
-      const sku = doc.data().sku;
+      const data = doc.data();
+      const sku = data.sku;
       existingSkuMap.set(sku, doc.id);
+      
+      // Also map alternate SKUs
+      if (data.alternateSkus) {
+        const altSkus = typeof data.alternateSkus === 'string' 
+          ? data.alternateSkus.split(',').map((s: string) => s.trim())
+          : data.alternateSkus;
+        altSkus.forEach((altSku: string) => {
+          existingSkuMap.set(altSku, doc.id);
+        });
+      }
+      
+      existingProducts.push({
+        id: doc.id,
+        sku,
+        alternateSkus: data.alternateSkus || [],
+        name: data.name,
+        description: data.description,
+      });
     });
 
-    console.log(`📦 Found ${existingSkuMap.size} existing products in inventory`);
+    console.log(`📦 Found ${existingSkuMap.size} existing SKUs in inventory`);
 
     // SECOND PASS: Create batch with SKU-based deduplication
     const batch = writeBatch(db);
+    const processedSkus = new Set<string>();
 
     for (let i = 0; i < products.length; i++) {
       const product = products[i];
@@ -399,6 +418,14 @@ export const uploadProductsToFirestore = async (
           finalSku = `AUTO-${product.name.substring(0, 3).toUpperCase()}-${Date.now()}-${i}`;
           console.warn(`⚠️ Row ${i + 2}: No SKU provided for "${product.name}", generated: ${finalSku}`);
         }
+
+        // Skip if already processed in this batch
+        if (processedSkus.has(finalSku)) {
+          console.log(`  ⏭️  Skipped: "${product.name}" (SKU: ${finalSku}) - duplicate in batch`);
+          failedCount++;
+          continue;
+        }
+        processedSkus.add(finalSku);
 
         // Extract metadata using AI
         const metadata = await extractProductMetadata(product.description);
@@ -417,6 +444,11 @@ export const uploadProductsToFirestore = async (
           }
         }
 
+        // Parse alternate SKUs from product data
+        const alternateSkusList = product.alternateSkus
+          ? product.alternateSkus.split(',').map(s => s.trim()).filter(s => s && s !== finalSku)
+          : [];
+
         // Prepare product document
         const productDoc: any = {
           name: product.name,
@@ -424,6 +456,7 @@ export const uploadProductsToFirestore = async (
           price: product.price || 0,
           sku: finalSku, // PRIMARY KEY
           skuKey: finalSku.toLowerCase(), // For case-insensitive queries
+          alternateSkus: alternateSkusList.length > 0 ? alternateSkusList.join(',') : '', // Store as comma-separated
           category: product.category || categories.get(product.name) || 'Uncategorized',
           stock: product.stock || 0,
           supplier: product.supplier || 'Unknown',
@@ -441,6 +474,7 @@ export const uploadProductsToFirestore = async (
           const docId = existingSkuMap.get(finalSku);
           if (docId) {
             batch.update(doc(productsRef, docId), productDoc);
+            console.log(`  ✏️  Updated: "${product.name}" (SKU: ${finalSku}) with ${alternateSkusList.length} alternate SKUs`);
             uploadedCount++;
             continue;
           }
@@ -451,6 +485,18 @@ export const uploadProductsToFirestore = async (
           productDoc.imageUrl = imageUrl;
         }
 
+        // Create new product
+        const docRef = doc(productsRef);
+        batch.set(docRef, productDoc);
+        existingSkuMap.set(finalSku, docRef.id);
+        
+        // Also add alternate SKUs to map
+        alternateSkusList.forEach(altSku => {
+          existingSkuMap.set(altSku, docRef.id);
+        });
+        
+        console.log(`  ➕ Created: "${product.name}" (SKU: ${finalSku}) with ${alternateSkusList.length} alternate SKUs`);
+        uploadedCount++;
         // Check if SKU exists in current batch
         if (existingSkuMap.has(finalSku)) {
           // Already processed in this upload

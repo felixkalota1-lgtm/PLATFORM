@@ -120,7 +120,8 @@ function createDirectMapping(columns) {
     productDescription: ['Description', 'description', 'Desc', 'desc', 'Details'],
     price: ['Price', 'price', 'Cost', 'cost'],
     quantity: ['Stock', 'stock', 'Qty', 'qty', 'Quantity'],
-    sku: ['SKU', 'sku', 'Code', 'code'],
+    sku: ['SKU', 'sku', 'Code', 'code', 'PartNumber'],
+    alternateSkus: ['Alternate SKUs', 'Alternate SKU', 'Part Numbers', 'Part Number', 'AlternateSkus', 'alternateSkus', 'Alternate Code'],
     supplier: ['Supplier', 'supplier', 'Vendor'],
     category: ['Category', 'category', 'Type'],
   };
@@ -147,7 +148,8 @@ function createBasicMapping(columns) {
     productDescription: ['description', 'details', 'notes'],
     price: ['price', 'cost', 'amount'],
     quantity: ['quantity', 'stock', 'qty', 'count'],
-    sku: ['sku', 'code', 'part'],
+    sku: ['sku', 'code', 'part', 'partnumber'],
+    alternateSkus: ['alternate', 'alternalte', 'part', 'number'],
     supplier: ['supplier', 'vendor'],
     category: ['category', 'type'],
   };
@@ -266,6 +268,7 @@ function validateProduct(product, columnMapping, index) {
       category: getValueByField('category') || 'Uncategorized',
       price: parseFloat(getValueByField('price')) || 0,
       sku: getValueByField('sku') || '',
+      alternateSkus: getValueByField('alternateSkus') || '',
       stock: parseInt(getValueByField('quantity')) || 0,
       supplier: getValueByField('supplier') || '',
     },
@@ -299,37 +302,35 @@ async function detectDuplicatesInInventory(products, tenantId = TENANT_ID) {
   try {
     const db = admin.firestore();
     const snapshot = await db.collection('tenants').doc(tenantId).collection('products').where('active', '==', true).get();
-    const existing = snapshot.docs.map(d => ({sku: d.data().sku, name: d.data().name, description: d.data().description || ''}));
+    const existing = snapshot.docs.map(d => {
+      const data = d.data();
+      return {
+        sku: data.sku,
+        alternateSkus: data.alternateSkus ? (typeof data.alternateSkus === 'string' ? data.alternateSkus.split(',').map(s => s.trim()) : data.alternateSkus) : [],
+        name: data.name,
+        description: data.description || '',
+      };
+    });
 
     const duplicates = [];
     products.forEach(product => {
       if (!product.sku) return; // Skip auto-generated SKUs from duplicate check
       
-      // PRIMARY: Check for exact SKU match (hard duplicate)
-      const skuMatch = existing.find(e => e.sku === product.sku);
+      // STRICT: Check for exact SKU match only (100% same)
+      const skuMatch = existing.find(
+        e => e.sku === product.sku || e.alternateSkus.includes(product.sku)
+      );
       if (skuMatch) {
         duplicates.push({
           sourceProduct: `${product.name} (SKU: ${product.sku})`,
           matchedProduct: `${skuMatch.name} (SKU: ${skuMatch.sku})`,
           similarity: 100,
-          reason: 'Same SKU already exists',
+          reason: 'Exact SKU match - same product already exists',
         });
         return;
       }
 
-      // SECONDARY: Check for similar names (warning, not hard duplicate)
-      existing.forEach(exist => {
-        const similarity = calculateProductSimilarity(product, exist);
-        // Only warn if >90% similar and different SKUs
-        if (similarity > 0.9 && product.sku !== exist.sku) {
-          duplicates.push({
-            sourceProduct: `${product.name} (SKU: ${product.sku})`,
-            matchedProduct: `${exist.name} (SKU: ${exist.sku})`,
-            similarity: parseFloat((similarity * 100).toFixed(2)),
-            reason: 'Similar name, different SKU',
-          });
-        }
-      });
+      // No longer check for name similarity - allow same names with different SKUs
     });
     return duplicates;
   } catch (error) {
@@ -385,19 +386,41 @@ async function syncProductsToFirestore(products, tenantId = TENANT_ID) {
 
     console.log(`🔄 Syncing ${products.length} products with batch operation...`);
 
-    // First pass: collect all existing SKUs in inventory
+    // First pass: collect all existing SKUs and alternate SKUs
     const existingSnapshot = await productsCollection.get();
-    const existingSkuMap = new Map();
+    const existingSkuMap = new Map(); // SKU -> docId
+    const existingProducts = [];
+    
     existingSnapshot.forEach(doc => {
-      const sku = doc.data().sku;
+      const data = doc.data();
+      const sku = data.sku;
       existingSkuMap.set(sku, doc.id);
+      
+      // Also map alternate SKUs
+      if (data.alternateSkus) {
+        const altSkus = typeof data.alternateSkus === 'string'
+          ? data.alternateSkus.split(',').map(s => s.trim())
+          : data.alternateSkus;
+        altSkus.forEach(altSku => {
+          existingSkuMap.set(altSku, doc.id);
+        });
+      }
+      
+      existingProducts.push({
+        id: doc.id,
+        sku,
+        alternateSkus: data.alternateSkus || [],
+        name: data.name,
+        description: data.description || '',
+      });
     });
 
-    console.log(`📦 Found ${existingSkuMap.size} existing products in inventory`);
+    console.log(`📦 Found ${existingSkuMap.size} existing SKUs in inventory`);
 
     // Second pass: create batch operations
     const batch = db.batch();
     const productsRef = productsCollection;
+    const processedSkus = new Set();
 
     for (let i = 0; i < products.length; i++) {
       const product = products[i];
@@ -410,6 +433,19 @@ async function syncProductsToFirestore(products, tenantId = TENANT_ID) {
           finalSku = `AUTO-${product.name.substring(0, 3).toUpperCase()}-${Date.now()}-${i}`;
         }
 
+        // Skip if already processed in this batch
+        if (processedSkus.has(finalSku)) {
+          console.log(`  ⏭️  Skipped: ${product.name} (SKU: ${finalSku}) - Duplicate in batch`);
+          failed++;
+          continue;
+        }
+        processedSkus.add(finalSku);
+
+        // Parse alternate SKUs from product data
+        const alternateSkusList = product.alternateSkus
+          ? product.alternateSkus.split(',').map(s => s.trim()).filter(s => s && s !== finalSku)
+          : [];
+
         const productData = {
           name: product.name,
           description: product.description,
@@ -418,6 +454,7 @@ async function syncProductsToFirestore(products, tenantId = TENANT_ID) {
           stock: product.stock,
           sku: finalSku,
           skuKey: finalSku.toLowerCase(),
+          alternateSkus: alternateSkusList.length > 0 ? alternateSkusList.join(',') : '',
           supplier: product.supplier,
           active: true,
           lastUpdated: new Date().toISOString(),
@@ -426,22 +463,24 @@ async function syncProductsToFirestore(products, tenantId = TENANT_ID) {
 
         // Check if SKU already exists
         if (existingSkuMap.has(finalSku)) {
-          // UPDATE existing product OR skip duplicate in same batch
+          // UPDATE existing product
           const existingDocId = existingSkuMap.get(finalSku);
           if (existingDocId) {
             batch.update(productsRef.doc(existingDocId), productData);
-            console.log(`  ✏️ Updated: ${product.name} (SKU: ${finalSku})`);
-          } else {
-            // Duplicate detected in same batch, skip it
-            console.log(`  ⚠️ Skipped: ${product.name} (SKU: ${finalSku}) - Duplicate in batch`);
+            console.log(`  ✏️ Updated: ${product.name} (SKU: ${finalSku}) with ${alternateSkusList.length} alternate SKUs`);
           }
         } else {
           // CREATE new product (new SKU)
           const newDocRef = productsRef.doc();
           batch.set(newDocRef, productData);
-          console.log(`  ➕ Created: ${product.name} (SKU: ${finalSku})`);
+          console.log(`  ➕ Created: ${product.name} (SKU: ${finalSku}) with ${alternateSkusList.length} alternate SKUs`);
           // Mark as processed with actual docId
           existingSkuMap.set(finalSku, newDocRef.id);
+          
+          // Also add alternate SKUs to map
+          alternateSkusList.forEach(altSku => {
+            existingSkuMap.set(altSku, newDocRef.id);
+          });
         }
         synced++;
       } catch (error) {
