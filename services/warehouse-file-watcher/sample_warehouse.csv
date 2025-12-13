@@ -1,0 +1,21 @@
+location,sku,quantity,productName,category,bin,aisle
+Warehouse A,SKU001,100,27 Inch Monitor,Electronics,A1,1
+Warehouse A,SKU002,50,Mechanical Keyboard,Electronics,A2,1
+Warehouse A,SKU003,75,Wireless Mouse,Electronics,A3,1
+Warehouse A,SKU004,40,USB Hub,Electronics,A4,1
+Warehouse A,SKU005,200,HDMI Cable,Electronics,A5,2
+Warehouse B,SKU001,120,27 Inch Monitor,Electronics,B1,2
+Warehouse B,SKU006,80,Desk Lamp,Furniture,B2,2
+Warehouse B,SKU007,60,Monitor Stand,Furniture,B3,3
+Warehouse B,SKU008,150,Desk,Furniture,B4,3
+Warehouse B,SKU009,45,Office Chair,Furniture,B5,4
+Warehouse C,SKU010,200,Printer Paper (500ct),Supplies,C1,4
+Warehouse C,SKU011,300,Sticky Notes (100ct),Supplies,C2,4
+Warehouse C,SKU012,150,Ballpoint Pens (10ct),Supplies,C3,5
+Warehouse C,SKU013,90,Folders (25ct),Supplies,C4,5
+Warehouse C,SKU014,110,Clipboards,Supplies,C5,5
+Warehouse D,SKU001,95,27 Inch Monitor,Electronics,D1,1
+Warehouse D,SKU015,78,External Hard Drive,Electronics,D2,1
+Warehouse D,SKU016,42,Webcam,Electronics,D3,1
+Warehouse D,SKU017,200,Screen Protector,Accessories,D4,2
+Warehouse D,SKU018,350,Phone Case,Accessories,D5,2
