@@ -1,0 +1,378 @@
+/**
+ * Warehouse 3D Visualization Styles
+ */
+
+.warehouse-3d-container {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 20px;
+  background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+  border-radius: 12px;
+  min-height: 600px;
+}
+
+/* Controls */
+.warehouse-controls {
+  display: flex;
+  gap: 20px;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 15px;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+.view-mode-controls,
+.zoom-controls,
+.filter-controls {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.view-btn {
+  padding: 8px 16px;
+  border: 2px solid #ddd;
+  background: white;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-weight: 500;
+}
+
+.view-btn:hover {
+  border-color: #2196f3;
+  color: #2196f3;
+}
+
+.view-btn.active {
+  background: #2196f3;
+  color: white;
+  border-color: #2196f3;
+}
+
+.zoom-controls button {
+  padding: 6px 12px;
+  border: 1px solid #ddd;
+  background: white;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: bold;
+  transition: all 0.2s ease;
+}
+
+.zoom-controls button:hover {
+  background: #f0f0f0;
+  border-color: #999;
+}
+
+.zoom-controls span {
+  min-width: 60px;
+  text-align: center;
+  font-weight: 500;
+}
+
+.bin-filter {
+  padding: 8px 12px;
+  border: 2px solid #ddd;
+  border-radius: 6px;
+  font-size: 14px;
+  transition: all 0.2s ease;
+}
+
+.bin-filter:focus {
+  outline: none;
+  border-color: #2196f3;
+  box-shadow: 0 0 4px rgba(33, 150, 243, 0.2);
+}
+
+/* Legend */
+.warehouse-legend {
+  display: flex;
+  gap: 20px;
+  padding: 12px;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  flex-wrap: wrap;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.legend-color {
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  border: 1px solid #ddd;
+}
+
+/* View Container */
+.warehouse-view-container {
+  flex: 1;
+  overflow: auto;
+  background: white;
+  border-radius: 8px;
+  padding: 20px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.1);
+  transform-origin: top left;
+  transition: transform 0.3s ease;
+}
+
+.warehouse-view {
+  min-width: 100%;
+  min-height: 100%;
+}
+
+/* Top View */
+.top-view .warehouse-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 10px;
+  padding: 10px;
+}
+
+.bin-column {
+  border: 2px solid #ddd;
+  border-radius: 8px;
+  padding: 10px;
+  background: #f9f9f9;
+}
+
+.bin-label {
+  font-weight: bold;
+  text-align: center;
+  padding: 8px 0;
+  background: #2196f3;
+  color: white;
+  border-radius: 4px;
+  margin-bottom: 8px;
+  font-size: 12px;
+}
+
+.aisle-row {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.bin-cell {
+  flex: 1;
+  min-height: 50px;
+  border: 1px solid #999;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  transition: all 0.2s ease;
+  overflow: hidden;
+}
+
+.bin-cell:hover {
+  transform: scale(1.05);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  border-color: #000;
+}
+
+.bin-cell.selected {
+  border: 3px solid #ff6b6b;
+  box-shadow: 0 0 12px rgba(255, 107, 107, 0.5);
+}
+
+.bin-info {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: bold;
+  color: #333;
+  text-shadow: 0 1px 2px rgba(255,255,255,0.5);
+}
+
+.shelf-num {
+  background: rgba(255,255,255,0.7);
+  padding: 2px 4px;
+  border-radius: 2px;
+}
+
+.qty-badge {
+  background: rgba(0,0,0,0.3);
+  color: white;
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+
+/* Front & Side Views */
+.front-view,
+.side-view {
+  overflow: auto;
+  padding: 20px;
+}
+
+.warehouse-3d {
+  display: flex;
+  gap: 15px;
+  padding: 10px;
+}
+
+.aisle-group,
+.bin-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.aisle-label,
+.bin-label {
+  font-weight: bold;
+  text-align: center;
+  padding: 8px;
+  background: #2196f3;
+  color: white;
+  border-radius: 4px;
+  font-size: 12px;
+  min-width: 80px;
+}
+
+.shelves-stack {
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 4px;
+}
+
+.shelf-row {
+  display: flex;
+  gap: 4px;
+  align-items: flex-end;
+}
+
+.bin-3d {
+  min-width: 40px;
+  border: 1px solid #999;
+  border-radius: 2px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 2px;
+  overflow: hidden;
+}
+
+.bin-3d:hover {
+  box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+  transform: scaleY(1.1);
+}
+
+.bin-3d.selected {
+  border: 2px solid #ff6b6b;
+  box-shadow: 0 0 12px rgba(255, 107, 107, 0.5);
+}
+
+.bin-label-mini,
+.aisle-label-mini {
+  font-size: 9px;
+  font-weight: bold;
+  color: #333;
+  text-shadow: 0 1px 2px rgba(255,255,255,0.5);
+}
+
+/* Location Details */
+.location-details {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  background: white;
+  border: 2px solid #2196f3;
+  border-radius: 8px;
+  padding: 15px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+  max-width: 300px;
+  z-index: 1000;
+  animation: slideIn 0.3s ease;
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateX(350px) translateY(50px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0) translateY(0);
+    opacity: 1;
+  }
+}
+
+.location-details h4 {
+  margin: 0 0 12px 0;
+  color: #2196f3;
+  border-bottom: 2px solid #2196f3;
+  padding-bottom: 8px;
+  font-size: 14px;
+}
+
+.location-details p {
+  margin: 6px 0;
+  font-size: 13px;
+  color: #333;
+}
+
+.location-details strong {
+  color: #2196f3;
+  font-weight: 600;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .warehouse-3d-container {
+    padding: 10px;
+    gap: 10px;
+  }
+
+  .warehouse-controls {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .view-mode-controls,
+  .zoom-controls,
+  .filter-controls {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .bin-filter {
+    width: 100%;
+  }
+
+  .warehouse-view-container {
+    min-height: 400px;
+    padding: 10px;
+  }
+
+  .location-details {
+    position: static;
+    width: 100%;
+    max-width: none;
+    margin-top: 10px;
+  }
+
+  .warehouse-3d {
+    flex-wrap: wrap;
+  }
+
+  .top-view .warehouse-grid {
+    grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
+  }
+}

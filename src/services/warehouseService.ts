@@ -1,8 +1,13 @@
 /**
- * Warehouse Service - Client-side API for Firestore operations
+ * Enhanced Warehouse Service - Multi-location inventory management
  * 
- * Used by the app to read/write warehouse inventory data
- * Works in tandem with warehouse-file-watcher for bidirectional sync
+ * Features:
+ * - Central warehouse stock management
+ * - Multi-branch inventory tracking
+ * - Stock movement between locations
+ * - Foul water (waste) tracking
+ * - Real-time Firestore subscriptions
+ * - Bidirectional sync with file watcher
  */
 
 import { db } from '../firebase.config';
@@ -17,11 +22,18 @@ import {
   deleteDoc,
   doc,
   onSnapshot,
+  serverTimestamp,
+  addDoc,
   Timestamp,
-  writeBatch
+  writeBatch,
+  QueryConstraint
 } from 'firebase/firestore';
 
 const WAREHOUSE_COLLECTION = 'warehouse_inventory';
+const BRANCH_COLLECTION = 'branch_inventory';
+const MOVEMENTS_COLLECTION = 'stock_movements';
+const BRANCHES_COLLECTION = 'warehouses';
+const FOUL_WATER_COLLECTION = 'foul_water_history';
 
 /**
  * Get all warehouse inventory
@@ -321,6 +333,336 @@ export function subscribeToLocation(location, callback) {
   }
 }
 
+// ============= BRANCH OPERATIONS =============
+
+/**
+ * Get all branches
+ */
+export async function getAllBranches() {
+  try {
+    const q = query(collection(db, BRANCHES_COLLECTION));
+    const snapshot = await getDocs(q);
+    
+    return snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
+  } catch (error) {
+    console.error('Error getting branches:', error);
+    throw error;
+  }
+}
+
+/**
+ * Get branch inventory
+ */
+export async function getBranchInventory(branchId: string) {
+  try {
+    const q = query(
+      collection(db, BRANCH_COLLECTION),
+      where('branchId', '==', branchId)
+    );
+    const snapshot = await getDocs(q);
+    
+    return snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
+  } catch (error) {
+    console.error('Error getting branch inventory:', error);
+    throw error;
+  }
+}
+
+/**
+ * Subscribe to real-time branch inventory
+ */
+export function subscribeToBranchInventory(
+  branchId: string,
+  callback: (items: any[]) => void
+) {
+  try {
+    return onSnapshot(
+      query(
+        collection(db, BRANCH_COLLECTION),
+        where('branchId', '==', branchId)
+      ),
+      (snapshot) => {
+        const items = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        callback(items);
+      }
+    );
+  } catch (error) {
+    console.error('Error subscribing to branch inventory:', error);
+    throw error;
+  }
+}
+
+/**
+ * Get branch statistics
+ */
+export async function getBranchStats(branchId: string) {
+  try {
+    const items = await getBranchInventory(branchId);
+    
+    let totalQuantity = 0;
+    let totalValue = 0;
+    let totalSold = 0;
+    let totalWaste = 0;
+    
+    items.forEach(item => {
+      totalQuantity += item.quantity || 0;
+      totalValue += ((item.quantity || 0) * (item.unitCost || 0));
+      totalSold += item.soldCount || 0;
+      totalWaste += item.foulWater?.totalWaste || 0;
+    });
+    
+    return {
+      branchId,
+      totalItems: items.length,
+      totalQuantity,
+      totalValue: parseFloat(totalValue.toFixed(2)),
+      totalSold,
+      totalWaste
+    };
+  } catch (error) {
+    console.error('Error getting branch stats:', error);
+    throw error;
+  }
+}
+
+// ============= STOCK MOVEMENT OPERATIONS =============
+
+/**
+ * Move stock from warehouse to branch
+ */
+export async function moveStockToBranch(
+  warehouseId: string,
+  branchId: string,
+  sku: string,
+  quantity: number
+) {
+  try {
+    const movementData = {
+      type: 'warehouse_to_branch',
+      sourceLocation: {
+        type: 'warehouse',
+        id: warehouseId
+      },
+      destinationLocation: {
+        type: 'branch',
+        id: branchId
+      },
+      sku,
+      quantity,
+      status: 'pending',
+      createdAt: serverTimestamp(),
+      estimatedDelivery: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000)
+    };
+    
+    const docRef = await addDoc(collection(db, MOVEMENTS_COLLECTION), movementData);
+    
+    return {
+      movementId: docRef.id,
+      ...movementData
+    };
+  } catch (error) {
+    console.error('Error moving stock to branch:', error);
+    throw error;
+  }
+}
+
+/**
+ * Record sale from branch
+ */
+export async function recordBranchSale(
+  branchId: string,
+  sku: string,
+  quantity: number
+) {
+  try {
+    const movementData = {
+      type: 'sale',
+      sourceLocation: {
+        type: 'branch',
+        id: branchId
+      },
+      sku,
+      quantity,
+      status: 'completed',
+      createdAt: serverTimestamp()
+    };
+    
+    const docRef = await addDoc(collection(db, MOVEMENTS_COLLECTION), movementData);
+    
+    return {
+      movementId: docRef.id,
+      ...movementData
+    };
+  } catch (error) {
+    console.error('Error recording branch sale:', error);
+    throw error;
+  }
+}
+
+/**
+ * Get stock movement history
+ */
+export async function getStockMovementHistory(filters: any = {}) {
+  try {
+    const constraints: QueryConstraint[] = [];
+    
+    if (filters.sku) {
+      constraints.push(where('sku', '==', filters.sku));
+    }
+    
+    if (filters.status) {
+      constraints.push(where('status', '==', filters.status));
+    }
+    
+    let q = constraints.length > 0
+      ? query(collection(db, MOVEMENTS_COLLECTION), ...constraints)
+      : query(collection(db, MOVEMENTS_COLLECTION));
+    
+    const snapshot = await getDocs(q);
+    const movements = snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
+    
+    // Filter by location if specified
+    if (filters.sourceId) {
+      return movements.filter(m => m.sourceLocation?.id === filters.sourceId);
+    }
+    if (filters.destinationId) {
+      return movements.filter(m => m.destinationLocation?.id === filters.destinationId);
+    }
+    
+    return movements;
+  } catch (error) {
+    console.error('Error getting movement history:', error);
+    throw error;
+  }
+}
+
+// ============= FOUL WATER OPERATIONS =============
+
+/**
+ * Record foul water item
+ */
+export async function recordFoulWater(
+  location: 'warehouse' | 'branch',
+  locationId: string,
+  sku: string,
+  type: 'defective' | 'expired' | 'damaged' | 'returned',
+  quantity: number,
+  notes: string = ''
+) {
+  try {
+    const foulWaterData = {
+      location,
+      locationId,
+      sku,
+      type,
+      quantity,
+      notes,
+      timestamp: serverTimestamp()
+    };
+    
+    const docRef = await addDoc(collection(db, FOUL_WATER_COLLECTION), foulWaterData);
+    
+    return {
+      id: docRef.id,
+      ...foulWaterData
+    };
+  } catch (error) {
+    console.error('Error recording foul water:', error);
+    throw error;
+  }
+}
+
+/**
+ * Get foul water report
+ */
+export async function getFoulWaterReport(location?: 'warehouse' | 'branch') {
+  try {
+    let q = location
+      ? query(collection(db, FOUL_WATER_COLLECTION), where('location', '==', location))
+      : query(collection(db, FOUL_WATER_COLLECTION));
+    
+    const snapshot = await getDocs(q);
+    const history = snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
+    
+    let summary = {
+      defective: 0,
+      expired: 0,
+      damaged: 0,
+      returned: 0,
+      total: 0
+    };
+    
+    history.forEach(item => {
+      summary[item.type] = (summary[item.type] || 0) + (item.quantity || 0);
+      summary.total += item.quantity || 0;
+    });
+    
+    return {
+      summary,
+      history
+    };
+  } catch (error) {
+    console.error('Error getting foul water report:', error);
+    throw error;
+  }
+}
+
+/**
+ * Get enhanced warehouse statistics
+ */
+export async function getEnhancedWarehouseStats(warehouseId: string = 'warehouse_main_nebraska') {
+  try {
+    const items = await getAllWarehouseInventory();
+    const filtered = items.filter(i => !warehouseId || i.warehouseId === warehouseId);
+    
+    let totalQuantity = 0;
+    let totalValue = 0;
+    let totalReserved = 0;
+    let totalWaste = 0;
+    let occupiedLocations = 0;
+    
+    filtered.forEach(item => {
+      totalQuantity += item.quantity || 0;
+      totalValue += ((item.quantity || 0) * (item.unitCost || 0));
+      totalReserved += item.reservedQuantity || 0;
+      totalWaste += item.foulWater?.totalWaste || 0;
+      if ((item.quantity || 0) > 0) occupiedLocations++;
+    });
+    
+    return {
+      warehouseId,
+      totalItems: filtered.length,
+      totalQuantity,
+      totalValue: parseFloat(totalValue.toFixed(2)),
+      totalReserved,
+      availableQuantity: totalQuantity - totalReserved,
+      totalWaste,
+      occupiedLocations,
+      utilizationPercentage: filtered.length > 0 
+        ? ((occupiedLocations / filtered.length) * 100).toFixed(2)
+        : 0
+    };
+  } catch (error) {
+    console.error('Error getting warehouse stats:', error);
+    throw error;
+  }
+}
+
 export default {
   getAllWarehouseInventory,
   getLocationInventory,
@@ -333,5 +675,15 @@ export default {
   searchWarehouse,
   getWarehouseStatistics,
   subscribeToWarehouse,
-  subscribeToLocation
+  subscribeToLocation,
+  getAllBranches,
+  getBranchInventory,
+  subscribeToBranchInventory,
+  getBranchStats,
+  moveStockToBranch,
+  recordBranchSale,
+  getStockMovementHistory,
+  recordFoulWater,
+  getFoulWaterReport,
+  getEnhancedWarehouseStats
 };
