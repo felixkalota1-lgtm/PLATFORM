@@ -76,7 +76,9 @@ function shouldSkipFile(filePath) {
     const lastProcessedTime = processedFileHashes.get(hash);
     const timeSinceLastProcess = Date.now() - lastProcessedTime;
     
-    if (timeSinceLastProcess < 10000) {
+    // Only skip if processed within last 5 seconds AND file didn't change
+    // If more than 5 seconds have passed, reprocess even with same hash
+    if (timeSinceLastProcess < 5000) {
       console.log(`⏭️ Skipping duplicate file: ${fileName}`);
       return true;
     }
@@ -389,12 +391,18 @@ async function syncProductsToFirestore(products, tenantId = TENANT_ID) {
     // First pass: collect all existing SKUs and alternate SKUs
     const existingSnapshot = await productsCollection.get();
     const existingSkuMap = new Map(); // SKU -> docId
+    const existingNameMap = new Map(); // Name -> SKU (for products with empty SKUs)
     const existingProducts = [];
     
     existingSnapshot.forEach(doc => {
       const data = doc.data();
       const sku = data.sku;
       existingSkuMap.set(sku, doc.id);
+      
+      // Map product names to their SKUs (so empty SKU products can reuse them)
+      if (data.name && !existingNameMap.has(data.name)) {
+        existingNameMap.set(data.name, sku);
+      }
       
       // Also map alternate SKUs
       if (data.alternateSkus) {
@@ -429,8 +437,15 @@ async function syncProductsToFirestore(products, tenantId = TENANT_ID) {
         let finalSku = product.sku ? String(product.sku).trim() : null;
         
         if (!finalSku) {
-          // Auto-generate SKU if not provided
-          finalSku = `AUTO-${product.name.substring(0, 3).toUpperCase()}-${Date.now()}-${i}`;
+          // If no SKU: check if product with same name already exists
+          if (existingNameMap.has(product.name)) {
+            // Reuse the existing product's SKU
+            finalSku = existingNameMap.get(product.name);
+            console.log(`  ℹ️  Using existing SKU for "${product.name}": ${finalSku}`);
+          } else {
+            // Auto-generate SKU if not provided and product is new
+            finalSku = `AUTO-${product.name.substring(0, 3).toUpperCase()}-${Date.now()}-${i}`;
+          }
         }
 
         // Skip if already processed in this batch

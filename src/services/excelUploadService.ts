@@ -175,9 +175,13 @@ export const validateExcelProducts = async (
     validProducts.push(product);
   });
 
-  // Detect duplicates within uploaded file
+  // Detect duplicates within uploaded file (ONLY if products have same SKU)
   const duplicateData = await detectDuplicateProductsWithAI(
-    validProducts.map(p => ({ name: p.name, description: p.description }))
+    validProducts.map(p => ({ 
+      name: p.name, 
+      description: p.description,
+      sku: p.sku // Pass SKU so we can skip duplicate detection if SKUs differ
+    }))
   );
 
   const duplicates = duplicateData.map(d => ({
@@ -373,12 +377,18 @@ export const uploadProductsToFirestore = async (
     // FIRST PASS: Get all existing SKUs and alternate SKUs to avoid duplicates
     const existingSnapshot = await getDocs(productsRef);
     const existingSkuMap = new Map<string, string>(); // SKU -> docId
+    const existingNameMap = new Map<string, string>(); // Name -> SKU (for products with empty SKUs)
     const existingProducts: any[] = [];
     
     existingSnapshot.forEach(doc => {
       const data = doc.data();
       const sku = data.sku;
       existingSkuMap.set(sku, doc.id);
+      
+      // Map product names to their SKUs (so empty SKU products can reuse them)
+      if (data.name && !existingNameMap.has(data.name)) {
+        existingNameMap.set(data.name, sku);
+      }
       
       // Also map alternate SKUs
       if (data.alternateSkus) {
@@ -414,9 +424,16 @@ export const uploadProductsToFirestore = async (
         let finalSku = product.sku ? String(product.sku).trim() : null;
         
         if (!finalSku) {
-          // Auto-generate SKU if not provided
-          finalSku = `AUTO-${product.name.substring(0, 3).toUpperCase()}-${Date.now()}-${i}`;
-          console.warn(`⚠️ Row ${i + 2}: No SKU provided for "${product.name}", generated: ${finalSku}`);
+          // If no SKU: check if product with same name already exists
+          if (existingNameMap.has(product.name)) {
+            // Reuse the existing product's SKU
+            finalSku = existingNameMap.get(product.name)!;
+            console.log(`  ℹ️  Using existing SKU for "${product.name}": ${finalSku}`);
+          } else {
+            // Auto-generate SKU if not provided and product is new
+            finalSku = `AUTO-${product.name.substring(0, 3).toUpperCase()}-${Date.now()}-${i}`;
+            console.warn(`⚠️ Row ${i + 2}: No SKU provided for "${product.name}", generated: ${finalSku}`);
+          }
         }
 
         // Skip if already processed in this batch

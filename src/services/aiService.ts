@@ -195,12 +195,17 @@ export const categorizeProductsWithAI = async (
  * Uses enhanced text similarity with multiple algorithms
  */
 export const detectDuplicateProductsWithAI = async (
-  products: Array<{ name: string; description: string }>
+  products: Array<{ name: string; description: string; sku?: string }>
 ): Promise<Array<{ product1: string; product2: string; similarity: number }>> => {
   const duplicates: Array<{ product1: string; product2: string; similarity: number }> = [];
 
   for (let i = 0; i < products.length; i++) {
     for (let j = i + 1; j < products.length; j++) {
+      // IMPORTANT: If both products have SKUs and they're different, NOT a duplicate
+      if (products[i].sku && products[j].sku && products[i].sku !== products[j].sku) {
+        continue; // Different SKUs = different products (even if name is similar)
+      }
+
       // Check name similarity (exact match or very similar)
       const nameSimilarity = calculateTextSimilarity(
         products[i].name,
@@ -217,8 +222,8 @@ export const detectDuplicateProductsWithAI = async (
       const combinedScore = (nameSimilarity * 0.6) + (descriptionSimilarity * 0.4);
 
       // Flag as potential duplicate if combined score > 65%
-      // Lowered from 70% to catch more potential duplicates
-      if (combinedScore > 0.65) {
+      // Only flag if BOTH name AND description are very similar (not just name)
+      if (combinedScore > 0.65 && nameSimilarity > 0.85) {
         duplicates.push({
           product1: products[i].name,
           product2: products[j].name,
