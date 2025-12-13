@@ -1,6 +1,7 @@
 import { useState, ReactNode } from 'react'
 import Sidebar from './Sidebar'
 import Navbar from './Navbar'
+import ManagerAIAssistant from './ManagerAIAssistant'
 
 interface LayoutProps {
   children: ReactNode
@@ -18,6 +19,7 @@ export default function Layout({ children }: LayoutProps) {
           {children}
         </main>
       </div>
+      <ManagerAIAssistant visible={true} />
     </div>
   )
 }
