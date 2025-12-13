@@ -51,6 +51,7 @@ export const ProductUploadModal: React.FC<ProductUploadModalProps> = ({
   const [duplicateDetection, setDuplicateDetection] = useState<DuplicateDetectionResult | null>(null);
   const [showDuplicateModal, setShowDuplicateModal] = useState(false);
   const [parsedProducts, setParsedProducts] = useState<any[]>([]);
+  const [showValidationDetails, setShowValidationDetails] = useState(false);
 
   const onDrop = useCallback(
     async (acceptedFiles: File[]) => {
@@ -122,7 +123,8 @@ export const ProductUploadModal: React.FC<ProductUploadModalProps> = ({
 
       if (validation.errors.length > 0) {
         setStep('idle');
-        setStatusMessage('❌ Validation failed. Please review your products.');
+        setShowValidationDetails(true);
+        setStatusMessage(`❌ Validation failed - ${validation.errors.length} error(s) found. Review details below.`);
         return;
       }
 
@@ -214,6 +216,72 @@ export const ProductUploadModal: React.FC<ProductUploadModalProps> = ({
           {statusMessage && (
             <div className="p-4 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded-lg text-blue-900 dark:text-blue-100">
               {statusMessage}
+            </div>
+          )}
+
+          {/* Detailed Validation Errors */}
+          {showValidationDetails && validation && (
+            <div className="space-y-4">
+              {validation.errors.length > 0 && (
+                <div className="bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded-lg p-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <AlertCircle className="text-red-600 dark:text-red-400" size={20} />
+                    <h4 className="font-semibold text-red-900 dark:text-red-100">
+                      🚫 Errors ({validation.errors.length})
+                    </h4>
+                  </div>
+                  <div className="space-y-2 text-sm text-red-700 dark:text-red-300 max-h-48 overflow-y-auto">
+                    {validation.errors.map((error, idx) => (
+                      <div key={idx} className="flex gap-2">
+                        <span className="text-red-500 flex-shrink-0">✗</span>
+                        <span>{error}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-xs text-red-600 dark:text-red-400 mt-3">
+                    💡 <strong>Tip:</strong> Fix these issues in your Excel file and try uploading again.
+                  </p>
+                </div>
+              )}
+
+              {validation.warnings.length > 0 && (
+                <div className="bg-yellow-50 dark:bg-yellow-900/30 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4">
+                  <h4 className="font-semibold text-yellow-900 dark:text-yellow-100 mb-3">
+                    ⚠️ Warnings ({validation.warnings.length})
+                  </h4>
+                  <div className="space-y-2 text-sm text-yellow-700 dark:text-yellow-300 max-h-32 overflow-y-auto">
+                    {validation.warnings.map((warning, idx) => (
+                      <div key={idx} className="flex gap-2">
+                        <span className="text-yellow-600 flex-shrink-0">⚡</span>
+                        <span>{warning}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {validation.suggestions.length > 0 && (
+                <div className="bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+                  <h4 className="font-semibold text-blue-900 dark:text-blue-100 mb-3">
+                    💡 Suggestions ({validation.suggestions.length})
+                  </h4>
+                  <div className="space-y-2 text-sm text-blue-700 dark:text-blue-300 max-h-32 overflow-y-auto">
+                    {validation.suggestions.map((suggestion, idx) => (
+                      <div key={idx} className="flex gap-2">
+                        <span className="text-blue-600 flex-shrink-0">💬</span>
+                        <span>{suggestion}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <button
+                onClick={() => setShowValidationDetails(false)}
+                className="w-full px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition"
+              >
+                Close Details
+              </button>
             </div>
           )}
 

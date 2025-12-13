@@ -122,11 +122,16 @@ export default function ManualProductModal({
         imageUrl = await getDownloadURL(imageRef);
       }
 
-      // Add product to Firestore
-      const productsRef = collection(db, 'products');
+      // Add product to Firestore - using correct nested collection path
+      const productsRef = collection(db, 'tenants', tenantId, 'products');
+      console.log('Adding product with tenantId:', tenantId, 'and data:', {
+        name: formData.name.trim(),
+        description: formData.description.trim(),
+        category: formData.category.trim(),
+      });
+      
       const q = query(
         productsRef,
-        where('tenantId', '==', tenantId),
         where('name', '==', formData.name.trim())
       );
       const existingDocs = await getDocs(q);
@@ -138,19 +143,21 @@ export default function ManualProductModal({
       }
 
       await addDoc(productsRef, {
-        tenantId,
         name: formData.name.trim(),
         description: formData.description.trim(),
         category: formData.category.trim(),
-        price: formData.price || null,
-        sku: formData.sku || null,
-        quantity: formData.quantity || 0,
+        price: formData.price || 0,
+        sku: formData.sku || '',
+        stock: formData.quantity || 0,
         supplier: formData.supplier || null,
         imageUrl: imageUrl || null,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
+        active: true, // Required for ProductsList filter
         type: 'manual', // Mark as manually added
       });
+
+      console.log('✅ Product added successfully');
 
       setSuccessMessage('✅ Product added successfully!');
       
@@ -167,7 +174,9 @@ export default function ManualProductModal({
       }, 1500);
     } catch (err) {
       console.error('Error adding product:', err);
-      setError(err instanceof Error ? err.message : 'Failed to add product');
+      const errorMessage = err instanceof Error ? err.message : JSON.stringify(err);
+      console.error('Detailed error:', { err, tenantId, formData });
+      setError(errorMessage || 'Failed to add product');
     } finally {
       setIsLoading(false);
     }
