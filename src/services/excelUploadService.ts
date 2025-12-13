@@ -223,7 +223,8 @@ export const validateExcelProducts = async (
 
 /**
  * Check if products already exist in the database
- * Uses similarity matching to detect duplicates
+ * PRIMARY: Check by SKU (exact match)
+ * SECONDARY: Check by similar names (for data quality warning)
  */
 const checkExistingDuplicates = async (
   products: ExcelProduct[],
@@ -237,23 +238,37 @@ const checkExistingDuplicates = async (
     const q = query(productsRef, where('active', '==', true));
     const snapshot = await getDocs(q);
     const existingProducts = snapshot.docs.map(doc => ({
+      sku: doc.data().sku,
       name: doc.data().name,
       description: doc.data().description || '',
     }));
 
     // Check each uploaded product against existing ones
     for (const product of products) {
+      // PRIMARY CHECK: Exact SKU match (hard duplicate)
+      if (product.sku) {
+        const skuMatch = existingProducts.find(e => e.sku === product.sku);
+        if (skuMatch) {
+          existingDuplicates.push({
+            name: `${product.name} (SKU: ${product.sku}) - Same SKU as ${skuMatch.name}`,
+            similarity: 100,
+          });
+          continue; // Move to next product
+        }
+      }
+
+      // SECONDARY CHECK: Similar names (warning, not hard duplicate)
+      // This allows same name with different SKU (e.g., different brands/versions)
       for (const existing of existingProducts) {
-        // Calculate similarity
         const similarity = calculateProductSimilarity(product, existing);
         
-        // Flag if very similar (>80% match)
-        if (similarity > 0.8) {
+        // Only flag if >90% similar AND different SKU
+        if (similarity > 0.9 && product.sku !== existing.sku) {
           existingDuplicates.push({
-            name: product.name,
+            name: `${product.name} similar to ${existing.name} (different SKUs)`,
             similarity: parseFloat((similarity * 100).toFixed(2)),
           });
-          break; // Found a match, move to next product
+          break;
         }
       }
     }
@@ -356,14 +371,35 @@ export const uploadProductsToFirestore = async (
     }
 
     // Batch upload with Firestore
-    const batch = writeBatch(db);
     const productsRef = collection(db, 'tenants', tenantId, 'products');
+
+    // FIRST PASS: Get all existing SKUs to avoid duplicates
+    const existingSnapshot = await getDocs(productsRef);
+    const existingSkuMap = new Map<string, string>();
+    existingSnapshot.forEach(doc => {
+      const sku = doc.data().sku;
+      existingSkuMap.set(sku, doc.id);
+    });
+
+    console.log(`📦 Found ${existingSkuMap.size} existing products in inventory`);
+
+    // SECOND PASS: Create batch with SKU-based deduplication
+    const batch = writeBatch(db);
 
     for (let i = 0; i < products.length; i++) {
       const product = products[i];
       onProgress?.(i + 1, products.length);
 
       try {
+        // IMPORTANT: SKU must be provided or generated
+        let finalSku = product.sku ? String(product.sku).trim() : null;
+        
+        if (!finalSku) {
+          // Auto-generate SKU if not provided
+          finalSku = `AUTO-${product.name.substring(0, 3).toUpperCase()}-${Date.now()}-${i}`;
+          console.warn(`⚠️ Row ${i + 2}: No SKU provided for "${product.name}", generated: ${finalSku}`);
+        }
+
         // Extract metadata using AI
         const metadata = await extractProductMetadata(product.description);
 
@@ -375,8 +411,6 @@ export const uploadProductsToFirestore = async (
               product.description,
               product.category || categories.get(product.name)
             );
-            // In production, upload blob to Cloud Storage and get URL
-            // For now, create a blob URL (temporary)
             imageUrl = URL.createObjectURL(imageBlob);
           } catch (imageError) {
             console.warn(`Failed to generate image for "${product.name}":`, imageError);
@@ -388,28 +422,45 @@ export const uploadProductsToFirestore = async (
           name: product.name,
           description: product.description,
           price: product.price || 0,
-          sku: product.sku || `SKU-${Date.now()}-${i}`,
+          sku: finalSku, // PRIMARY KEY
+          skuKey: finalSku.toLowerCase(), // For case-insensitive queries
           category: product.category || categories.get(product.name) || 'Uncategorized',
           stock: product.stock || 0,
           supplier: product.supplier || 'Unknown',
           tags: product.tags ? product.tags.split(',').map((t: string) => t.trim()) : [],
           metadata,
-          createdAt: new Date(),
+          createdAt: existingSkuMap.has(finalSku) ? undefined : new Date(),
           updatedAt: new Date(),
           tenantId,
           active: true,
-          source: 'inventory', // Mark as inventory product (not marketplace)
+          source: 'inventory',
         };
+
+        // Remove createdAt if updating
+        if (existingSkuMap.has(finalSku)) {
+          const docId = existingSkuMap.get(finalSku);
+          if (docId) {
+            batch.update(doc(productsRef, docId), productDoc);
+            uploadedCount++;
+            continue;
+          }
+        }
 
         // Only add imageUrl if it exists
         if (imageUrl) {
           productDoc.imageUrl = imageUrl;
         }
 
-        // Add to batch
+        // Check if SKU exists in current batch
+        if (existingSkuMap.has(finalSku)) {
+          // Already processed in this upload
+          continue;
+        }
+
+        // Add to batch as new product
         const docRef = doc(productsRef);
         batch.set(docRef, productDoc);
-
+        existingSkuMap.set(finalSku, docRef.id); // Track for duplicates in same batch
         uploadedCount++;
       } catch (error) {
         failedCount++;
