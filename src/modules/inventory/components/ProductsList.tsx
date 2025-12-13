@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react'
-import { collection, query, where, onSnapshot, addDoc } from 'firebase/firestore'
+import { collection, query, where, onSnapshot, addDoc, setDoc, deleteDoc, doc } from 'firebase/firestore'
 import { db } from '../../../services/firebase'
 import { useAuth } from '../../../hooks/useAuth'
 import { Eye, Edit2, Trash2, Package, FileText, Grid3x3, List, X, ShoppingCart } from 'lucide-react'
 import CreateSaleQuoteModal from '../../sales/components/CreateSaleQuoteModal'
+import ProductEditorModal from '../../../components/ProductEditorModal'
 
 interface Product {
   id: string
@@ -31,6 +32,10 @@ export const ProductsList = () => {
   const [showQuotationBuilder, setShowQuotationBuilder] = useState(false)
   const [showSaleQuoteModal, setShowSaleQuoteModal] = useState(false)
   const [selectedProductForQuote, setSelectedProductForQuote] = useState<Product | null>(null)
+  const [editingProduct, setEditingProduct] = useState<Product | null>(null)
+  const [showEditor, setShowEditor] = useState(false)
+  const [savingProduct, setSavingProduct] = useState(false)
+  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
 
   useEffect(() => {
     if (!user || !user.tenantId) {
@@ -78,6 +83,49 @@ export const ProductsList = () => {
       delete updated[productId]
       return updated
     })
+  }
+
+  const handleEditProduct = (product: Product) => {
+    setEditingProduct(product)
+    setShowEditor(true)
+    setSelectedProduct(null)
+  }
+
+  const handleSaveProduct = async (updatedProduct: any) => {
+    if (!user?.tenantId || !editingProduct) return
+    
+    setSavingProduct(true)
+    try {
+      const productRef = doc(db, 'tenants', user.tenantId, 'products', editingProduct.id)
+      await setDoc(productRef, {
+        ...updatedProduct,
+        updatedAt: new Date(),
+        active: true,
+      }, { merge: true })
+      
+      console.log('✅ Product updated:', editingProduct.id)
+      setShowEditor(false)
+      setEditingProduct(null)
+    } catch (error) {
+      console.error('Error updating product:', error)
+      throw error
+    } finally {
+      setSavingProduct(false)
+    }
+  }
+
+  const handleDeleteProduct = async (productId: string) => {
+    if (!user?.tenantId) return
+    
+    try {
+      const productRef = doc(db, 'tenants', user.tenantId, 'products', productId)
+      await deleteDoc(productRef)
+      console.log('✅ Product deleted:', productId)
+      setDeleteConfirm(null)
+    } catch (error) {
+      console.error('Error deleting product:', error)
+      alert('Error deleting product')
+    }
   }
 
   const quotationTotal = Object.entries(quotationItems).reduce((sum, [productId, qty]) => {
@@ -318,10 +366,18 @@ export const ProductsList = () => {
                           >
                             <FileText size={16} />
                           </button>
-                          <button className="p-1 hover:bg-yellow-100 dark:hover:bg-yellow-900 rounded" title="Edit">
+                          <button
+                            onClick={() => handleEditProduct(product)}
+                            className="p-1 hover:bg-yellow-100 dark:hover:bg-yellow-900 rounded"
+                            title="Edit"
+                          >
                             <Edit2 size={16} />
                           </button>
-                          <button className="p-1 hover:bg-red-100 dark:hover:bg-red-900 rounded" title="Delete">
+                          <button
+                            onClick={() => setDeleteConfirm(product.id)}
+                            className="p-1 hover:bg-red-100 dark:hover:bg-red-900 rounded"
+                            title="Delete"
+                          >
                             <Trash2 size={16} />
                           </button>
                         </div>
@@ -582,6 +638,44 @@ export const ProductsList = () => {
                   Close
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Product Editor Modal */}
+      <ProductEditorModal
+        isOpen={showEditor}
+        product={editingProduct}
+        onClose={() => {
+          setShowEditor(false)
+          setEditingProduct(null)
+        }}
+        onSave={handleSaveProduct}
+        isLoading={savingProduct}
+      />
+
+      {/* Delete Confirmation Dialog */}
+      {deleteConfirm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-slate-900 rounded-lg shadow-xl p-6 max-w-sm">
+            <h3 className="text-xl font-bold text-red-600 dark:text-red-400 mb-4">Delete Product?</h3>
+            <p className="text-gray-700 dark:text-gray-300 mb-6">
+              Are you sure you want to delete this product? This action cannot be undone.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setDeleteConfirm(null)}
+                className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white rounded-lg hover:bg-gray-50 dark:hover:bg-slate-800 transition"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleDeleteProduct(deleteConfirm)}
+                className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition font-medium"
+              >
+                Delete
+              </button>
             </div>
           </div>
         </div>
