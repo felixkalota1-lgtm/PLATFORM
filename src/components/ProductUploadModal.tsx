@@ -32,6 +32,7 @@ interface ProductUploadModalProps {
   onClose: () => void;
   tenantId: string;
   onSuccess?: (result: { validation: ValidationResult; upload: UploadResult }) => void;
+  targetCollection?: 'products' | 'warehouse_inventory';
 }
 
 type UploadStep = 'idle' | 'parsing' | 'detecting-duplicates' | 'validating' | 'uploading' | 'complete';
@@ -41,6 +42,7 @@ export const ProductUploadModal: React.FC<ProductUploadModalProps> = ({
   onClose,
   tenantId,
   onSuccess,
+  targetCollection = 'products',
 }) => {
   const [step, setStep] = useState<UploadStep>('idle');
   const [progress, setProgress] = useState(0);
@@ -149,6 +151,7 @@ export const ProductUploadModal: React.FC<ProductUploadModalProps> = ({
       // Upload products
       const uploadResult = await uploadProductsToFirestore(productsToUpload, tenantId, {
         generateImages,
+        targetCollection,
         onProgress: (current, total) => {
           setProgress(Math.round((current / total) * 100));
           setStatusMessage(`⏳ Uploading products: ${current}/${total}`);

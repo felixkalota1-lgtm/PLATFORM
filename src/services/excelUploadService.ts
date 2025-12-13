@@ -350,10 +350,11 @@ export const uploadProductsToFirestore = async (
     generateImages?: boolean;
     autoCategory?: boolean;
     onProgress?: (current: number, total: number) => void;
+    targetCollection?: 'products' | 'warehouse_inventory';
   } = {}
 ): Promise<UploadResult> => {
   const startTime = Date.now();
-  const { generateImages = false, autoCategory = true, onProgress } = options;
+  const { generateImages = false, autoCategory = true, onProgress, targetCollection = 'products' } = options;
   const errors: string[] = [];
   const duplicates: Array<{ name1: string; name2: string; similarity: number }> = [];
   let uploadedCount = 0;
@@ -372,7 +373,10 @@ export const uploadProductsToFirestore = async (
     }
 
     // Batch upload with Firestore
-    const productsRef = collection(db, 'tenants', tenantId, 'products');
+    // For warehouse, use root-level collection; for products, use tenant namespace
+    const productsRef = targetCollection === 'warehouse_inventory'
+      ? collection(db, 'warehouse_inventory')
+      : collection(db, 'tenants', tenantId, 'products');
 
     // FIRST PASS: Get all existing SKUs and alternate SKUs to avoid duplicates
     const existingSnapshot = await getDocs(productsRef);

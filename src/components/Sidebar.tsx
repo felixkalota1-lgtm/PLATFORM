@@ -52,6 +52,7 @@ const menuItems: MenuItem[] = [
     label: 'Warehouse & Logistics',
     icon: <Truck size={20} />,
     submenu: [
+      { label: 'Warehouse Upload Portal', href: '/warehouse/upload-portal' },
       { label: 'Warehouse Map', href: '/warehouse/map' },
       { label: 'Locations', href: '/warehouse/locations' },
       { label: 'Manage Warehouses', href: '/warehouse-management' },

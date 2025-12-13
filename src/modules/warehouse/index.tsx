@@ -4,6 +4,7 @@ import { Upload, MapPin, Package, AlertCircle } from 'lucide-react'
 import { useAuth } from '../../hooks/useAuth'
 import ProductUploadModal from '../../components/ProductUploadModal'
 import Warehouse3DViewer from '../../components/Warehouse3DViewer'
+import WarehouseUploadPortal from './WarehouseUploadPortal'
 
 export default function WarehouseModule() {
   const { user } = useAuth()
@@ -13,10 +14,11 @@ export default function WarehouseModule() {
   
   // Determine active tab based on current route
   const getActiveTab = () => {
+    if (location.pathname.includes('/upload-portal')) return 'upload'
     if (location.pathname.includes('/map')) return 'map'
     if (location.pathname.includes('/locations')) return 'inventory'
     if (location.pathname.includes('/shipments')) return 'orders'
-    return 'map'
+    return 'upload'
   }
   
   const activeTab = getActiveTab()
@@ -26,8 +28,9 @@ export default function WarehouseModule() {
     console.log('✅ Warehouse import successful:', result)
   }
   
-  const handleTabChange = (tab: 'map' | 'inventory' | 'orders') => {
+  const handleTabChange = (tab: 'upload' | 'map' | 'inventory' | 'orders') => {
     const routeMap = {
+      upload: '/warehouse/upload-portal',
       map: '/warehouse/map',
       inventory: '/warehouse/locations',
       orders: '/warehouse/shipments'
@@ -62,10 +65,21 @@ export default function WarehouseModule() {
 
       {/* Tab Navigation */}
       <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 rounded-t-lg">
-        <div className="flex">
+        <div className="flex overflow-x-auto">
+          <button
+            onClick={() => handleTabChange('upload')}
+            className={`px-6 py-3 font-medium flex items-center gap-2 transition-colors whitespace-nowrap ${
+              activeTab === 'upload'
+                ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400'
+                : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-300'
+            }`}
+          >
+            <Upload size={18} />
+            Upload Portal
+          </button>
           <button
             onClick={() => handleTabChange('map')}
-            className={`px-6 py-3 font-medium flex items-center gap-2 transition-colors ${
+            className={`px-6 py-3 font-medium flex items-center gap-2 transition-colors whitespace-nowrap ${
               activeTab === 'map'
                 ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400'
                 : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-300'
@@ -76,7 +90,7 @@ export default function WarehouseModule() {
           </button>
           <button
             onClick={() => handleTabChange('inventory')}
-            className={`px-6 py-3 font-medium flex items-center gap-2 transition-colors ${
+            className={`px-6 py-3 font-medium flex items-center gap-2 transition-colors whitespace-nowrap ${
               activeTab === 'inventory'
                 ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400'
                 : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-300'
@@ -87,7 +101,7 @@ export default function WarehouseModule() {
           </button>
           <button
             onClick={() => handleTabChange('orders')}
-            className={`px-6 py-3 font-medium flex items-center gap-2 transition-colors ${
+            className={`px-6 py-3 font-medium flex items-center gap-2 transition-colors whitespace-nowrap ${
               activeTab === 'orders'
                 ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400'
                 : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-300'
@@ -100,6 +114,12 @@ export default function WarehouseModule() {
       </div>
 
       {/* Content */}
+      {/* Upload Portal Tab */}
+      {activeTab === 'upload' && (
+        <WarehouseUploadPortal />
+      )}
+
+      {activeTab !== 'upload' && (
       <div className="bg-white dark:bg-gray-800 rounded-b-lg shadow p-6">
         {/* Warehouse Map Tab */}
         {activeTab === 'map' && (
@@ -154,7 +174,6 @@ export default function WarehouseModule() {
             </div>
           </div>
         )}
-      </div>
-    </div>
+      </div>      )}    </div>
   )
 }

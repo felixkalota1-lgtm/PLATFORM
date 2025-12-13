@@ -10,6 +10,7 @@ interface ManualProductModalProps {
   onClose: () => void;
   tenantId: string;
   onSuccess?: () => void;
+  targetCollection?: 'products' | 'warehouse_inventory';
 }
 
 interface ProductFormData {
@@ -29,6 +30,7 @@ export default function ManualProductModal({
   onClose,
   tenantId,
   onSuccess,
+  targetCollection = 'products',
 }: ManualProductModalProps) {
   const [formData, setFormData] = useState<ProductFormData>({
     name: '',
@@ -123,7 +125,9 @@ export default function ManualProductModal({
       }
 
       // Add product to Firestore - using correct nested collection path
-      const productsRef = collection(db, 'tenants', tenantId, 'products');
+      const productsRef = targetCollection === 'warehouse_inventory'
+        ? collection(db, 'warehouse_inventory')
+        : collection(db, 'tenants', tenantId, 'products');
       console.log('Adding product with tenantId:', tenantId, 'and data:', {
         name: formData.name.trim(),
         description: formData.description.trim(),
