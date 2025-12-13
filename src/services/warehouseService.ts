@@ -56,7 +56,7 @@ export async function getAllWarehouseInventory() {
 /**
  * Get inventory for specific location
  */
-export async function getLocationInventory(location) {
+export async function getLocationInventory(location: string) {
   try {
     const q = query(
       collection(db, WAREHOUSE_COLLECTION),
@@ -77,7 +77,7 @@ export async function getLocationInventory(location) {
 /**
  * Get inventory for specific SKU across all locations
  */
-export async function getSKUInventory(sku) {
+export async function getSKUInventory(sku: string) {
   try {
     const q = query(
       collection(db, WAREHOUSE_COLLECTION),
@@ -98,7 +98,7 @@ export async function getSKUInventory(sku) {
 /**
  * Get specific warehouse item by location and SKU
  */
-export async function getWarehouseItem(location, sku) {
+export async function getWarehouseItem(location: string, sku: string) {
   try {
     const docId = `${location.toUpperCase()}_${sku.toUpperCase()}`;
     const docRef = doc(db, WAREHOUSE_COLLECTION, docId);
@@ -121,7 +121,7 @@ export async function getWarehouseItem(location, sku) {
 /**
  * Update warehouse item quantity
  */
-export async function updateItemQuantity(location, sku, quantity) {
+export async function updateItemQuantity(location: string, sku: string, quantity: number) {
   try {
     const docId = `${location.toUpperCase()}_${sku.toUpperCase()}`;
     const docRef = doc(db, WAREHOUSE_COLLECTION, docId);
@@ -141,7 +141,7 @@ export async function updateItemQuantity(location, sku, quantity) {
 /**
  * Add/Update warehouse item
  */
-export async function addWarehouseItem(item) {
+export async function addWarehouseItem(item: any) {
   try {
     if (!item.location || !item.sku || item.quantity === undefined) {
       throw new Error('Missing required fields: location, sku, quantity');
@@ -167,7 +167,7 @@ export async function addWarehouseItem(item) {
 /**
  * Delete warehouse item
  */
-export async function deleteWarehouseItem(location, sku) {
+export async function deleteWarehouseItem(location: string, sku: string) {
   try {
     const docId = `${location.toUpperCase()}_${sku.toUpperCase()}`;
     const docRef = doc(db, WAREHOUSE_COLLECTION, docId);
@@ -184,7 +184,7 @@ export async function deleteWarehouseItem(location, sku) {
 /**
  * Batch update inventory (for receiving stock, shipping, adjustments)
  */
-export async function batchUpdateInventory(updates) {
+export async function batchUpdateInventory(updates: any[]) {
   try {
     const batch = writeBatch(db);
     
@@ -214,14 +214,14 @@ export async function batchUpdateInventory(updates) {
 /**
  * Search warehouse items by SKU or location
  */
-export async function searchWarehouse(searchTerm) {
+export async function searchWarehouse(searchTerm: string) {
   try {
     const term = searchTerm.toUpperCase();
     const allItems = await getAllWarehouseInventory();
     
-    return allItems.filter(item => 
-      item.sku.includes(term) ||
-      item.location.includes(term) ||
+    return allItems.filter((item: any) => 
+      (item.sku && item.sku.includes(term)) ||
+      (item.location && item.location.includes(term)) ||
       (item.productName && item.productName.toUpperCase().includes(term))
     );
   } catch (error) {
@@ -237,20 +237,20 @@ export async function getWarehouseStatistics() {
   try {
     const items = await getAllWarehouseInventory();
     
-    const stats = {
+    const stats: any = {
       totalItems: items.length,
       totalQuantity: 0,
       locations: new Set(),
       skus: new Set(),
       categories: new Set(),
-      lowStockItems: [],
-      zeroStockItems: []
+      lowStockItems: [] as any[],
+      zeroStockItems: [] as any[]
     };
 
-    items.forEach(item => {
+    items.forEach((item: any) => {
       stats.totalQuantity += item.quantity || 0;
-      stats.locations.add(item.location);
-      stats.skus.add(item.sku);
+      if (item.location) stats.locations.add(item.location);
+      if (item.sku) stats.skus.add(item.sku);
       if (item.category) stats.categories.add(item.category);
       
       if (item.quantity === 0) {
@@ -274,9 +274,9 @@ export async function getWarehouseStatistics() {
       locations: Array.from(stats.locations),
       skus: Array.from(stats.skus),
       categories: Array.from(stats.categories),
-      locationCount: stats.locations.length,
-      skuCount: stats.skus.length,
-      categoryCount: stats.categories.length
+      locationCount: stats.locations.size,
+      skuCount: stats.skus.size,
+      categoryCount: stats.categories.size
     };
   } catch (error) {
     console.error('Error getting warehouse statistics:', error);
@@ -287,7 +287,7 @@ export async function getWarehouseStatistics() {
 /**
  * Subscribe to real-time warehouse updates
  */
-export function subscribeToWarehouse(callback) {
+export function subscribeToWarehouse(callback: (items: any[]) => void) {
   try {
     const q = query(collection(db, WAREHOUSE_COLLECTION));
     
@@ -310,7 +310,7 @@ export function subscribeToWarehouse(callback) {
 /**
  * Subscribe to specific location inventory updates
  */
-export function subscribeToLocation(location, callback) {
+export function subscribeToLocation(location: string, callback: (items: any[]) => void) {
   try {
     const q = query(
       collection(db, WAREHOUSE_COLLECTION),
@@ -413,7 +413,7 @@ export async function getBranchStats(branchId: string) {
     let totalSold = 0;
     let totalWaste = 0;
     
-    items.forEach(item => {
+    items.forEach((item: any) => {
       totalQuantity += item.quantity || 0;
       totalValue += ((item.quantity || 0) * (item.unitCost || 0));
       totalSold += item.soldCount || 0;
@@ -535,10 +535,10 @@ export async function getStockMovementHistory(filters: any = {}) {
     
     // Filter by location if specified
     if (filters.sourceId) {
-      return movements.filter(m => m.sourceLocation?.id === filters.sourceId);
+      return movements.filter((m: any) => m.sourceLocation?.id === filters.sourceId);
     }
     if (filters.destinationId) {
-      return movements.filter(m => m.destinationLocation?.id === filters.destinationId);
+      return movements.filter((m: any) => m.destinationLocation?.id === filters.destinationId);
     }
     
     return movements;
@@ -599,7 +599,7 @@ export async function getFoulWaterReport(location?: 'warehouse' | 'branch') {
       ...doc.data()
     }));
     
-    let summary = {
+    const summary: any = {
       defective: 0,
       expired: 0,
       damaged: 0,
@@ -607,8 +607,10 @@ export async function getFoulWaterReport(location?: 'warehouse' | 'branch') {
       total: 0
     };
     
-    history.forEach(item => {
-      summary[item.type] = (summary[item.type] || 0) + (item.quantity || 0);
+    history.forEach((item: any) => {
+      if (item.type && summary.hasOwnProperty(item.type)) {
+        summary[item.type] = (summary[item.type] || 0) + (item.quantity || 0);
+      }
       summary.total += item.quantity || 0;
     });
     
@@ -628,7 +630,7 @@ export async function getFoulWaterReport(location?: 'warehouse' | 'branch') {
 export async function getEnhancedWarehouseStats(warehouseId: string = 'warehouse_main_nebraska') {
   try {
     const items = await getAllWarehouseInventory();
-    const filtered = items.filter(i => !warehouseId || i.warehouseId === warehouseId);
+    const filtered = items.filter((i: any) => !warehouseId || i.warehouseId === warehouseId);
     
     let totalQuantity = 0;
     let totalValue = 0;
@@ -636,7 +638,7 @@ export async function getEnhancedWarehouseStats(warehouseId: string = 'warehouse
     let totalWaste = 0;
     let occupiedLocations = 0;
     
-    filtered.forEach(item => {
+    filtered.forEach((item: any) => {
       totalQuantity += item.quantity || 0;
       totalValue += ((item.quantity || 0) * (item.unitCost || 0));
       totalReserved += item.reservedQuantity || 0;

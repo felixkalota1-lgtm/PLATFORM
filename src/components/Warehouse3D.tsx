@@ -4,7 +4,7 @@
  * Shows stock levels in real-time
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import './Warehouse3D.css';
 
 interface WarehouseLocation {
@@ -25,7 +25,6 @@ interface Warehouse3DProps {
 }
 
 export const Warehouse3D: React.FC<Warehouse3DProps> = ({
-  warehouseId,
   inventory = [],
   onSelectLocation
 }) => {
@@ -85,7 +84,7 @@ export const Warehouse3D: React.FC<Warehouse3DProps> = ({
     return (
       <div className="warehouse-view top-view">
         <div className="warehouse-grid">
-          {filteredBins.map((bin, binIdx) => (
+          {filteredBins.map((bin) => (
             <div key={bin} className="bin-column">
               <div className="bin-label">{bin}</div>
               {aisles.map((aisle) => (
@@ -137,7 +136,6 @@ export const Warehouse3D: React.FC<Warehouse3DProps> = ({
                     {bins.map((bin) => {
                       const position = `${bin}-${aisle}-${shelf}`;
                       const occupancy = getOccupancy(position);
-                      const items = getItemsAtLocation(position);
                       const isSelected = selectedLocation?.position === position;
                       
                       return (
@@ -179,7 +177,6 @@ export const Warehouse3D: React.FC<Warehouse3DProps> = ({
                     {aisles.map((aisle) => {
                       const position = `${bin}-${aisle}-${shelf}`;
                       const occupancy = getOccupancy(position);
-                      const items = getItemsAtLocation(position);
                       const isSelected = selectedLocation?.position === position;
                       
                       return (
