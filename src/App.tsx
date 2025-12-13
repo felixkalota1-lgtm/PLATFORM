@@ -2,6 +2,8 @@ import { BrowserRouter as Router, Routes, Route, Navigate, useLocation, useNavig
 import { useEffect, useState } from 'react'
 import LoginPage from './pages/LoginPage'
 import DashboardPage from './pages/DashboardPage'
+import WarehouseManagementPage from './pages/WarehouseManagementPage'
+import SendGoodsPage from './pages/SendGoodsPage'
 import Layout from './components/Layout'
 import ProtectedRoute from './components/ProtectedRoute'
 
@@ -84,6 +86,8 @@ function App() {
               <Layout>
                 <Routes>
                   <Route path="/" element={<DashboardPage />} />
+                  <Route path="/warehouse-management" element={<WarehouseManagementPage />} />
+                  <Route path="/send-goods" element={<SendGoodsPage />} />
                   <Route path="/marketplace/*" element={<MarketplaceModule />} />
                   <Route path="/sales-procurement/*" element={<SalesAndProcurementPage />} />
                   <Route path="/inventory/*" element={<InventoryModule />} />

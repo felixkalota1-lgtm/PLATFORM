@@ -54,6 +54,8 @@ const menuItems: MenuItem[] = [
     submenu: [
       { label: 'Warehouse Map', href: '/warehouse/map' },
       { label: 'Locations', href: '/warehouse/locations' },
+      { label: 'Manage Warehouses', href: '/warehouse-management' },
+      { label: 'Send Goods', href: '/send-goods' },
       { label: 'Shipments', href: '/logistics/shipments' },
       { label: 'Vehicle Tracking', href: '/logistics/tracking' },
       { label: 'Fleet Management', href: '/logistics/fleet' },
