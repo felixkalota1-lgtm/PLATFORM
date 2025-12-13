@@ -7,7 +7,7 @@ import ProtectedRoute from './components/ProtectedRoute'
 
 // Lazy imports for module pages
 import MarketplaceModule from './modules/marketplace'
-import ProcurementModule from './modules/procurement'
+import SalesAndProcurementPage from './modules/sales'
 import InventoryModule from './modules/inventory'
 import WarehouseModule from './modules/warehouse'
 
@@ -85,7 +85,7 @@ function App() {
                 <Routes>
                   <Route path="/" element={<DashboardPage />} />
                   <Route path="/marketplace/*" element={<MarketplaceModule />} />
-                  <Route path="/procurement/*" element={<ProcurementModule />} />
+                  <Route path="/sales-procurement/*" element={<SalesAndProcurementPage />} />
                   <Route path="/inventory/*" element={<InventoryModule />} />
                   <Route path="/warehouse" element={<WarehouseModule />} />
                   <Route path="/hr" element={<div className="p-6"><h1>HR Module</h1></div>} />

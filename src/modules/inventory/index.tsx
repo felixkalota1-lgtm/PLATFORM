@@ -1,7 +1,8 @@
 import { useState } from 'react'
-import { Upload, Package, AlertCircle, CheckCircle2, TrendingUp } from 'lucide-react'
+import { Upload, Package, AlertCircle, CheckCircle2, TrendingUp, Plus } from 'lucide-react'
 import { useAuth } from '../../hooks/useAuth'
 import ProductUploadModal from '../../components/ProductUploadModal'
+import ManualProductModal from '../../components/ManualProductModal'
 import ProductsList from './components/ProductsList.tsx'
 import StockManagement from './components/StockManagement.tsx'
 import InventoryAnalytics from './components/InventoryAnalytics.tsx'
@@ -13,6 +14,7 @@ export default function InventoryModule() {
   const tenantId = user?.tenantId || 'default'
   const [activeTab, setActiveTab] = useState<Tab>('products')
   const [isUploadOpen, setIsUploadOpen] = useState(false)
+  const [isManualOpen, setIsManualOpen] = useState(false)
   const [uploadStats, setUploadStats] = useState({
     totalProducts: 0,
     lastUpload: null as Date | null,
@@ -62,13 +64,22 @@ export default function InventoryModule() {
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Inventory Management</h1>
           <p className="text-gray-600 dark:text-gray-400 mt-1">Manage products, services, stock levels, and bulk imports</p>
         </div>
-        <button
-          onClick={() => setIsUploadOpen(true)}
-          className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-        >
-          <Upload size={20} />
-          📊 Bulk Import
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setIsManualOpen(true)}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
+          >
+            <Plus size={20} />
+            ➕ Add Product
+          </button>
+          <button
+            onClick={() => setIsUploadOpen(true)}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            <Upload size={20} />
+            📊 Bulk Import
+          </button>
+        </div>
       </div>
 
       {/* Product Upload Modal */}
@@ -77,6 +88,17 @@ export default function InventoryModule() {
         onClose={() => setIsUploadOpen(false)}
         tenantId={tenantId}
         onSuccess={handleUploadSuccess}
+      />
+
+      {/* Manual Product Modal */}
+      <ManualProductModal
+        isOpen={isManualOpen}
+        onClose={() => setIsManualOpen(false)}
+        tenantId={tenantId}
+        onSuccess={() => {
+          // Refresh product list
+          setIsManualOpen(false)
+        }}
       />
 
       {/* Stats Cards */}

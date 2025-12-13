@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react'
 import { collection, query, where, onSnapshot, addDoc } from 'firebase/firestore'
 import { db } from '../../../services/firebase'
 import { useAuth } from '../../../hooks/useAuth'
-import { Eye, Edit2, Trash2, Package, FileText, Grid3x3, List, X } from 'lucide-react'
+import { Eye, Edit2, Trash2, Package, FileText, Grid3x3, List, X, ShoppingCart } from 'lucide-react'
+import CreateSaleQuoteModal from '../../sales/components/CreateSaleQuoteModal'
 
 interface Product {
   id: string
@@ -28,6 +29,8 @@ export const ProductsList = () => {
   const [quotationCustomer, setQuotationCustomer] = useState('')
   const [quotationNotes, setQuotationNotes] = useState('')
   const [showQuotationBuilder, setShowQuotationBuilder] = useState(false)
+  const [showSaleQuoteModal, setShowSaleQuoteModal] = useState(false)
+  const [selectedProductForQuote, setSelectedProductForQuote] = useState<Product | null>(null)
 
   useEffect(() => {
     if (!user || !user.tenantId) {
@@ -290,6 +293,16 @@ export const ProductsList = () => {
                             title="View"
                           >
                             <Eye size={16} />
+                          </button>
+                          <button
+                            onClick={() => {
+                              setSelectedProductForQuote(product)
+                              setShowSaleQuoteModal(true)
+                            }}
+                            className="p-1 hover:bg-emerald-100 dark:hover:bg-emerald-900 rounded"
+                            title="Create Sale Quote"
+                          >
+                            <ShoppingCart size={16} />
                           </button>
                           <button
                             onClick={() => {
@@ -568,6 +581,21 @@ export const ProductsList = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Create Sale Quote Modal */}
+      {selectedProductForQuote && (
+        <CreateSaleQuoteModal
+          isOpen={showSaleQuoteModal}
+          onClose={() => {
+            setShowSaleQuoteModal(false)
+            setSelectedProductForQuote(null)
+          }}
+          tenantId={user?.tenantId || 'default'}
+          productName={selectedProductForQuote.name}
+          productId={selectedProductForQuote.id}
+          initialPrice={selectedProductForQuote.price}
+        />
       )}
     </div>
   )

@@ -1,14 +1,19 @@
 import { useState } from 'react'
 import { Plus, FileText, CheckCircle, Clock, AlertCircle } from 'lucide-react'
+import { useAuth } from '../../hooks/useAuth'
 import { useProcurementStore } from './store'
 import NewRequestModal from './components/NewRequestModal'
+import ManualProductModal from '../../components/ManualProductModal'
 import RequestsList from './components/RequestsList'
 
 export default function ProcurementPage() {
+  const { user } = useAuth()
+  const tenantId = user?.tenantId || 'default'
   const [activeTab, setActiveTab] = useState<
     'requests' | 'rfqs' | 'purchase-orders'
   >('requests')
   const [isModalOpen, setIsModalOpen] = useState(false)
+  const [isManualOpen, setIsManualOpen] = useState(false)
   const { requests } = useProcurementStore()
 
   const stats = [
@@ -47,12 +52,20 @@ export default function ProcurementPage() {
             <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
               Procurement Management
             </h1>
-            <button 
-              onClick={() => setIsModalOpen(true)}
-              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-semibold transition-colors">
-              <Plus className="w-5 h-5" />
-              New Request
-            </button>
+            <div className="flex items-center gap-3">
+              <button 
+                onClick={() => setIsManualOpen(true)}
+                className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg font-semibold transition-colors">
+                <Plus className="w-5 h-5" />
+                ➕ Add Service
+              </button>
+              <button 
+                onClick={() => setIsModalOpen(true)}
+                className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-semibold transition-colors">
+                <Plus className="w-5 h-5" />
+                New Request
+              </button>
+            </div>
           </div>
 
           {/* Stats */}
@@ -153,6 +166,16 @@ export default function ProcurementPage() {
 
       {/* Modal */}
       <NewRequestModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} />
+
+      {/* Manual Product Modal */}
+      <ManualProductModal
+        isOpen={isManualOpen}
+        onClose={() => setIsManualOpen(false)}
+        tenantId={tenantId}
+        onSuccess={() => {
+          setIsManualOpen(false)
+        }}
+      />
     </div>
   )
 }

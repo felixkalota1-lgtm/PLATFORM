@@ -41,13 +41,11 @@ const menuItems: MenuItem[] = [
     ],
   },
   {
-    label: 'Procurement',
-    icon: <FileText size={20} />,
+    label: 'Sales & Procurement',
+    icon: <ShoppingCart size={20} />,
     submenu: [
-      { label: 'Inquiries', href: '/procurement/inquiries' },
-      { label: 'Quotations', href: '/procurement/quotes' },
-      { label: 'Orders', href: '/procurement/orders' },
-      { label: 'Purchase History', href: '/procurement/history' },
+      { label: 'Sales Quotations', href: '/sales-procurement' },
+      { label: 'Procurement Requests', href: '/sales-procurement' },
     ],
   },
   {
