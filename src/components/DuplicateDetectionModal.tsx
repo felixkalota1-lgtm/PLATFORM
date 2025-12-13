@@ -41,6 +41,7 @@ export const DuplicateDetectionModal: React.FC<DuplicateDetectionModalProps> = (
   const [activeTab, setActiveTab] = useState<TabType>('summary');
   const [expandedDuplicates, setExpandedDuplicates] = useState<Set<number>>(new Set());
 
+  console.log('🎭 DuplicateDetectionModal - isOpen:', isOpen, 'hasDuplicates:', detection.hasDuplicates);
   if (!isOpen) return null;
 
   const toggleExpanded = (index: number) => {
@@ -180,8 +181,8 @@ export const DuplicateDetectionModal: React.FC<DuplicateDetectionModalProps> = (
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white dark:bg-slate-900 rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999]">
+      <div className="bg-white dark:bg-slate-900 rounded-lg shadow-2xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
         {/* Header */}
         <div className="sticky top-0 bg-gradient-to-r from-orange-600 to-red-600 text-white p-6 flex items-start justify-between">
           <div>

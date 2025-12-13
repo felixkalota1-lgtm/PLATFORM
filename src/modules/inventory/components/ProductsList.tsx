@@ -38,12 +38,16 @@ export const ProductsList = () => {
       return
     }
 
+    console.log('🔄 Setting up real-time listener for products:', user.tenantId);
     const q = query(collection(db, 'tenants', user.tenantId, 'products'), where('active', '==', true))
     const unsubscribe = onSnapshot(q, (snapshot) => {
+      console.log('📦 Products snapshot received:', snapshot.docs.length, 'products');
       const productList: Product[] = []
       snapshot.forEach((doc) => {
+        console.log('📄 Product:', doc.data());
         productList.push({ id: doc.id, ...doc.data() } as Product)
       })
+      console.log('✅ Updated products list:', productList.length, 'products');
       setProducts(productList)
       setLoading(false)
     })

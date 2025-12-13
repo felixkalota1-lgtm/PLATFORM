@@ -419,6 +419,7 @@ export const uploadProductsToFirestore = async (
 
     // Commit batch
     await batch.commit();
+    console.log('✅ Batch committed to Firestore:', { uploadedCount, failedCount, tenantId });
 
     const totalTime = Date.now() - startTime;
 

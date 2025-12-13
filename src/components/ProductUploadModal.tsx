@@ -55,11 +55,18 @@ export const ProductUploadModal: React.FC<ProductUploadModalProps> = ({
 
   const onDrop = useCallback(
     async (acceptedFiles: File[]) => {
+      console.log('📤 File dropped, files received:', acceptedFiles.length);
       const file = acceptedFiles[0];
-      if (!file) return;
+      if (!file) {
+        console.warn('⚠️ No file found in acceptedFiles');
+        return;
+      }
+
+      console.log('📄 File details:', { name: file.name, size: file.size, type: file.type });
 
       // Validate file type
       if (!file.name.endsWith('.xlsx') && !file.name.endsWith('.xls')) {
+        console.error('❌ Invalid file type:', file.name);
         setStatusMessage('❌ Please upload an Excel file (.xlsx or .xls)');
         return;
       }
@@ -67,12 +74,15 @@ export const ProductUploadModal: React.FC<ProductUploadModalProps> = ({
       try {
         setStep('parsing');
         setStatusMessage('📄 Parsing Excel file...');
+        console.log('🔄 Starting parse...');
 
         // Step 1: Parse Excel file
         const products = await parseExcelFile(file);
+        console.log('✅ Parse complete, products found:', products.length);
         setParsedProducts(products);
 
         if (products.length === 0) {
+          console.warn('⚠️ No products found in Excel file');
           setStatusMessage('❌ No valid products found in the Excel file');
           setStep('idle');
           return;
@@ -81,23 +91,31 @@ export const ProductUploadModal: React.FC<ProductUploadModalProps> = ({
         // Step 2: Detect duplicates
         setStep('detecting-duplicates');
         setStatusMessage('🔍 Detecting duplicates...');
+        console.log('🔄 Starting duplicate detection...');
         const detection = await detectAllDuplicates(products, tenantId);
+        console.log('✅ Duplicate detection complete:', detection);
         setDuplicateDetection(detection);
 
         // Show duplicate modal if duplicates found
         if (detection.hasDuplicates) {
+          setStep('idle'); // Reset step so modal can show properly
           setShowDuplicateModal(true);
+          console.log('📋 Duplicates found, showing modal');
           // Don't proceed until user makes a choice
         } else {
+          console.log('✅ No duplicates, proceeding with upload');
           // No duplicates, proceed with upload
           proceedWithUpload(products, false);
         }
       } catch (error) {
+        console.error('❌ Error in onDrop:', error);
         setStep('idle');
-        setStatusMessage(`❌ ${error instanceof Error ? error.message : 'Unknown error'}`);
+        const errorMsg = error instanceof Error ? error.message : JSON.stringify(error);
+        console.error('Error details:', errorMsg);
+        setStatusMessage(`❌ ${errorMsg}`);
       }
     },
-    [tenantId, generateImages, onSuccess, onClose]
+    [tenantId]
   );
 
   const proceedWithUpload = async (products: any[], skipDuplicates: boolean) => {
@@ -197,7 +215,7 @@ export const ProductUploadModal: React.FC<ProductUploadModalProps> = ({
       />
 
       {/* Main Upload Modal */}
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-40">
         <div className="bg-white dark:bg-slate-900 rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
           {/* Header */}
           <div className="sticky top-0 bg-gradient-to-r from-blue-600 to-indigo-600 text-white p-6 flex justify-between items-center">
@@ -213,7 +231,7 @@ export const ProductUploadModal: React.FC<ProductUploadModalProps> = ({
 
           <div className="p-6 space-y-6">
           {/* Status Message */}
-          {statusMessage && (
+          {statusMessage && step !== 'idle' && (
             <div className="p-4 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded-lg text-blue-900 dark:text-blue-100">
               {statusMessage}
             </div>
@@ -304,6 +322,7 @@ export const ProductUploadModal: React.FC<ProductUploadModalProps> = ({
           {/* Upload Area */}
           {step === 'idle' && (
             <>
+              {console.log('🎨 Upload area is visible (step === idle)')}
               <div
                 {...getRootProps()}
                 className={`border-2 border-dashed rounded-lg p-8 text-center transition cursor-pointer ${
@@ -320,6 +339,46 @@ export const ProductUploadModal: React.FC<ProductUploadModalProps> = ({
                 <p className="text-sm text-gray-600 dark:text-gray-400">
                   or click to select a file (.xlsx or .xls)
                 </p>
+              </div>
+
+              {/* Backup File Input Button */}
+              <div className="flex gap-3">
+                <input
+                  id="file-input-backup"
+                  type="file"
+                  accept=".xlsx,.xls,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                  onChange={(e) => {
+                    console.log('🎯 File input onChange triggered');
+                    console.log('📂 Files in input:', e.target.files);
+                    if (e.target.files?.length) {
+                      console.log('✅ File selected via backup input:', e.target.files[0].name);
+                      const filesArray = Array.from(e.target.files);
+                      console.log('📤 Calling onDrop with files:', filesArray);
+                      onDrop(filesArray);
+                      // Reset input so same file can be selected again
+                      e.target.value = '';
+                    } else {
+                      console.warn('⚠️ No files selected');
+                    }
+                  }}
+                  style={{ display: 'none' }}
+                />
+                <button
+                  onClick={() => {
+                    console.log('🔘 Choose File button clicked');
+                    const fileInput = document.getElementById('file-input-backup') as HTMLInputElement;
+                    if (fileInput) {
+                      console.log('📂 File input element found, clicking...');
+                      fileInput.click();
+                      console.log('✅ File dialog should open');
+                    } else {
+                      console.error('❌ File input element not found!');
+                    }
+                  }}
+                  className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-medium text-sm"
+                >
+                  📁 Choose File
+                </button>
               </div>
 
               {/* Options */}
