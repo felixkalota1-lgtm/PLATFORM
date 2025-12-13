@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { Upload, MapPin, Package, AlertCircle } from 'lucide-react'
 import { useAuth } from '../../hooks/useAuth'
 import ProductUploadModal from '../../components/ProductUploadModal'
@@ -6,12 +7,32 @@ import Warehouse3DViewer from '../../components/Warehouse3DViewer'
 
 export default function WarehouseModule() {
   const { user } = useAuth()
+  const navigate = useNavigate()
+  const location = useLocation()
   const tenantId = user?.tenantId || 'default'
-  const [activeTab, setActiveTab] = useState<'map' | 'inventory' | 'orders'>('map')
+  
+  // Determine active tab based on current route
+  const getActiveTab = () => {
+    if (location.pathname.includes('/map')) return 'map'
+    if (location.pathname.includes('/locations')) return 'inventory'
+    if (location.pathname.includes('/shipments')) return 'orders'
+    return 'map'
+  }
+  
+  const activeTab = getActiveTab()
   const [isUploadOpen, setIsUploadOpen] = useState(false)
 
   const handleUploadSuccess = (result: any) => {
     console.log('✅ Warehouse import successful:', result)
+  }
+  
+  const handleTabChange = (tab: 'map' | 'inventory' | 'orders') => {
+    const routeMap = {
+      map: '/warehouse/map',
+      inventory: '/warehouse/locations',
+      orders: '/warehouse/shipments'
+    }
+    navigate(routeMap[tab])
   }
 
   return (
@@ -43,7 +64,7 @@ export default function WarehouseModule() {
       <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 rounded-t-lg">
         <div className="flex">
           <button
-            onClick={() => setActiveTab('map')}
+            onClick={() => handleTabChange('map')}
             className={`px-6 py-3 font-medium flex items-center gap-2 transition-colors ${
               activeTab === 'map'
                 ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400'
@@ -54,7 +75,7 @@ export default function WarehouseModule() {
             Warehouse Map
           </button>
           <button
-            onClick={() => setActiveTab('inventory')}
+            onClick={() => handleTabChange('inventory')}
             className={`px-6 py-3 font-medium flex items-center gap-2 transition-colors ${
               activeTab === 'inventory'
                 ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400'
@@ -65,7 +86,7 @@ export default function WarehouseModule() {
             Inventory Locations
           </button>
           <button
-            onClick={() => setActiveTab('orders')}
+            onClick={() => handleTabChange('orders')}
             className={`px-6 py-3 font-medium flex items-center gap-2 transition-colors ${
               activeTab === 'orders'
                 ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400'

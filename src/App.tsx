@@ -87,12 +87,13 @@ function App() {
                   <Route path="/marketplace/*" element={<MarketplaceModule />} />
                   <Route path="/sales-procurement/*" element={<SalesAndProcurementPage />} />
                   <Route path="/inventory/*" element={<InventoryModule />} />
-                  <Route path="/warehouse" element={<WarehouseModule />} />
-                  <Route path="/hr" element={<div className="p-6"><h1>HR Module</h1></div>} />
-                  <Route path="/accounting" element={<div className="p-6"><h1>Accounting Module</h1></div>} />
-                  <Route path="/analytics" element={<div className="p-6"><h1>Analytics Module</h1></div>} />
-                  <Route path="/communication" element={<div className="p-6"><h1>Communication Module</h1></div>} />
-                  <Route path="/logistics" element={<div className="p-6"><h1>Logistics Module</h1></div>} />
+                  <Route path="/warehouse/*" element={<WarehouseModule />} />
+                  <Route path="/logistics/*" element={<div className="p-6"><h1>Logistics Module</h1></div>} />
+                  <Route path="/hr/*" element={<div className="p-6"><h1>HR Module</h1></div>} />
+                  <Route path="/accounting/*" element={<div className="p-6"><h1>Accounting Module</h1></div>} />
+                  <Route path="/analytics/*" element={<div className="p-6"><h1>Analytics Module</h1></div>} />
+                  <Route path="/communication/*" element={<div className="p-6"><h1>Communication Module</h1></div>} />
+                  <Route path="/settings/*" element={<div className="p-6"><h1>Settings Module</h1></div>} />
                   <Route path="*" element={<Navigate to="/" replace />} />
                 </Routes>
               </Layout>
