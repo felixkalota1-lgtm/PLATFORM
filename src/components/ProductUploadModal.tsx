@@ -4,7 +4,7 @@
  * Features:
  * - Drag & drop Excel file upload
  * - Real-time validation feedback
- * - Duplicate detection with user confirmation
+ * - Advanced duplicate detection with user confirmation
  * - Progress tracking during upload
  * - AI image generation option
  */
@@ -16,7 +16,16 @@ import {
   importProductsFromExcel,
   ValidationResult,
   UploadResult,
+  parseExcelFile,
+  validateExcelProducts,
+  uploadProductsToFirestore,
 } from '../services/excelUploadService';
+import {
+  detectAllDuplicates,
+  DuplicateDetectionResult,
+  filterProductsByDuplicateOption,
+} from '../services/duplicateDetectionService';
+import DuplicateDetectionModal from './DuplicateDetectionModal';
 
 interface ProductUploadModalProps {
   isOpen: boolean;
@@ -25,7 +34,7 @@ interface ProductUploadModalProps {
   onSuccess?: (result: { validation: ValidationResult; upload: UploadResult }) => void;
 }
 
-type UploadStep = 'idle' | 'parsing' | 'validating' | 'uploading' | 'complete';
+type UploadStep = 'idle' | 'parsing' | 'detecting-duplicates' | 'validating' | 'uploading' | 'complete';
 
 export const ProductUploadModal: React.FC<ProductUploadModalProps> = ({
   isOpen,
@@ -38,8 +47,10 @@ export const ProductUploadModal: React.FC<ProductUploadModalProps> = ({
   const [validation, setValidation] = useState<ValidationResult | null>(null);
   const [upload, setUpload] = useState<UploadResult | null>(null);
   const [generateImages, setGenerateImages] = useState(false);
-  const [confirmDuplicates, setConfirmDuplicates] = useState(false);
   const [statusMessage, setStatusMessage] = useState('');
+  const [duplicateDetection, setDuplicateDetection] = useState<DuplicateDetectionResult | null>(null);
+  const [showDuplicateModal, setShowDuplicateModal] = useState(false);
+  const [parsedProducts, setParsedProducts] = useState<any[]>([]);
 
   const onDrop = useCallback(
     async (acceptedFiles: File[]) => {
@@ -56,37 +67,29 @@ export const ProductUploadModal: React.FC<ProductUploadModalProps> = ({
         setStep('parsing');
         setStatusMessage('📄 Parsing Excel file...');
 
-        const result = await importProductsFromExcel(file, tenantId, {
-          generateImages,
-          onProgress: (step, current, total) => {
-            setStatusMessage(step);
-            if (current && total) {
-              setProgress(Math.round((current / total) * 100));
-            }
-          },
-        });
+        // Step 1: Parse Excel file
+        const products = await parseExcelFile(file);
+        setParsedProducts(products);
 
-        setValidation(result.validation);
-        setUpload(result.upload);
+        if (products.length === 0) {
+          setStatusMessage('❌ No valid products found in the Excel file');
+          setStep('idle');
+          return;
+        }
 
-        // Check for duplicates
-        if (result.validation.duplicates.length > 0) {
-          setStep('validating');
-          setStatusMessage(
-            `⚠️ Found ${result.validation.duplicates.length} potential duplicates. Review and confirm?`
-          );
-        } else if (result.validation.errors.length === 0) {
-          setStep('complete');
-          setStatusMessage('✅ Upload complete!');
-          onSuccess?.(result);
-          
-          // Auto-close after 3 seconds
-          setTimeout(() => {
-            onClose();
-          }, 3000);
+        // Step 2: Detect duplicates
+        setStep('detecting-duplicates');
+        setStatusMessage('🔍 Detecting duplicates...');
+        const detection = await detectAllDuplicates(products, tenantId);
+        setDuplicateDetection(detection);
+
+        // Show duplicate modal if duplicates found
+        if (detection.hasDuplicates) {
+          setShowDuplicateModal(true);
+          // Don't proceed until user makes a choice
         } else {
-          setStep('validating');
-          setStatusMessage('❌ Validation failed. Review errors below.');
+          // No duplicates, proceed with upload
+          proceedWithUpload(products, false);
         }
       } catch (error) {
         setStep('idle');
@@ -95,6 +98,66 @@ export const ProductUploadModal: React.FC<ProductUploadModalProps> = ({
     },
     [tenantId, generateImages, onSuccess, onClose]
   );
+
+  const proceedWithUpload = async (products: any[], skipDuplicates: boolean) => {
+    try {
+      setShowDuplicateModal(false);
+      setStep('uploading');
+      setStatusMessage('⏳ Processing upload...');
+
+      // Filter products if skipping duplicates
+      let productsToUpload = products;
+      if (skipDuplicates && duplicateDetection) {
+        productsToUpload = filterProductsByDuplicateOption(
+          products,
+          duplicateDetection.duplicatesFound,
+          'skip'
+        );
+        setStatusMessage(`📋 Uploading ${productsToUpload.length} new products (skipped ${duplicateDetection.duplicatesFound.length} duplicates)...`);
+      }
+
+      // Validate products
+      const validation = await validateExcelProducts(productsToUpload, tenantId);
+      setValidation(validation);
+
+      if (validation.errors.length > 0) {
+        setStep('idle');
+        setStatusMessage('❌ Validation failed. Please review your products.');
+        return;
+      }
+
+      // Upload products
+      const uploadResult = await uploadProductsToFirestore(productsToUpload, tenantId, {
+        generateImages,
+        onProgress: (current, total) => {
+          setProgress(Math.round((current / total) * 100));
+          setStatusMessage(`⏳ Uploading products: ${current}/${total}`);
+        },
+      });
+
+      setUpload(uploadResult);
+
+      if (uploadResult.success && uploadResult.uploaded > 0) {
+        setStep('complete');
+        setStatusMessage('✅ Upload complete!');
+        onSuccess?.({
+          validation,
+          upload: uploadResult,
+        });
+
+        // Auto-close after 3 seconds
+        setTimeout(() => {
+          onClose();
+        }, 3000);
+      } else if (uploadResult.errors.length > 0) {
+        setStep('idle');
+        setStatusMessage(`❌ ${uploadResult.failed} products failed to upload`);
+      }
+    } catch (error) {
+      setStep('idle');
+      setStatusMessage(`❌ ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  };
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
@@ -108,21 +171,45 @@ export const ProductUploadModal: React.FC<ProductUploadModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white dark:bg-slate-900 rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
-        {/* Header */}
-        <div className="sticky top-0 bg-gradient-to-r from-blue-600 to-indigo-600 text-white p-6 flex justify-between items-center">
-          <h2 className="text-2xl font-bold">📊 Import Products from Excel</h2>
-          <button
-            onClick={onClose}
-            className="p-2 hover:bg-white/20 rounded-lg transition"
-            disabled={step === 'uploading'}
-          >
-            <X size={24} />
-          </button>
-        </div>
+    <>
+      {/* Duplicate Detection Modal */}
+      <DuplicateDetectionModal
+        isOpen={showDuplicateModal}
+        detection={duplicateDetection || { hasDuplicates: false, duplicatesFound: [], fileInternalDuplicates: [], inventoryDuplicates: [], newProducts: [], summary: { total: 0, new: 0, potential: 0, confirmed: 0 } }}
+        onSkipDuplicates={() => {
+          if (duplicateDetection) {
+            proceedWithUpload(parsedProducts, true);
+          }
+        }}
+        onConfirmAll={() => {
+          if (duplicateDetection) {
+            proceedWithUpload(parsedProducts, false);
+          }
+        }}
+        onCancel={() => {
+          setShowDuplicateModal(false);
+          setStep('idle');
+          setParsedProducts([]);
+          setDuplicateDetection(null);
+        }}
+      />
 
-        <div className="p-6 space-y-6">
+      {/* Main Upload Modal */}
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="bg-white dark:bg-slate-900 rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+          {/* Header */}
+          <div className="sticky top-0 bg-gradient-to-r from-blue-600 to-indigo-600 text-white p-6 flex justify-between items-center">
+            <h2 className="text-2xl font-bold">📊 Import Products from Excel</h2>
+            <button
+              onClick={onClose}
+              className="p-2 hover:bg-white/20 rounded-lg transition"
+              disabled={step === 'uploading'}
+            >
+              <X size={24} />
+            </button>
+          </div>
+
+          <div className="p-6 space-y-6">
           {/* Status Message */}
           {statusMessage && (
             <div className="p-4 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded-lg text-blue-900 dark:text-blue-100">
@@ -204,103 +291,7 @@ export const ProductUploadModal: React.FC<ProductUploadModalProps> = ({
             </>
           )}
 
-          {/* Validation Results */}
-          {step === 'validating' && validation && (
-            <>
-              {/* Errors */}
-              {validation.errors.length > 0 && (
-                <div className="space-y-2">
-                  <h3 className="font-semibold text-red-600 dark:text-red-400 flex items-center gap-2">
-                    <AlertCircle size={20} /> Errors ({validation.errors.length})
-                  </h3>
-                  <div className="bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded-lg p-4 space-y-2">
-                    {validation.errors.map((error, idx) => (
-                      <p key={idx} className="text-sm text-red-700 dark:text-red-300">
-                        • {error}
-                      </p>
-                    ))}
-                  </div>
-                </div>
-              )}
 
-              {/* Warnings */}
-              {validation.warnings.length > 0 && (
-                <div className="space-y-2">
-                  <h3 className="font-semibold text-yellow-600 dark:text-yellow-400 flex items-center gap-2">
-                    ⚠️ Warnings ({validation.warnings.length})
-                  </h3>
-                  <div className="bg-yellow-50 dark:bg-yellow-900/30 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4 space-y-2">
-                    {validation.warnings.map((warning, idx) => (
-                      <p key={idx} className="text-sm text-yellow-700 dark:text-yellow-300">
-                        • {warning}
-                      </p>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Duplicates */}
-              {validation.duplicates.length > 0 && (
-                <div className="space-y-2">
-                  <h3 className="font-semibold text-purple-600 dark:text-purple-400">
-                    🔍 Potential Duplicates ({validation.duplicates.length})
-                  </h3>
-                  <div className="bg-purple-50 dark:bg-purple-900/30 border border-purple-200 dark:border-purple-800 rounded-lg p-4 space-y-2 max-h-32 overflow-y-auto">
-                    {validation.duplicates.map((dup, idx) => (
-                      <div key={idx} className="text-sm text-purple-700 dark:text-purple-300">
-                        <strong>{dup.name1}</strong> ↔ <strong>{dup.name2}</strong>
-                        <span className="ml-2 text-purple-600 dark:text-purple-400">
-                          ({dup.similarity.toFixed(1)}% similar)
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                  <label className="flex items-center space-x-3 mt-3 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={confirmDuplicates}
-                      onChange={(e) => setConfirmDuplicates(e.target.checked)}
-                      className="w-4 h-4 text-purple-600 rounded"
-                    />
-                    <span className="text-sm text-purple-700 dark:text-purple-300">
-                      I understand and want to proceed with duplicate products
-                    </span>
-                  </label>
-                </div>
-              )}
-
-              {/* Summary */}
-              <div className="bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
-                <p className="text-sm text-blue-900 dark:text-blue-100">
-                  <strong>Summary:</strong> {validation.products.length} products ready to upload
-                  {validation.errors.length > 0 && ` (${validation.errors.length} have errors)`}
-                </p>
-              </div>
-
-              {/* Action Buttons */}
-              <div className="flex gap-3 pt-4">
-                <button
-                  onClick={onClose}
-                  className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={() => {
-                    if (validation.errors.length === 0 || confirmDuplicates) {
-                      setStep('uploading');
-                      // Re-upload with confirmation
-                    }
-                  }}
-                  disabled={validation.errors.length > 0 && !confirmDuplicates}
-                  className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition flex items-center justify-center gap-2"
-                >
-                  <Upload size={18} />
-                  Upload {validation.products.length} Products
-                </button>
-              </div>
-            </>
-          )}
 
           {/* Upload Complete */}
           {step === 'complete' && upload && (
@@ -356,8 +347,9 @@ export const ProductUploadModal: React.FC<ProductUploadModalProps> = ({
             </div>
           )}
         </div>
+        </div>
       </div>
-    </div>
+    </>
   );
 };
 

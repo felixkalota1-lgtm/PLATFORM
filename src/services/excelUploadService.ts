@@ -191,11 +191,12 @@ export const validateExcelProducts = async (
   }
 
   // Check against existing products in database
+  // Strict duplicate detection per tenant - prevents re-uploading same products to same account
   if (errors.length === 0 && validProducts.length > 0 && tenantId) {
     const existingDuplicates = await checkExistingDuplicates(validProducts, tenantId);
     if (existingDuplicates.length > 0) {
       existingDuplicates.forEach(dup => {
-        errors.push(`❌ Product "${dup.name}" already exists in database (${dup.similarity}% match)`);
+        errors.push(`❌ Product "${dup.name}" already exists in your inventory (${dup.similarity}% match)`);
       });
     }
   }
@@ -458,13 +459,14 @@ export const importProductsFromExcel = async (
   options: {
     skipValidation?: boolean;
     generateImages?: boolean;
+    skipDuplicates?: boolean;
     onProgress?: (step: string, current?: number, total?: number) => void;
   } = {}
 ): Promise<{
   validation: ValidationResult;
   upload: UploadResult;
 }> => {
-  const { skipValidation = false, generateImages = false, onProgress } = options;
+  const { skipValidation = false, generateImages = false, skipDuplicates = false, onProgress } = options;
 
   // Step 1: Parse
   onProgress?.('Parsing Excel file...');
@@ -485,9 +487,18 @@ export const importProductsFromExcel = async (
     validation = await validateExcelProducts(products, tenantId);
   }
 
-  // Step 3: Upload
+  // Step 3: Filter out duplicates if requested
+  let productsToUpload = validation.products;
+  if (skipDuplicates && validation.duplicates.length > 0) {
+    const duplicateNames = new Set(
+      validation.duplicates.flatMap(d => [d.name1, d.name2])
+    );
+    productsToUpload = validation.products.filter(p => !duplicateNames.has(p.name));
+  }
+
+  // Step 4: Upload
   onProgress?.('Uploading to database...');
-  const upload = await uploadProductsToFirestore(validation.products, tenantId, {
+  const upload = await uploadProductsToFirestore(productsToUpload, tenantId, {
     generateImages,
     onProgress: (current, total) => onProgress?.('Uploading products...', current, total),
   });

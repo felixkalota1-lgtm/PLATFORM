@@ -11,7 +11,7 @@ type Tab = 'overview' | 'products' | 'stock' | 'analytics'
 export default function InventoryModule() {
   const { user } = useAuth()
   const tenantId = user?.tenantId || 'default'
-  const [activeTab, setActiveTab] = useState<Tab>('overview')
+  const [activeTab, setActiveTab] = useState<Tab>('products')
   const [isUploadOpen, setIsUploadOpen] = useState(false)
   const [uploadStats, setUploadStats] = useState({
     totalProducts: 0,

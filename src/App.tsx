@@ -9,6 +9,7 @@ import ProtectedRoute from './components/ProtectedRoute'
 import MarketplaceModule from './modules/marketplace'
 import ProcurementModule from './modules/procurement'
 import InventoryModule from './modules/inventory'
+import WarehouseModule from './modules/warehouse'
 
 // Route persistence wrapper component
 function RouteWrapper() {
@@ -86,7 +87,7 @@ function App() {
                   <Route path="/marketplace/*" element={<MarketplaceModule />} />
                   <Route path="/procurement/*" element={<ProcurementModule />} />
                   <Route path="/inventory/*" element={<InventoryModule />} />
-                  <Route path="/warehouse" element={<div className="p-6"><h1>Warehouse Module</h1></div>} />
+                  <Route path="/warehouse" element={<WarehouseModule />} />
                   <Route path="/hr" element={<div className="p-6"><h1>HR Module</h1></div>} />
                   <Route path="/accounting" element={<div className="p-6"><h1>Accounting Module</h1></div>} />
                   <Route path="/analytics" element={<div className="p-6"><h1>Analytics Module</h1></div>} />
