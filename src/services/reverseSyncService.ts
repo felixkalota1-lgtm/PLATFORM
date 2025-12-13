@@ -47,8 +47,9 @@ export async function updateProductInExcel(
 
     if (productIndex !== -1) {
       // Update existing product
+      const existingProduct = data[productIndex] as Record<string, any>;
       data[productIndex] = {
-        ...data[productIndex],
+        ...existingProduct,
         name: productData.name,
         description: productData.description,
         category: productData.category,

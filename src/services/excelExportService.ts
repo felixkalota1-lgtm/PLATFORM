@@ -1,16 +1,6 @@
-/**
- * Excel Export Service
- * 
- * Exports current Firestore products to Excel file
- * Used for:
- * - Download current inventory as Excel
- * - Backup inventory data
- * - Share with external teams
- */
-
 import * as XLSX from 'xlsx';
 import { collection, query, where, getDocs } from 'firebase/firestore';
-import { db } from '../firebase';
+import { db } from './firebase';
 
 export interface ExportOptions {
   tenantId: string;
@@ -22,7 +12,7 @@ export interface ExportOptions {
  * Export products to Excel file
  */
 export async function exportProductsToExcel(options: ExportOptions): Promise<Blob> {
-  const { tenantId, fileName = 'inventory.xlsx', includeArchived = false } = options;
+  const { tenantId, includeArchived = false } = options;
 
   try {
     console.log(`📤 Exporting products for tenant: ${tenantId}`);
