@@ -121,10 +121,6 @@ export default function BranchStockDisplay({ tenantId, refreshKey }: { tenantId:
       setLoading(false)
     }
   }
-    } finally {
-      setLoading(false)
-    }
-  }
 
   const selectedBranchData = branchStocks.find(b => b.branchId === selectedBranch)
 
