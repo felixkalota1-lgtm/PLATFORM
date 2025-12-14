@@ -30,7 +30,7 @@ export default function WarehouseStockView({ tenantId, refreshKey }: { tenantId:
       const itemList = snapshot.docs
         .map(doc => {
           const data = doc.data()
-          const quantity = data.quantity || 0
+          const quantity = data.quantity || data.stock || 0
           let status: 'in_stock' | 'low_stock' | 'critical'
           if (quantity === 0) status = 'critical'
           else if (quantity < 50) status = 'low_stock'
@@ -38,7 +38,7 @@ export default function WarehouseStockView({ tenantId, refreshKey }: { tenantId:
 
           return {
             sku: data.sku || doc.id,
-            productName: data.productName || 'Unknown',
+            productName: data.productName || data.name || 'Unknown',
             quantity,
             category: data.category,
             status,

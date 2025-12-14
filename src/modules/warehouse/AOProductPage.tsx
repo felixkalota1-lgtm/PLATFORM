@@ -41,10 +41,19 @@ export default function AOProductPage() {
         const productsRef = collection(db, 'tenants', tenantId, 'products')
         const snapshot = await getDocs(query(productsRef))
         
-        const loadedProducts: Product[] = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data() as Omit<Product, 'id'>
-        }))
+        const loadedProducts: Product[] = snapshot.docs.map(doc => {
+          const data = doc.data()
+          return {
+            id: doc.id,
+            name: data.name || '',
+            sku: data.sku || '',
+            price: data.price || 0,
+            quantity: data.quantity || data.stock || 0, // Handle both field names
+            category: data.category,
+            description: data.description,
+            image: data.image,
+          }
+        })
         
         setProducts(loadedProducts)
         setFilteredProducts(loadedProducts)
