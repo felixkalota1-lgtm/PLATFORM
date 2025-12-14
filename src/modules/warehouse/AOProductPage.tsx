@@ -85,7 +85,7 @@ export default function AOProductPage() {
   // Calculate statistics
   const totalValue = products.reduce((sum, p) => sum + ((p.price || 0) * (p.quantity || 0)), 0)
   const totalQuantity = products.reduce((sum, p) => sum + (p.quantity || 0), 0)
-  const lowStockItems = products.filter(p => (p.quantity || 0) > 0 && (p.quantity || 0) < 10).length
+  const lowStockItems = products.filter(p => (p.quantity || 0) < 10).length
 
   return (
     <div className="space-y-6 p-6">
