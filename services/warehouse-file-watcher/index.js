@@ -20,7 +20,7 @@ import dotenv from 'dotenv';
 import https from 'https';
 import admin from 'firebase-admin';
 import XLSX from 'xlsx';
-import FileTracker from '../FileTracker.js';
+import FileTracker from './FileTracker.js';
 import { parseWarehouseCSV } from './services/csvParser.js';
 import { parseWarehouseExcel } from './services/excelParser.js';
 import { syncWarehouseData, getWarehouseStats } from './services/warehouseFirestore.js';
