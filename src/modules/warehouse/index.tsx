@@ -48,136 +48,125 @@ export default function WarehouseModule() {
   }
 
   return (
-    <div className="space-y-6 p-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Warehouse Management</h1>
-          <p className="text-gray-600 dark:text-gray-400 mt-1">Manage warehouse operations, inventory locations, and logistics</p>
-        </div>
-        <button
-          onClick={() => setIsUploadOpen(true)}
-          className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-        >
-          <Upload size={20} />
-          📊 Import Items
-        </button>
-      </div>
+    <div className="w-full">
+      {/* Full-page components (Analytics, Products, Upload, Transfer) */}
+      {(activeTab === 'products' || activeTab === 'upload' || activeTab === 'transfer' || activeTab === 'analytics') ? (
+        <>
+          {activeTab === 'products' && <AOProductPage />}
+          {activeTab === 'upload' && <WarehouseUploadPortal />}
+          {activeTab === 'transfer' && <StockTransferManager />}
+          {activeTab === 'analytics' && <WarehouseAnalyticsDashboard />}
+        </>
+      ) : (
+        // Standard page layout with tabs for other views
+        <div className="space-y-6 p-6">
+          {/* Header */}
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Warehouse Management</h1>
+              <p className="text-gray-600 dark:text-gray-400 mt-1">Manage warehouse operations, inventory locations, and logistics</p>
+            </div>
+            <button
+              onClick={() => setIsUploadOpen(true)}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              <Upload size={20} />
+              📊 Import Items
+            </button>
+          </div>
 
-      {/* Product Upload Modal */}
-      <ProductUploadModal
-        isOpen={isUploadOpen}
-        onClose={() => setIsUploadOpen(false)}
-        tenantId={tenantId}
-        onSuccess={handleUploadSuccess}
-      />
+          {/* Product Upload Modal */}
+          <ProductUploadModal
+            isOpen={isUploadOpen}
+            onClose={() => setIsUploadOpen(false)}
+            tenantId={tenantId}
+            onSuccess={handleUploadSuccess}
+          />
 
-      {/* Tab Navigation */}
-      <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 rounded-t-lg">
-        <div className="flex overflow-x-auto">
-          <button
-            onClick={() => handleTabChange('products')}
-            className={`px-6 py-3 font-medium flex items-center gap-2 transition-colors whitespace-nowrap ${
-              activeTab === 'products'
-                ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400'
-                : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-300'
-            }`}
-          >
-            <Eye size={18} />
-            All Products
-          </button>
-          <button
-            onClick={() => handleTabChange('upload')}
-            className={`px-6 py-3 font-medium flex items-center gap-2 transition-colors whitespace-nowrap ${
-              activeTab === 'upload'
-                ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400'
-                : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-300'
-            }`}
-          >
-            <Upload size={18} />
-            Upload Portal
-          </button>
-          <button
-            onClick={() => handleTabChange('transfer')}
-            className={`px-6 py-3 font-medium flex items-center gap-2 transition-colors whitespace-nowrap ${
-              activeTab === 'transfer'
-                ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400'
-                : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-300'
-            }`}
-          >
-            <Send size={18} />
-            Transfer Stock
-          </button>
-          <button
-            onClick={() => handleTabChange('analytics')}
-            className={`px-6 py-3 font-medium flex items-center gap-2 transition-colors whitespace-nowrap ${
-              activeTab === 'analytics'
-                ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400'
-                : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-300'
-            }`}
-          >
-            <BarChart3 size={18} />
-            Analytics
-          </button>
-          <button
-            onClick={() => handleTabChange('map')}
-            className={`px-6 py-3 font-medium flex items-center gap-2 transition-colors whitespace-nowrap ${
-              activeTab === 'map'
-                ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400'
-                : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-300'
-            }`}
-          >
-            <MapPin size={18} />
-            Warehouse Map
-          </button>
-          <button
-            onClick={() => handleTabChange('inventory')}
-            className={`px-6 py-3 font-medium flex items-center gap-2 transition-colors whitespace-nowrap ${
-              activeTab === 'inventory'
-                ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400'
-                : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-300'
-            }`}
-          >
-            <Package size={18} />
-            Inventory Locations
-          </button>
-          <button
-            onClick={() => handleTabChange('orders')}
-            className={`px-6 py-3 font-medium flex items-center gap-2 transition-colors whitespace-nowrap ${
-              activeTab === 'orders'
-                ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400'
-                : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-300'
-            }`}
-          >
-            <AlertCircle size={18} />
-            Pending Orders
-          </button>
-        </div>
-      </div>
+          {/* Tab Navigation */}
+          <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 rounded-t-lg">
+            <div className="flex overflow-x-auto">
+              <button
+                onClick={() => handleTabChange('products')}
+                className={`px-6 py-3 font-medium flex items-center gap-2 transition-colors whitespace-nowrap ${
+                  activeTab === 'products'
+                    ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400'
+                    : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-300'
+                }`}
+              >
+                <Eye size={18} />
+                All Products
+              </button>
+              <button
+                onClick={() => handleTabChange('upload')}
+                className={`px-6 py-3 font-medium flex items-center gap-2 transition-colors whitespace-nowrap ${
+                  activeTab === 'upload'
+                    ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400'
+                    : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-300'
+                }`}
+              >
+                <Upload size={18} />
+                Upload Portal
+              </button>
+              <button
+                onClick={() => handleTabChange('transfer')}
+                className={`px-6 py-3 font-medium flex items-center gap-2 transition-colors whitespace-nowrap ${
+                  activeTab === 'transfer'
+                    ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400'
+                    : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-300'
+                }`}
+              >
+                <Send size={18} />
+                Transfer Stock
+              </button>
+              <button
+                onClick={() => handleTabChange('analytics')}
+                className={`px-6 py-3 font-medium flex items-center gap-2 transition-colors whitespace-nowrap ${
+                  activeTab === 'analytics'
+                    ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400'
+                    : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-300'
+                }`}
+              >
+                <BarChart3 size={18} />
+                Analytics
+              </button>
+              <button
+                onClick={() => handleTabChange('map')}
+                className={`px-6 py-3 font-medium flex items-center gap-2 transition-colors whitespace-nowrap ${
+                  activeTab === 'map'
+                    ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400'
+                    : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-300'
+                }`}
+              >
+                <MapPin size={18} />
+                Warehouse Map
+              </button>
+              <button
+                onClick={() => handleTabChange('inventory')}
+                className={`px-6 py-3 font-medium flex items-center gap-2 transition-colors whitespace-nowrap ${
+                  activeTab === 'inventory'
+                    ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400'
+                    : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-300'
+                }`}
+              >
+                <Package size={18} />
+                Inventory Locations
+              </button>
+              <button
+                onClick={() => handleTabChange('orders')}
+                className={`px-6 py-3 font-medium flex items-center gap-2 transition-colors whitespace-nowrap ${
+                  activeTab === 'orders'
+                    ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400'
+                    : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-300'
+                }`}
+              >
+                <AlertCircle size={18} />
+                Pending Orders
+              </button>
+            </div>
+          </div>
 
-      {/* Content */}
-      {/* AO Products Tab */}
-      {activeTab === 'products' && (
-        <AOProductPage />
-      )}
-
-      {/* Upload Portal Tab */}
-      {activeTab === 'upload' && (
-        <WarehouseUploadPortal />
-      )}
-
-      {/* Stock Transfer Tab */}
-      {activeTab === 'transfer' && (
-        <StockTransferManager />
-      )}
-
-      {/* Analytics Tab */}
-      {activeTab === 'analytics' && (
-        <WarehouseAnalyticsDashboard />
-      )}
-
-      {activeTab !== 'products' && activeTab !== 'upload' && activeTab !== 'transfer' && activeTab !== 'analytics' && (
-        <div className="bg-white dark:bg-gray-800 rounded-b-lg shadow p-6">
+          <div className="bg-white dark:bg-gray-800 rounded-b-lg shadow p-6">
           {/* Warehouse Map Tab */}
           {activeTab === 'map' && (
             <div className="space-y-4">
