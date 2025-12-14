@@ -26,7 +26,7 @@ export default function WarehouseStockView({ tenantId, refreshKey }: { tenantId:
 
   const loadWarehouseStock = async () => {
     try {
-      const snapshot = await getDocs(collection(db, 'warehouse_inventory'))
+      const snapshot = await getDocs(collection(db, 'tenants', tenantId, 'products'))
       const itemList = snapshot.docs
         .map(doc => {
           const data = doc.data()

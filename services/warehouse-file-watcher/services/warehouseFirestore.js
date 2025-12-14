@@ -22,17 +22,18 @@ const MAX_RETRIES = 3;
  * @param {string} fileName - Source file name
  * @returns {Promise<Object>} { synced, failed, duplicates }
  */
-export async function syncWarehouseData(items, fileName) {
+export async function syncWarehouseData(items, fileName, tenantId = 'default') {
   const db = admin.firestore();
   let synced = 0;
   let failed = 0;
   let duplicates = 0;
 
   try {
+    // CHANGED: Sync to tenants/{id}/products (warehouse is primary source)
     // Process in batches
     for (let i = 0; i < items.length; i += BATCH_SIZE) {
       const batch = items.slice(i, i + BATCH_SIZE);
-      const result = await processBatch(db, batch);
+      const result = await processBatch(db, batch, tenantId);
       synced += result.synced;
       failed += result.failed;
       duplicates += result.duplicates;
@@ -59,7 +60,7 @@ export async function syncWarehouseData(items, fileName) {
  * @param {Array} items - Items to process
  * @returns {Promise<Object>} { synced, failed, duplicates }
  */
-async function processBatch(db, items) {
+async function processBatch(db, items, tenantId = 'default') {
   const batch = db.batch();
   let synced = 0;
   let failed = 0;
@@ -67,14 +68,17 @@ async function processBatch(db, items) {
 
   for (const item of items) {
     try {
-      // Create composite key: location_sku
-      const docId = `${item.location.toUpperCase()}_${item.sku.toUpperCase()}`;
-      const docRef = db.collection('warehouse_inventory').doc(docId);
+      // Use SKU as document ID (simpler than location_sku composite)
+      const docId = item.sku.toUpperCase();
+      const docRef = db.collection('tenants').doc(tenantId).collection('products').doc(docId);
 
       // Add metadata
       const itemWithMeta = {
         ...item,
-        docId,
+        sku: docId,
+        active: true,
+        quantity: item.quantity,
+        name: item.productName || item.name,
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
         updatedAt: admin.firestore.FieldValue.serverTimestamp()
       };

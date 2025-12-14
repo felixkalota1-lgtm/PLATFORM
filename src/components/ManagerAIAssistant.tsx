@@ -52,9 +52,10 @@ export default function ManagerAIAssistant({ visible = true }: ManagerAIAssistan
   const generateRecommendations = async () => {
     try {
       setIsLoading(true)
+      const tenantId = user?.tenantId || 'default'
 
       // Get warehouse inventory
-      const warehouseSnapshot = await getDocs(collection(db, 'warehouse_inventory'))
+      const warehouseSnapshot = await getDocs(collection(db, 'tenants', tenantId, 'products'))
       const warehouseItems = warehouseSnapshot.docs.map(doc => ({
         sku: doc.data().sku || doc.id,
         productName: doc.data().productName,

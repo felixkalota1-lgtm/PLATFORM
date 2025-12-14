@@ -57,7 +57,7 @@ export default function AnalyticsDashboard() {
 
     try {
       const q = query(
-        collection(db, 'tenants', user.tenantId, 'products'),
+        collection(db, 'warehouse_inventory'),
         where('source', '==', 'inventory'),
         where('active', '==', true)
       )

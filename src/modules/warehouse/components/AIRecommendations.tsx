@@ -29,8 +29,8 @@ export default function AIRecommendations({ tenantId }: { tenantId: string }) {
 
   const generateRecommendations = async () => {
     try {
-      // Get warehouse inventory
-      const warehouseSnapshot = await getDocs(collection(db, 'warehouse_inventory'))
+      // Get warehouse inventory from products
+      const warehouseSnapshot = await getDocs(collection(db, 'tenants', tenantId, 'products'))
       const warehouseItems = warehouseSnapshot.docs.map(doc => ({
         sku: doc.data().sku || doc.id,
         productName: doc.data().productName,

@@ -1,15 +1,15 @@
 /**
  * Warehouse File Watcher Service - Enhanced Edition
  * 
- * Real-time bidirectional sync between CSV files and Firebase Firestore
+ * Real-time bidirectional sync between Excel/CSV files and Firebase Firestore
  * 
  * Features:
  * - File modification time (mtime) based change detection
- * - Real-time monitoring of warehouse CSV files
- * - Automatic CSV parsing and validation
+ * - Real-time monitoring of warehouse Excel and CSV files
+ * - Automatic parsing and validation (same logic as inventory)
+ * - Duplicate detection within file and against existing stock
  * - Batch Firestore uploads
  * - File locking detection and retry
- * - Duplicate detection and prevention
  * - Memory-efficient auto-cleanup
  */
 
@@ -19,8 +19,10 @@ import chokidar from 'chokidar';
 import dotenv from 'dotenv';
 import https from 'https';
 import admin from 'firebase-admin';
+import XLSX from 'xlsx';
 import FileTracker from '../FileTracker.js';
 import { parseWarehouseCSV } from './services/csvParser.js';
+import { parseWarehouseExcel } from './services/excelParser.js';
 import { syncWarehouseData, getWarehouseStats } from './services/warehouseFirestore.js';
 
 dotenv.config();
@@ -105,6 +107,187 @@ async function waitForFileUnlock(filePath, maxWait = FILE_LOCK_TIMEOUT) {
   throw new Error(`File timeout: ${path.basename(filePath)}`);
 }
 
+/**
+ * Validate warehouse item data
+ */
+function validateWarehouseItem(item, index) {
+  const errors = [];
+  
+  if (!item.sku) {
+    errors.push('Missing SKU');
+  }
+  if (!item.productName) {
+    errors.push('Missing Product Name');
+  }
+  if (item.quantity === undefined || item.quantity === '') {
+    errors.push('Missing Quantity');
+  }
+  
+  if (errors.length > 0) {
+    return { valid: false, errors, item: {} };
+  }
+
+  const quantity = parseInt(item.quantity);
+  if (isNaN(quantity) || quantity < 0) {
+    return { 
+      valid: false, 
+      errors: [`Invalid quantity: ${item.quantity}`], 
+      item: {} 
+    };
+  }
+
+  return {
+    valid: true,
+    errors: [],
+    item: {
+      sku: String(item.sku).trim().toUpperCase(),
+      productName: String(item.productName).trim(),
+      quantity: quantity,
+      category: item.category ? String(item.category).trim() : 'Uncategorized',
+      location: item.location ? String(item.location).trim().toUpperCase() : 'MAIN',
+    },
+  };
+}
+
+/**
+ * Detect duplicates within the file
+ */
+function detectDuplicatesWithinFile(items) {
+  const duplicates = [];
+  const seenSkus = new Set();
+
+  items.forEach((item, i) => {
+    if (!item.sku) return;
+
+    const skuKey = item.sku.toUpperCase();
+    if (seenSkus.has(skuKey)) {
+      duplicates.push({
+        sourceProduct: `${item.productName} (SKU: ${item.sku})`,
+        reason: 'Same SKU appears multiple times in file',
+        location: 'within-file',
+      });
+    }
+    seenSkus.add(skuKey);
+  });
+
+  return duplicates;
+}
+
+/**
+ * Detect duplicates in existing warehouse inventory
+ */
+async function detectDuplicatesInWarehouse(items, tenantId = TENANT_ID) {
+  if (!admin.apps.length) return [];
+
+  try {
+    const db = admin.firestore();
+    const snapshot = await db.collection('warehouse_inventory').get();
+    const existing = snapshot.docs.map(d => ({
+      sku: d.data().sku,
+      productName: d.data().productName,
+      location: d.data().location,
+    }));
+
+    const duplicates = [];
+    items.forEach(item => {
+      if (!item.sku) return;
+
+      const skuMatch = existing.find(
+        e => e.sku === item.sku && e.location === item.location
+      );
+      
+      if (skuMatch) {
+        duplicates.push({
+          sourceProduct: `${item.productName} (SKU: ${item.sku})`,
+          location: item.location,
+          reason: 'Same SKU at same location already exists',
+        });
+        return;
+      }
+    });
+    
+    return duplicates;
+  } catch (error) {
+    console.warn('⚠️ Warehouse duplicate check failed:', error.message);
+    return [];
+  }
+}
+
+/**
+ * Parse Excel file (same format as inventory watcher)
+ */
+function parseExcelFile(filePath) {
+  try {
+    const workbook = XLSX.readFile(filePath);
+    const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+    const data = XLSX.utils.sheet_to_json(worksheet);
+    
+    if (data.length === 0) return { data: [], columns: [] };
+
+    const columns = Object.keys(data[0]);
+    console.log(`📄 Parsed: ${data.length} rows, ${columns.length} columns`);
+    console.log(`📋 Columns: ${columns.join(', ')}`);
+    
+    return { data, columns };
+  } catch (error) {
+    console.error('❌ Parse error:', error.message);
+    return { data: [], columns: [] };
+  }
+}
+
+/**
+ * Process items for warehouse upload (validation + duplicate detection)
+ */
+async function processItemsForWarehouse(items, sourceFile) {
+  console.log(`\n🔄 Found ${items.length} items`);
+  
+  const validItems = [];
+  const validationErrors = [];
+  
+  items.forEach((item, index) => {
+    const validation = validateWarehouseItem(item, index);
+    if (validation.valid) {
+      validItems.push(validation.item);
+    } else {
+      validationErrors.push({ row: index + 2, errors: validation.errors });
+    }
+  });
+  
+  if (validationErrors.length > 0) {
+    console.warn(`⚠️ Validation errors for ${validationErrors.length} items`);
+  }
+  
+  if (validItems.length === 0) {
+    console.error('❌ No valid items');
+    return { ready: 0, skipped: validationErrors.length, synced: 0, failed: 0, dupFound: 0 };
+  }
+
+  const fileDups = detectDuplicatesWithinFile(validItems);
+  if (fileDups.length > 0) {
+    console.warn(`⚠️ ${fileDups.length} duplicates within file`);
+  }
+
+  const warehouseDups = await detectDuplicatesInWarehouse(validItems);
+  if (warehouseDups.length > 0) {
+    console.warn(`⚠️ ${warehouseDups.length} duplicates in warehouse`);
+  }
+
+  console.log(`\n📊 Syncing ${validItems.length} items:`);
+  validItems.slice(0, 10).forEach((item, i) => {
+    console.log(`  ${i + 1}. ${item.productName} (Qty: ${item.quantity}, Location: ${item.location})`);
+  });
+  if (validItems.length > 10) console.log(`  ... and ${validItems.length - 10} more`);
+
+  const syncResult = await syncWarehouseData(validItems, sourceFile, TENANT_ID);
+  
+  return {
+    ready: validItems.length,
+    skipped: validationErrors.length,
+    dupFound: fileDups.length + warehouseDups.length,
+    ...syncResult
+  };
+}
+
 async function handleFileChange(filePath) {
   const fileName = path.basename(filePath);
   
@@ -126,17 +309,36 @@ async function handleFileChange(filePath) {
     debounceTimers.delete(filePath);
     
     try {
-      console.log(`\n🏭 Processing Warehouse CSV: ${fileName}`);
+      console.log(`\n🏭 Processing Warehouse File: ${fileName}`);
       await waitForFileUnlock(filePath);
       
-      const data = await parseWarehouseCSV(filePath);
-      if (!data || data.length === 0) {
-        console.error('❌ No data in file');
-        return;
-      }
+      let data;
+      const isExcel = filePath.match(/\.(xlsx|xls)$/i);
       
-      const result = await syncWarehouseData(data, fileName);
-      console.log(`\n✅ Sync Result: ${result.synced} items synced`);
+      if (isExcel) {
+        // Parse Excel file with same validation as inventory
+        console.log(`📊 Parsing Excel file...`);
+        const { data: excelData, columns } = parseExcelFile(filePath);
+        if (!excelData || excelData.length === 0) {
+          console.error('❌ No data in file');
+          return;
+        }
+        
+        // Process items with validation and duplicate detection
+        const result = await processItemsForWarehouse(excelData, fileName);
+        console.log(`\n📊 Result: ${result.synced} synced, ${result.failed} failed, ${result.dupFound} duplicates detected`);
+      } else {
+        // Parse CSV file
+        console.log(`📋 Parsing CSV file...`);
+        data = await parseWarehouseCSV(filePath);
+        if (!data || data.length === 0) {
+          console.error('❌ No data in file');
+          return;
+        }
+        
+        const result = await syncWarehouseData(data, fileName, TENANT_ID);
+        console.log(`\n✅ Sync Result: ${result.synced} items synced`);
+      }
       
       // Mark file as successfully processed
       markFileProcessed(filePath);
@@ -165,8 +367,20 @@ function initializeWatcher() {
     awaitWriteFinish: { stabilityThreshold: 1000 }
   });
 
-  watcher.on('add', (filePath) => handleFileChange(filePath));
-  watcher.on('change', (filePath) => handleFileChange(filePath));
+  watcher.on('add', (filePath) => {
+    const isSupported = filePath.match(/\.(xlsx|xls|csv)$/i);
+    if (isSupported) {
+      console.log(`📄 New file: ${path.basename(filePath)}`);
+      handleFileChange(filePath);
+    }
+  });
+
+  watcher.on('change', (filePath) => {
+    const isSupported = filePath.match(/\.(xlsx|xls|csv)$/i);
+    if (isSupported) {
+      handleFileChange(filePath);
+    }
+  });
 
   watcher.on('error', (error) => {
     console.error('❌ Watcher error:', error.message);
@@ -186,11 +400,13 @@ async function displayWelcome() {
   try {
     const stats = await getWarehouseStats();
     console.log('\n┌─────────────────────────────────────────┐');
-    console.log('│   🏭 Warehouse File Watcher Started    │');
+    console.log('│ 🏭 Warehouse File Watcher (Excel/CSV) │');
     console.log('└─────────────────────────────────────────┘');
     console.log(`📁 Watching: ${WATCH_FOLDER}`);
     console.log(`🏢 Tenant ID: ${TENANT_ID}`);
     console.log(`⏱️ Debounce time: ${DEBOUNCE_TIME}ms`);
+    console.log(`📊 Supported formats: Excel (.xlsx, .xls) and CSV`);
+    console.log(`✨ Features: Validation, Duplicate detection, Batch sync`);
     console.log('\n📊 Current Warehouse Status:');
     console.log(`   Total Items: ${stats.totalItems}`);
     console.log(`   Total Quantity: ${stats.totalQuantity}`);

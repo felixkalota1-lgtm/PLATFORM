@@ -387,9 +387,10 @@ async function syncProductsToFirestore(products, tenantId = TENANT_ID) {
 
   try {
     const db = admin.firestore();
-    const productsCollection = db.collection('tenants').doc(tenantId).collection('products');
+    // CHANGED: Sync to warehouse_inventory (primary source)
+    const productsCollection = db.collection('warehouse_inventory');
 
-    console.log(`🔄 Syncing ${products.length} products with batch operation...`);
+    console.log(`🔄 Syncing ${products.length} products to warehouse_inventory...`);
 
     // First pass: collect all existing SKUs and alternate SKUs
     const existingSnapshot = await productsCollection.get();

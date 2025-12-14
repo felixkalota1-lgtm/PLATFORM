@@ -10,6 +10,7 @@ import { db } from '../../../services/firebase'
 import { collection, addDoc, serverTimestamp, getDocs, query, where, writeBatch, doc } from 'firebase/firestore'
 
 interface TransferItem {
+  id?: string
   sku: string
   productName: string
   quantity: number
@@ -64,10 +65,11 @@ export default function TransferForm({ tenantId, onSuccess, userId }: TransferFo
 
   const loadWarehouseItems = async () => {
     try {
-      const snapshot = await getDocs(collection(db, 'warehouse_inventory'))
+      const snapshot = await getDocs(collection(db, 'tenants', tenantId, 'products'))
       const items = snapshot.docs.map(doc => {
         const data = doc.data()
         return {
+          id: doc.id,
           sku: data.sku || doc.id,
           productName: data.productName || 'Unknown Product',
           quantity: data.quantity || 0,
@@ -149,8 +151,8 @@ export default function TransferForm({ tenantId, onSuccess, userId }: TransferFo
       // Update warehouse inventory
       const batch = writeBatch(db)
       selectedItems.forEach(item => {
-        const docId = `warehouse_main_nebraska_${item.sku}`
-        const warehouseDocRef = doc(db, 'warehouse_inventory', docId)
+        const itemId = item.id || item.sku
+        const warehouseDocRef = doc(db, 'tenants', tenantId, 'products', itemId)
         batch.update(warehouseDocRef, {
           quantity: item.maxQuantity - item.quantity,
           lastUpdated: serverTimestamp(),

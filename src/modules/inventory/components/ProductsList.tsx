@@ -44,10 +44,10 @@ export const ProductsList = () => {
       return
     }
 
-    console.log('🔄 Setting up real-time listener for products:', user.tenantId);
-    const q = query(collection(db, 'tenants', user.tenantId, 'products'), where('active', '==', true))
+    console.log('🔄 Setting up real-time listener for warehouse inventory:', user.tenantId);
+    const q = query(collection(db, 'warehouse_inventory'), where('active', '==', true))
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      console.log('📦 Products snapshot received:', snapshot.docs.length, 'products');
+      console.log('📦 Warehouse inventory snapshot received:', snapshot.docs.length, 'items');
       const productList: Product[] = []
       snapshot.forEach((doc) => {
         console.log('📄 Product:', doc.data());
@@ -93,11 +93,11 @@ export const ProductsList = () => {
   }
 
   const handleSaveProduct = async (updatedProduct: any) => {
-    if (!user?.tenantId || !editingProduct) return
+    if (!editingProduct) return
     
     setSavingProduct(true)
     try {
-      const productRef = doc(db, 'tenants', user.tenantId, 'products', editingProduct.id)
+      const productRef = doc(db, 'warehouse_inventory', editingProduct.id)
       await setDoc(productRef, {
         ...updatedProduct,
         updatedAt: new Date(),
@@ -118,11 +118,9 @@ export const ProductsList = () => {
   }
 
   const handleDeleteProduct = async (productId: string) => {
-    if (!user?.tenantId) return
-    
     try {
       const product = products.find(p => p.id === productId)
-      const productRef = doc(db, 'tenants', user.tenantId, 'products', productId)
+      const productRef = doc(db, 'warehouse_inventory', productId)
       await deleteDoc(productRef)
       console.log('✅ Product deleted:', productId)
       console.log('🗑️ Syncing to Excel: This deletion will be reflected in Excel if file-watcher is running')

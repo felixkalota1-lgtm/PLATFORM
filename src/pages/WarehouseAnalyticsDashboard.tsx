@@ -66,8 +66,8 @@ export default function WarehouseAnalyticsDashboard() {
     try {
       setLoading(true)
 
-      // Load warehouse inventory
-      const warehouseSnapshot = await getDocs(collection(db, 'warehouse_inventory'))
+      // Load warehouse inventory from products
+      const warehouseSnapshot = await getDocs(collection(db, 'tenants', user?.tenantId || 'default', 'products'))
       const warehouseItems = warehouseSnapshot.docs.map(doc => ({
         id: doc.id,
         sku: doc.data().sku || doc.id,
