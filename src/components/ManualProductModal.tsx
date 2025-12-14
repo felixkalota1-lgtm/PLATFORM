@@ -30,7 +30,7 @@ export default function ManualProductModal({
   onClose,
   tenantId,
   onSuccess,
-  targetCollection = 'products',
+  targetCollection = 'warehouse',
 }: ManualProductModalProps) {
   const [formData, setFormData] = useState<ProductFormData>({
     name: '',
