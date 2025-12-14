@@ -1,11 +1,11 @@
-SKU,Product Name,Quantity,Location,Category,Price
-PROD-001,Monitor Stand,100,MAIN,Office Supplies,49.99
-PROD-002,Mechanical Keyboard,50,SECTION-A,Electronics,149.99
-PROD-003,USB-C Hub,75,SECTION-B,Accessories,39.99
-PROD-004,LED Desk Lamp,150,MAIN,Office Supplies,89.99
-PROD-005,Wireless Mouse,200,SECTION-A,Electronics,29.99
-PROD-006,Monitor,45,MAIN,Electronics,299.99
-PROD-007,External SSD,30,SECTION-B,Storage,129.99
-PROD-008,Desk Organizer,120,SECTION-A,Office Supplies,19.99
-PROD-009,Cable Management Kit,80,MAIN,Accessories,24.99
-PROD-010,Monitor Arm,60,SECTION-B,Office Supplies,34.99
+SKU,Product Name,Quantity,Location,Category
+PROD-001,Monitor Stand,100,MAIN,Office Supplies
+PROD-002,Mechanical Keyboard,50,SECTION-A,Electronics
+PROD-003,USB-C Hub,75,SECTION-B,Accessories
+PROD-004,LED Desk Lamp,150,MAIN,Office Supplies
+PROD-005,Wireless Mouse,200,SECTION-A,Electronics
+PROD-006,Monitor,45,MAIN,Electronics
+PROD-007,External SSD,30,SECTION-B,Storage
+PROD-008,Desk Organizer,120,SECTION-A,Office Supplies
+PROD-009,Cable Management Kit,80,MAIN,Accessories
+PROD-010,Monitor Arm,60,SECTION-B,Office Supplies

@@ -136,15 +136,6 @@ function validateWarehouseItem(item, index) {
     };
   }
 
-  // Parse price if provided
-  let price = 0;
-  if (item.price || item.unitPrice) {
-    const priceValue = parseFloat(item.price || item.unitPrice);
-    if (!isNaN(priceValue) && priceValue >= 0) {
-      price = priceValue;
-    }
-  }
-
   return {
     valid: true,
     errors: [],
@@ -152,7 +143,6 @@ function validateWarehouseItem(item, index) {
       sku: String(item.sku).trim().toUpperCase(),
       productName: String(item.productName).trim(),
       quantity: quantity,
-      price: price,
       category: item.category ? String(item.category).trim() : 'Uncategorized',
       location: item.location ? String(item.location).trim().toUpperCase() : 'MAIN',
     },
