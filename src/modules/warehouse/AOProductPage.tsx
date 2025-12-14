@@ -41,10 +41,20 @@ export default function AOProductPage() {
         const productsRef = collection(db, 'tenants', tenantId, 'products')
         const snapshot = await getDocs(query(productsRef))
         
-        const loadedProducts: Product[] = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data() as Omit<Product, 'id'>
-        }))
+        const loadedProducts: Product[] = snapshot.docs.map(doc => {
+          const data = doc.data() as any
+          // Map field names - support both 'price' and 'unitPrice'
+          return {
+            id: doc.id,
+            name: data.name || data.productName || '',
+            sku: data.sku || '',
+            price: data.price || data.unitPrice || 0,
+            quantity: data.quantity || 0,
+            category: data.category || '',
+            description: data.description || '',
+            image: data.image || ''
+          } as Product
+        })
         
         setProducts(loadedProducts)
         setFilteredProducts(loadedProducts)
@@ -118,6 +128,13 @@ export default function AOProductPage() {
           className="w-full pl-10 pr-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
       </div>
+
+      {/* Info Message */}
+      {totalValue === 0 && products.length > 0 && (
+        <div className="bg-blue-50 dark:bg-blue-900 border border-blue-200 dark:border-blue-700 rounded-lg p-3 text-sm text-blue-800 dark:text-blue-300">
+          💡 <strong>Note:</strong> Prices are not available for products imported from Excel files. To add prices, use the Manual Product entry in Upload Portal or update products via Procurement module.
+        </div>
+      )}
 
       {/* Products Table */}
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
