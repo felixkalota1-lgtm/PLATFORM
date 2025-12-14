@@ -13,9 +13,11 @@
  * - Upload history tracking
  */
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Upload, AlertCircle, TrendingUp, Plus, History, Zap, BarChart3 } from 'lucide-react'
 import { useAuth } from '../../hooks/useAuth'
+import { db } from '../../services/firebase'
+import { collection, query, getDocs } from 'firebase/firestore'
 import ProductUploadModal from '../../components/ProductUploadModal'
 import ManualProductModal from '../../components/ManualProductModal'
 import WarehouseUploadStats from './components/WarehouseUploadStats'
@@ -37,6 +39,25 @@ export default function WarehouseUploadPortal() {
     imagesGenerated: 0,
   })
   const [refreshKey, setRefreshKey] = useState(0)
+
+  // Load actual product count from Firestore
+  useEffect(() => {
+    const loadProductCount = async () => {
+      try {
+        const productsRef = collection(db, 'tenants', tenantId, 'products')
+        const snapshot = await getDocs(query(productsRef))
+        setUploadStats(prev => ({
+          ...prev,
+          totalProducts: snapshot.docs.length,
+        }))
+        console.log(`📦 Loaded warehouse products count: ${snapshot.docs.length}`)
+      } catch (error) {
+        console.error('Error loading product count:', error)
+      }
+    }
+
+    loadProductCount()
+  }, [tenantId, refreshKey])
 
   const handleUploadSuccess = (result: any) => {
     setUploadStats({
