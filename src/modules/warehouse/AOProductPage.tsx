@@ -74,16 +74,16 @@ export default function AOProductPage() {
   }, [searchTerm, products])
 
   // Calculate statistics
-  const totalValue = products.reduce((sum, p) => sum + (p.price * p.quantity), 0)
-  const totalQuantity = products.reduce((sum, p) => sum + p.quantity, 0)
-  const lowStockItems = products.filter(p => p.quantity < 10).length
+  const totalValue = products.reduce((sum, p) => sum + ((p.price || 0) * (p.quantity || 0)), 0)
+  const totalQuantity = products.reduce((sum, p) => sum + (p.quantity || 0), 0)
+  const lowStockItems = products.filter(p => (p.quantity || 0) < 10).length
 
   return (
     <div className="space-y-6 p-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">AO Product Details</h1>
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">All Products</h1>
           <p className="text-gray-600 dark:text-gray-400 mt-1">View all warehouse products with detailed information</p>
         </div>
         <div className="flex gap-2">
@@ -160,22 +160,22 @@ export default function AOProductPage() {
                     <td className="px-6 py-4 text-sm text-right text-gray-900 dark:text-white font-semibold">
                       <div className="flex items-center justify-end gap-1">
                         <DollarSign size={16} className="text-gray-400" />
-                        {product.price.toFixed(2)}
+                        {((p.price || 0).toFixed(2))}
                       </div>
                     </td>
                     <td className="px-6 py-4 text-sm text-right text-gray-900 dark:text-white font-semibold">
-                      {product.quantity.toLocaleString()}
+                      {(p.quantity || 0).toLocaleString()}
                     </td>
                     <td className="px-6 py-4 text-sm text-right text-gray-900 dark:text-white font-semibold">
-                      ${(product.price * product.quantity).toLocaleString('en-US', { maximumFractionDigits: 2 })}
+                      ${(((p.price || 0) * (p.quantity || 0)).toLocaleString('en-US', { maximumFractionDigits: 2 }))}
                     </td>
                     <td className="px-6 py-4 text-sm text-center">
-                      {product.quantity < 10 ? (
+                      {(product.quantity || 0) < 10 ? (
                         <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300">
                           <TrendingDown size={14} />
                           Low Stock
                         </span>
-                      ) : product.quantity < 50 ? (
+                      ) : (product.quantity || 0) < 50 ? (
                         <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold bg-yellow-100 dark:bg-yellow-900 text-yellow-700 dark:text-yellow-300">
                           Medium
                         </span>
@@ -250,13 +250,13 @@ export default function AOProductPage() {
                   <div className="bg-blue-50 dark:bg-blue-900 rounded-lg p-4">
                     <label className="text-sm font-semibold text-gray-600 dark:text-gray-400">Unit Price</label>
                     <p className="text-2xl font-bold text-blue-600 dark:text-blue-300 mt-1">
-                      ${selectedProduct.price.toFixed(2)}
+                      ${(selectedProduct.price || 0).toFixed(2)}
                     </p>
                   </div>
                   <div className="bg-green-50 dark:bg-green-900 rounded-lg p-4">
                     <label className="text-sm font-semibold text-gray-600 dark:text-gray-400">Quantity</label>
                     <p className="text-2xl font-bold text-green-600 dark:text-green-300 mt-1">
-                      {selectedProduct.quantity.toLocaleString()}
+                      {(selectedProduct.quantity || 0).toLocaleString()}
                     </p>
                   </div>
                 </div>
@@ -264,7 +264,7 @@ export default function AOProductPage() {
                 <div className="bg-purple-50 dark:bg-purple-900 rounded-lg p-4">
                   <label className="text-sm font-semibold text-gray-600 dark:text-gray-400">Total Value</label>
                   <p className="text-2xl font-bold text-purple-600 dark:text-purple-300 mt-1">
-                    ${(selectedProduct.price * selectedProduct.quantity).toLocaleString('en-US', { maximumFractionDigits: 2 })}
+                    ${(((selectedProduct.price || 0) * (selectedProduct.quantity || 0)).toLocaleString('en-US', { maximumFractionDigits: 2 }))}
                   </p>
                 </div>
 
@@ -280,12 +280,12 @@ export default function AOProductPage() {
               <div className="border-t border-gray-200 dark:border-gray-700 pt-6">
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-semibold text-gray-600 dark:text-gray-400">Stock Status</span>
-                  {selectedProduct.quantity < 10 ? (
+                  {(selectedProduct.quantity || 0) < 10 ? (
                     <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm font-semibold bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300">
                       <TrendingDown size={16} />
                       Low Stock - Reorder Soon
                     </span>
-                  ) : selectedProduct.quantity < 50 ? (
+                  ) : (selectedProduct.quantity || 0) < 50 ? (
                     <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm font-semibold bg-yellow-100 dark:bg-yellow-900 text-yellow-700 dark:text-yellow-300">
                       Medium Stock Level
                     </span>

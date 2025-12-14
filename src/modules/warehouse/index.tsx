@@ -81,7 +81,7 @@ export default function WarehouseModule() {
             }`}
           >
             <Eye size={18} />
-            AO Products
+            All Products
           </button>
           <button
             onClick={() => handleTabChange('upload')}
