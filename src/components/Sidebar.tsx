@@ -54,7 +54,7 @@ const menuItems: MenuItem[] = [
     submenu: [
       { label: 'Warehouse Upload Portal', href: '/warehouse/upload-portal' },
       { label: 'Stock Transfer Manager', href: '/warehouse/transfer' },
-      { label: 'Warehouse Analytics', href: '/warehouse-analytics' },
+      { label: 'Warehouse Analytics', href: '/warehouse/analytics' },
       { label: 'My Branch Stock', href: '/branch-stock' },
       { label: 'Warehouse Map', href: '/warehouse/map' },
       { label: 'Locations', href: '/warehouse/locations' },

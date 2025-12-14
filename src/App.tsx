@@ -5,7 +5,6 @@ import DashboardPage from './pages/DashboardPage'
 import WarehouseManagementPage from './pages/WarehouseManagementPage'
 import SendGoodsPage from './pages/SendGoodsPage'
 import BranchStockViewPage from './pages/BranchStockViewPage'
-import WarehouseAnalyticsDashboard from './pages/WarehouseAnalyticsDashboard'
 import ManagerAIAssistant from './components/ManagerAIAssistant'
 import Layout from './components/Layout'
 import ProtectedRoute from './components/ProtectedRoute'
@@ -90,7 +89,6 @@ function App() {
                 <Routes>
                   <Route path="/" element={<DashboardPage />} />
                   <Route path="/warehouse-management" element={<WarehouseManagementPage />} />
-                  <Route path="/warehouse-analytics" element={<WarehouseAnalyticsDashboard />} />
                   <Route path="/send-goods" element={<SendGoodsPage />} />
                   <Route path="/branch-stock" element={<BranchStockViewPage />} />
                   <Route path="/marketplace/*" element={<MarketplaceModule />} />
