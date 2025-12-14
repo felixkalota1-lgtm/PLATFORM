@@ -1,12 +1,13 @@
 import { useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
-import { Upload, MapPin, Package, AlertCircle, Send, Eye } from 'lucide-react'
+import { Upload, MapPin, Package, AlertCircle, Send, Eye, BarChart3 } from 'lucide-react'
 import { useAuth } from '../../hooks/useAuth'
 import ProductUploadModal from '../../components/ProductUploadModal'
 import Warehouse3DViewer from '../../components/Warehouse3DViewer'
 import WarehouseUploadPortal from './WarehouseUploadPortal'
 import StockTransferManager from './StockTransferManager'
 import AOProductPage from './AOProductPage'
+import WarehouseAnalyticsDashboard from './WarehouseAnalyticsDashboard'
 
 export default function WarehouseModule() {
   const { user } = useAuth()
@@ -19,6 +20,7 @@ export default function WarehouseModule() {
     if (location.pathname.includes('/products')) return 'products'
     if (location.pathname.includes('/upload-portal')) return 'upload'
     if (location.pathname.includes('/transfer')) return 'transfer'
+    if (location.pathname.includes('/analytics')) return 'analytics'
     if (location.pathname.includes('/map')) return 'map'
     if (location.pathname.includes('/locations')) return 'inventory'
     if (location.pathname.includes('/shipments')) return 'orders'
@@ -32,11 +34,12 @@ export default function WarehouseModule() {
     console.log('✅ Warehouse import successful:', result)
   }
   
-  const handleTabChange = (tab: 'products' | 'upload' | 'transfer' | 'map' | 'inventory' | 'orders') => {
+  const handleTabChange = (tab: 'products' | 'upload' | 'transfer' | 'analytics' | 'map' | 'inventory' | 'orders') => {
     const routeMap = {
       products: '/warehouse/products',
       upload: '/warehouse/upload-portal',
       transfer: '/warehouse/transfer',
+      analytics: '/warehouse/analytics',
       map: '/warehouse/map',
       inventory: '/warehouse/locations',
       orders: '/warehouse/shipments'
@@ -106,6 +109,17 @@ export default function WarehouseModule() {
             Transfer Stock
           </button>
           <button
+            onClick={() => handleTabChange('analytics')}
+            className={`px-6 py-3 font-medium flex items-center gap-2 transition-colors whitespace-nowrap ${
+              activeTab === 'analytics'
+                ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400'
+                : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-300'
+            }`}
+          >
+            <BarChart3 size={18} />
+            Analytics
+          </button>
+          <button
             onClick={() => handleTabChange('map')}
             className={`px-6 py-3 font-medium flex items-center gap-2 transition-colors whitespace-nowrap ${
               activeTab === 'map'
@@ -157,7 +171,12 @@ export default function WarehouseModule() {
         <StockTransferManager />
       )}
 
-      {activeTab !== 'products' && activeTab !== 'upload' && activeTab !== 'transfer' && (
+      {/* Analytics Tab */}
+      {activeTab === 'analytics' && (
+        <WarehouseAnalyticsDashboard />
+      )}
+
+      {activeTab !== 'products' && activeTab !== 'upload' && activeTab !== 'transfer' && activeTab !== 'analytics' && (
         <div className="bg-white dark:bg-gray-800 rounded-b-lg shadow p-6">
           {/* Warehouse Map Tab */}
           {activeTab === 'map' && (
