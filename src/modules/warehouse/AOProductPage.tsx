@@ -160,14 +160,14 @@ export default function AOProductPage() {
                     <td className="px-6 py-4 text-sm text-right text-gray-900 dark:text-white font-semibold">
                       <div className="flex items-center justify-end gap-1">
                         <DollarSign size={16} className="text-gray-400" />
-                        {((p.price || 0).toFixed(2))}
+                        {((product.price || 0).toFixed(2))}
                       </div>
                     </td>
                     <td className="px-6 py-4 text-sm text-right text-gray-900 dark:text-white font-semibold">
-                      {(p.quantity || 0).toLocaleString()}
+                      {(product.quantity || 0).toLocaleString()}
                     </td>
                     <td className="px-6 py-4 text-sm text-right text-gray-900 dark:text-white font-semibold">
-                      ${(((p.price || 0) * (p.quantity || 0)).toLocaleString('en-US', { maximumFractionDigits: 2 }))}
+                      ${(((product.price || 0) * (product.quantity || 0)).toLocaleString('en-US', { maximumFractionDigits: 2 }))}
                     </td>
                     <td className="px-6 py-4 text-sm text-center">
                       {(product.quantity || 0) < 10 ? (
