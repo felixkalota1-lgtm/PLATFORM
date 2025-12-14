@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0"
+    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
+    "warehouse-watcher": "node services/warehouse-file-watcher/index.js",
+    "warehouse-watcher:dev": "node --watch services/warehouse-file-watcher/index.js"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.3.4",
@@ -32,6 +34,7 @@
     "lodash": "^4.17.21",
     "lucide-react": "^0.294.0",
     "natural": "^8.1.0",
+    "node-cron": "^4.2.1",
     "ollama": "^0.6.3",
     "react": "^18.2.0",
     "react-big-calendar": "^1.19.4",

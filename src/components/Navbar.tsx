@@ -1,8 +1,9 @@
-import { Menu, LogOut, Bell, Moon, Sun } from 'lucide-react'
+import { Menu, LogOut, Bell, Moon, Sun, Settings, Mail } from 'lucide-react'
 import { useAppStore } from '../store/appStore'
 import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { useState } from 'react'
+import WorkloadDisplay from './WorkloadDisplay'
 
 interface NavbarProps {
   onMenuClick: () => void
@@ -55,6 +56,21 @@ export default function Navbar({ onMenuClick }: NavbarProps) {
         </div>
 
         <div className="flex items-center gap-4">
+          <WorkloadDisplay />
+          <button
+            onClick={() => navigate('/ai-email')}
+            className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+            title="AI Email Assistant"
+          >
+            <Mail size={20} className="text-gray-600 dark:text-gray-400 hover:text-blue-600" />
+          </button>
+          <button
+            onClick={() => navigate('/settings')}
+            className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+            title="Settings"
+          >
+            <Settings size={20} className="text-gray-600 dark:text-gray-400 hover:text-blue-600" />
+          </button>
           <button
             onClick={toggleDarkMode}
             className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"

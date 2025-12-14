@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { ChevronRight, BarChart3, ShoppingCart, Package, Truck, Users, FileText, MessageSquare, Settings, X } from 'lucide-react'
 import { Link } from 'react-router-dom'
+import { useWorkloadTheme } from '../contexts/WorkloadThemeContext'
 
 interface SidebarProps {
   open: boolean
@@ -44,6 +45,10 @@ const menuItems: MenuItem[] = [
     label: 'Sales & Procurement',
     icon: <ShoppingCart size={20} />,
     submenu: [
+      { label: 'Dashboard', href: '/procurement' },
+      { label: 'B2B Orders', href: '/procurement' },
+      { label: 'Order Tracking', href: '/procurement' },
+      { label: 'Vendor Management', href: '/procurement' },
       { label: 'Sales Quotations', href: '/sales-procurement' },
       { label: 'Procurement Requests', href: '/sales-procurement' },
     ],
@@ -109,6 +114,7 @@ const menuItems: MenuItem[] = [
 
 export default function Sidebar({ open, onToggle }: SidebarProps) {
   const [expandedItems, setExpandedItems] = useState<string[]>([])
+  const { theme } = useWorkloadTheme()
 
   const toggleExpand = (label: string) => {
     setExpandedItems(prev =>
@@ -130,9 +136,14 @@ export default function Sidebar({ open, onToggle }: SidebarProps) {
 
       {/* Sidebar */}
       <aside
-        className={`fixed lg:relative w-64 h-screen bg-gray-900 text-white overflow-y-auto transition-all duration-300 z-50 lg:z-auto ${
+        className={`fixed lg:relative w-64 h-screen text-white overflow-y-auto transition-all duration-300 z-50 lg:z-auto ${
           open ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
         }`}
+        style={{
+          background: theme.gradients.bg,
+          color: theme.colors.text,
+          transition: 'all 0.5s ease-in-out'
+        }}
       >
         <div className="p-6">
           <div className="flex items-center justify-between mb-8">
@@ -148,7 +159,23 @@ export default function Sidebar({ open, onToggle }: SidebarProps) {
                 {item.href ? (
                   <Link
                     to={item.href}
-                    className="flex items-center gap-3 px-4 py-3 rounded-lg hover:bg-gray-800 transition-colors"
+                    style={{
+                      color: theme.colors.text,
+                      padding: '0.75rem 1rem',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.75rem',
+                      borderRadius: '0.5rem',
+                      transition: 'all 0.2s ease',
+                      cursor: 'pointer'
+                    }}
+                    className="rounded-lg"
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.1)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.backgroundColor = 'transparent';
+                    }}
                   >
                     {item.icon}
                     <span className="text-sm font-medium">{item.label}</span>
@@ -157,7 +184,25 @@ export default function Sidebar({ open, onToggle }: SidebarProps) {
                   <>
                     <button
                       onClick={() => toggleExpand(item.label)}
-                      className="w-full flex items-center gap-3 px-4 py-3 rounded-lg hover:bg-gray-800 transition-colors"
+                      style={{
+                        color: theme.colors.text,
+                        padding: '0.75rem 1rem',
+                        width: '100%',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.75rem',
+                        borderRadius: '0.5rem',
+                        transition: 'all 0.2s ease',
+                        cursor: 'pointer',
+                        border: 'none',
+                        backgroundColor: 'transparent'
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.1)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.backgroundColor = 'transparent';
+                      }}
                     >
                       {item.icon}
                       <span className="text-sm font-medium flex-1 text-left">{item.label}</span>
@@ -175,7 +220,21 @@ export default function Sidebar({ open, onToggle }: SidebarProps) {
                           <Link
                             key={subitem.label}
                             to={subitem.href || '#'}
-                            className="block px-4 py-2 text-xs text-gray-300 hover:text-white hover:bg-gray-800 rounded transition-colors"
+                            style={{
+                              color: theme.colors.text,
+                              padding: '0.5rem 1rem',
+                              fontSize: '0.75rem',
+                              display: 'block',
+                              borderRadius: '0.375rem',
+                              transition: 'all 0.2s ease',
+                            }}
+                            className="hover:bg-white hover:bg-opacity-20 rounded"
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.3)';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.backgroundColor = 'transparent';
+                            }}
                           >
                             {subitem.label}
                           </Link>

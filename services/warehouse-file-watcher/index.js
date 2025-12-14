@@ -2,13 +2,15 @@
  * Warehouse File Watcher Service - Enhanced Edition
  * 
  * Real-time bidirectional sync between Excel/CSV files and Firebase Firestore
+ * With rate limiting to stay within Free Tier limits
  * 
  * Features:
  * - File modification time (mtime) based change detection
  * - Real-time monitoring of warehouse Excel and CSV files
  * - Automatic parsing and validation (same logic as inventory)
  * - Duplicate detection within file and against existing stock
- * - Batch Firestore uploads
+ * - Batch Firestore uploads with rate limiting
+ * - Daily scheduled processing to spread uploads over multiple days
  * - File locking detection and retry
  * - Memory-efficient auto-cleanup
  */
@@ -20,20 +22,36 @@ import dotenv from 'dotenv';
 import https from 'https';
 import admin from 'firebase-admin';
 import XLSX from 'xlsx';
+import { fileURLToPath } from 'url';
 import FileTracker from './FileTracker.js';
 import { parseWarehouseCSV } from './services/csvParser.js';
 import { parseWarehouseExcel } from './services/excelParser.js';
 import { syncWarehouseData, getWarehouseStats } from './services/warehouseFirestore.js';
+import UploadRateLimiter from './services/uploadRateLimiter.js';
+import DailyUploadScheduler from './services/dailyUploadScheduler.js';
 
-dotenv.config();
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const envPath = path.join(__dirname, '../../.env.local');
+
+dotenv.config({ path: envPath });
 
 const WATCH_FOLDER = process.env.WAREHOUSE_IMPORT_PATH || './warehouse-imports';
 const TENANT_ID = process.env.TENANT_ID || 'default';
 const DEBOUNCE_TIME = parseInt(process.env.DEBOUNCE_TIME || '2000');
 const FILE_LOCK_TIMEOUT = parseInt(process.env.FILE_LOCK_TIMEOUT || '5000');
 
+// Rate limiting options
+const USE_RATE_LIMITING = process.env.USE_RATE_LIMITING !== 'false'; // Enabled by default
+const DAILY_UPLOAD_LIMIT = parseInt(process.env.DAILY_UPLOAD_LIMIT || '18000'); // 18k writes/day
+const UPLOAD_SCHEDULE_TIME = process.env.UPLOAD_SCHEDULE_TIME || '00:00'; // Midnight UTC
+const USE_QUEUE = process.env.USE_QUEUE !== 'false'; // Queue large imports by default
+
 const processingFiles = new Set();
 const debounceTimers = new Map();
+
+// Initialize rate limiter and scheduler
+let rateLimiter = null;
+let uploadScheduler = null;
 
 // Initialize file tracker with mtime-based detection
 const fileTracker = new FileTracker({
@@ -108,18 +126,35 @@ async function waitForFileUnlock(filePath, maxWait = FILE_LOCK_TIMEOUT) {
 }
 
 /**
- * Validate warehouse item data
+ * Normalize item data - flexible column mapping
+ */
+function normalizeItem(item) {
+  // Map various column names to standard fields
+  const normalized = {
+    sku: item.sku || item.SKU || item.code || item.Code || item.PRODUCT_ID || item.productId || item.product_id || null,
+    productName: item.productName || item.name || item.Name || item.NAME || item.Product || item.PRODUCT || item.product || item.description || item.Description || null,
+    quantity: item.quantity || item.qty || item.Qty || item.QUANTITY || item.count || item.Count || item.stock || item.Stock || 0,
+    category: item.category || item.Category || item.CATEGORY || 'Uncategorized',
+    location: item.location || item.Location || item.LOCATION || item.warehouse || item.bin || item.Bin || 'MAIN',
+  };
+  return normalized;
+}
+
+/**
+ * Validate warehouse item data - FLEXIBLE
  */
 function validateWarehouseItem(item, index) {
+  // First normalize the item keys
+  const normalized = normalizeItem(item);
   const errors = [];
   
-  if (!item.sku) {
-    errors.push('Missing SKU');
+  if (!normalized.sku || String(normalized.sku).trim() === '') {
+    errors.push('Missing SKU/Code');
   }
-  if (!item.productName) {
-    errors.push('Missing Product Name');
+  if (!normalized.productName || String(normalized.productName).trim() === '') {
+    errors.push('Missing Product Name/Description');
   }
-  if (item.quantity === undefined || item.quantity === '') {
+  if (normalized.quantity === undefined || normalized.quantity === '' || normalized.quantity === null) {
     errors.push('Missing Quantity');
   }
   
@@ -127,24 +162,28 @@ function validateWarehouseItem(item, index) {
     return { valid: false, errors, item: {} };
   }
 
-  const quantity = parseInt(item.quantity);
+  // Convert quantity safely
+  let quantity = normalized.quantity;
+  if (typeof quantity === 'string') {
+    // Extract number from string like "500" or "500 units"
+    quantity = parseInt(quantity.toString().replace(/[^\d]/g, '')) || 0;
+  } else {
+    quantity = parseInt(quantity) || 0;
+  }
+
   if (isNaN(quantity) || quantity < 0) {
-    return { 
-      valid: false, 
-      errors: [`Invalid quantity: ${item.quantity}`], 
-      item: {} 
-    };
+    quantity = 0;  // Default to 0 instead of failing
   }
 
   return {
     valid: true,
     errors: [],
     item: {
-      sku: String(item.sku).trim().toUpperCase(),
-      productName: String(item.productName).trim(),
+      sku: String(normalized.sku).trim().toUpperCase(),
+      productName: String(normalized.productName).trim(),
       quantity: quantity,
-      category: item.category ? String(item.category).trim() : 'Uncategorized',
-      location: item.location ? String(item.location).trim().toUpperCase() : 'MAIN',
+      category: String(normalized.category).trim() || 'Uncategorized',
+      location: String(normalized.location).trim().toUpperCase() || 'MAIN',
     },
   };
 }
@@ -259,7 +298,7 @@ async function processItemsForWarehouse(items, sourceFile) {
   
   if (validItems.length === 0) {
     console.error('❌ No valid items');
-    return { ready: 0, skipped: validationErrors.length, synced: 0, failed: 0, dupFound: 0 };
+    return { ready: 0, skipped: validationErrors.length, synced: 0, failed: 0, dupFound: 0, queued: 0 };
   }
 
   const fileDups = detectDuplicatesWithinFile(validItems);
@@ -272,13 +311,31 @@ async function processItemsForWarehouse(items, sourceFile) {
     console.warn(`⚠️ ${warehouseDups.length} duplicates in warehouse`);
   }
 
-  console.log(`\n📊 Syncing ${validItems.length} items:`);
+  console.log(`\n📊 Processing ${validItems.length} items:`);
   validItems.slice(0, 10).forEach((item, i) => {
     console.log(`  ${i + 1}. ${item.productName} (Qty: ${item.quantity}, Location: ${item.location})`);
   });
   if (validItems.length > 10) console.log(`  ... and ${validItems.length - 10} more`);
 
-  const syncResult = await syncWarehouseData(validItems, sourceFile, TENANT_ID);
+  // Decide: Queue or sync based on settings
+  let syncResult;
+  
+  if (USE_RATE_LIMITING && USE_QUEUE && validItems.length > 1000) {
+    // Queue large imports
+    console.log(`\n📝 Large import (${validItems.length} items) - Queuing for rate-limited upload...`);
+    const queueResult = rateLimiter.queueItems(validItems, sourceFile, 'normal');
+    syncResult = {
+      synced: 0,
+      failed: 0,
+      queued: queueResult.queued,
+      queueTotal: queueResult.total
+    };
+  } else {
+    // Small uploads: sync immediately with rate limiting check
+    syncResult = await syncWarehouseData(validItems, sourceFile, TENANT_ID, rateLimiter, {
+      useQueue: false
+    });
+  }
   
   return {
     ready: validItems.length,
@@ -354,6 +411,63 @@ async function handleFileChange(filePath) {
   debounceTimers.set(filePath, timer);
 }
 
+/**
+ * Handle file deletion - Remove items from warehouse that were imported from this file
+ */
+async function handleFileDelete(filePath) {
+  const fileName = path.basename(filePath);
+  console.log(`\n🗑️ File deleted: ${fileName}`);
+  
+  try {
+    if (!admin.apps.length) {
+      console.warn('⚠️ Firebase not initialized, skipping deletion sync');
+      return;
+    }
+
+    const db = admin.firestore();
+    
+    // Find all items in warehouse that were imported from this file
+    // Items are stored in: tenants/{tenantId}/products/{sku}
+    const snapshot = await db.collection('tenants')
+      .doc(TENANT_ID)
+      .collection('products')
+      .where('sourceFile', '==', fileName)
+      .get();
+
+    if (snapshot.empty) {
+      console.log(`ℹ️ No items found from ${fileName} in warehouse`);
+      return;
+    }
+
+    const itemCount = snapshot.size;
+    console.log(`🔍 Found ${itemCount} items imported from ${fileName}`);
+    console.log(`🗑️ Removing items from warehouse...`);
+
+    // Delete items in batches
+    const batch = db.batch();
+    let deleted = 0;
+
+    snapshot.docs.forEach(doc => {
+      batch.delete(doc.ref);
+      deleted++;
+      
+      if (deleted <= 5) {
+        console.log(`  - Removing: ${doc.data().name || doc.data().productName} (SKU: ${doc.data().sku})`);
+      }
+    });
+
+    if (deleted > 5) {
+      console.log(`  ... and ${deleted - 5} more items`);
+    }
+
+    await batch.commit();
+    console.log(`✅ Successfully removed ${deleted} items from warehouse`);
+
+  } catch (error) {
+    console.error(`❌ Error removing items: ${error.message}`);
+  }
+}
+
 function initializeWatcher() {
   // Ensure watch directory exists
   if (!fs.existsSync(WATCH_FOLDER)) {
@@ -382,6 +496,13 @@ function initializeWatcher() {
     }
   });
 
+  watcher.on('unlink', (filePath) => {
+    const isSupported = filePath.match(/\.(xlsx|xls|csv)$/i);
+    if (isSupported) {
+      handleFileDelete(filePath);
+    }
+  });
+
   watcher.on('error', (error) => {
     console.error('❌ Watcher error:', error.message);
   });
@@ -407,6 +528,17 @@ async function displayWelcome() {
     console.log(`⏱️ Debounce time: ${DEBOUNCE_TIME}ms`);
     console.log(`📊 Supported formats: Excel (.xlsx, .xls) and CSV`);
     console.log(`✨ Features: Validation, Duplicate detection, Batch sync`);
+    
+    if (USE_RATE_LIMITING) {
+      console.log(`\n📈 Rate Limiting: ENABLED`);
+      console.log(`   Daily Limit: ${DAILY_UPLOAD_LIMIT.toLocaleString()} writes/day`);
+      console.log(`   Schedule: ${UPLOAD_SCHEDULE_TIME} UTC daily`);
+      console.log(`   Queue Mode: ${USE_QUEUE ? 'ON (queue large imports)' : 'OFF (immediate upload)'}`);
+      rateLimiter.displayStatus();
+    } else {
+      console.log(`\n📈 Rate Limiting: DISABLED (unlimited uploads)`);
+    }
+    
     console.log('\n📊 Current Warehouse Status:');
     console.log(`   Total Items: ${stats.totalItems}`);
     console.log(`   Total Quantity: ${stats.totalQuantity}`);
@@ -429,6 +561,44 @@ async function main() {
     // Initialize Firebase
     initializeFirebase();
     
+    // Initialize rate limiter if enabled
+    if (USE_RATE_LIMITING) {
+      rateLimiter = new UploadRateLimiter({
+        dailyLimit: DAILY_UPLOAD_LIMIT,
+        dataDir: './data'
+      });
+
+      // Initialize daily scheduler
+      uploadScheduler = new DailyUploadScheduler({
+        dailyLimit: DAILY_UPLOAD_LIMIT,
+        dataDir: './data',
+        scheduleTime: UPLOAD_SCHEDULE_TIME,
+        enabled: true,
+        uploadBatchFn: async (item) => {
+          // Function to upload a single item
+          const db = admin.firestore();
+          const docId = item.sku.toUpperCase();
+          const docRef = db.collection('tenants').doc(TENANT_ID).collection('products').doc(docId);
+
+          const itemWithMeta = {
+            ...item,
+            sku: docId,
+            active: true,
+            quantity: item.quantity,
+            name: item.productName || item.name,
+            sourceFile: item.sourceFile || 'unknown',
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            updatedAt: admin.firestore.FieldValue.serverTimestamp()
+          };
+
+          await docRef.set(itemWithMeta, { merge: true });
+        }
+      });
+
+      // Start the scheduler
+      uploadScheduler.start();
+    }
+    
     // Initialize watcher
     initializeWatcher();
     
@@ -445,7 +615,10 @@ main();
 
 export {
   handleFileChange,
+  handleFileDelete,
   shouldProcessFile,
   markFileProcessed,
-  fileTracker
+  fileTracker,
+  rateLimiter,
+  uploadScheduler
 };

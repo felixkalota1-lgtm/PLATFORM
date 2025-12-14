@@ -5,15 +5,28 @@ import DashboardPage from './pages/DashboardPage'
 import WarehouseManagementPage from './pages/WarehouseManagementPage'
 import SendGoodsPage from './pages/SendGoodsPage'
 import BranchStockViewPage from './pages/BranchStockViewPage'
-import ManagerAIAssistant from './components/ManagerAIAssistant'
+import Settings from './pages/Settings'
+import AIEmailAssistant from './pages/AIEmailAssistant'
 import Layout from './components/Layout'
-import ProtectedRoute from './components/ProtectedRoute'
+import { WorkloadThemeProvider } from './contexts/WorkloadThemeContext'
+import { SettingsProvider } from './contexts/SettingsContext'
+import './styles/weatherTheme.css'
 
 // Lazy imports for module pages
 import MarketplaceModule from './modules/marketplace'
 import SalesAndProcurementPage from './modules/sales'
 import InventoryModule from './modules/inventory'
 import WarehouseModule from './modules/warehouse'
+import ProcurementModule from './modules/procurement'
+import HRModule from './modules/hr'
+import AccountingModule from './modules/accounting'
+import CommunicationModule from './modules/communication'
+import LogisticsModule from './modules/logistics'
+import AnalyticsModule from './modules/analytics'
+import DocumentManagementModule from './modules/document-management'
+import FleetTrackingModule from './modules/fleet-tracking'
+import InquiryModule from './modules/inquiry'
+import AdvancedAccountingModule from './modules/advanced-accounting'
 
 // Route persistence wrapper component
 function RouteWrapper() {
@@ -77,40 +90,50 @@ function App() {
   console.log('isAuthenticated:', isAuthenticated, 'user:', localStorage.getItem('pspm_user'))
 
   return (
-    <Router>
-      <RouteWrapper />
-      <Routes>
-        <Route path="/login" element={<LoginPage />} />
-        <Route
-          path="/*"
-          element={
-            isAuthenticated ? (
-              <Layout>
-                <Routes>
-                  <Route path="/" element={<DashboardPage />} />
-                  <Route path="/warehouse-management" element={<WarehouseManagementPage />} />
-                  <Route path="/send-goods" element={<SendGoodsPage />} />
-                  <Route path="/branch-stock" element={<BranchStockViewPage />} />
-                  <Route path="/marketplace/*" element={<MarketplaceModule />} />
-                  <Route path="/sales-procurement/*" element={<SalesAndProcurementPage />} />
-                  <Route path="/inventory/*" element={<InventoryModule />} />
-                  <Route path="/warehouse/*" element={<WarehouseModule />} />
-                  <Route path="/logistics/*" element={<div className="p-6"><h1>Logistics Module</h1></div>} />
-                  <Route path="/hr/*" element={<div className="p-6"><h1>HR Module</h1></div>} />
-                  <Route path="/accounting/*" element={<div className="p-6"><h1>Accounting Module</h1></div>} />
-                  <Route path="/analytics/*" element={<div className="p-6"><h1>Analytics Module</h1></div>} />
-                  <Route path="/communication/*" element={<div className="p-6"><h1>Communication Module</h1></div>} />
-                  <Route path="/settings/*" element={<div className="p-6"><h1>Settings Module</h1></div>} />
-                  <Route path="*" element={<Navigate to="/" replace />} />
-                </Routes>
-              </Layout>
-            ) : (
-              <LoginPage />
-            )
-          }
-        />
-      </Routes>
-    </Router>
+    <SettingsProvider>
+      <WorkloadThemeProvider>
+        <Router>
+          <RouteWrapper />
+          <Routes>
+            <Route path="/login" element={<LoginPage />} />
+            <Route
+              path="/*"
+              element={
+                isAuthenticated ? (
+                  <Layout>
+                    <Routes>
+                      <Route path="/" element={<DashboardPage />} />
+                      <Route path="/settings" element={<Settings />} />
+                      <Route path="/ai-email" element={<AIEmailAssistant />} />
+                      <Route path="/warehouse-management" element={<WarehouseManagementPage />} />
+                      <Route path="/send-goods" element={<SendGoodsPage />} />
+                      <Route path="/branch-stock" element={<BranchStockViewPage />} />
+                      <Route path="/marketplace/*" element={<MarketplaceModule />} />
+                      <Route path="/procurement/*" element={<ProcurementModule />} />
+                      <Route path="/sales-procurement/*" element={<SalesAndProcurementPage />} />
+                      <Route path="/inventory/*" element={<InventoryModule />} />
+                      <Route path="/warehouse/*" element={<WarehouseModule />} />
+                      <Route path="/logistics/*" element={<LogisticsModule />} />
+                      <Route path="/hr/*" element={<HRModule />} />
+                      <Route path="/accounting/*" element={<AccountingModule />} />
+                      <Route path="/advanced-accounting/*" element={<AdvancedAccountingModule />} />
+                      <Route path="/analytics/*" element={<AnalyticsModule />} />
+                      <Route path="/communication/*" element={<CommunicationModule />} />
+                      <Route path="/fleet-tracking/*" element={<FleetTrackingModule />} />
+                      <Route path="/inquiry/*" element={<InquiryModule />} />
+                      <Route path="/documents/*" element={<DocumentManagementModule />} />
+                      <Route path="*" element={<Navigate to="/" replace />} />
+                    </Routes>
+                  </Layout>
+                ) : (
+                  <LoginPage />
+                )
+              }
+            />
+          </Routes>
+        </Router>
+      </WorkloadThemeProvider>
+    </SettingsProvider>
   )
 }
 

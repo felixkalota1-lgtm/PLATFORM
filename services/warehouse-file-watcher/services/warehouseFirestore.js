@@ -8,6 +8,7 @@
  * - Duplicate detection using location_sku composite key
  * - Validation before sync
  * - Error handling with retry logic
+ * - Rate-limited uploads to stay within Free Tier
  * - Real-time updates
  */
 
@@ -15,28 +16,68 @@ import admin from 'firebase-admin';
 
 const BATCH_SIZE = 100;
 const MAX_RETRIES = 3;
+const BATCH_DELAY_MS = 500; // Delay between batches to avoid rate limiting (in milliseconds)
 
 /**
- * Sync warehouse data to Firestore
+ * Sync warehouse data to Firestore (with optional queuing for rate limiting)
  * @param {Array} items - Warehouse items to sync
  * @param {string} fileName - Source file name
- * @returns {Promise<Object>} { synced, failed, duplicates }
+ * @param {string} tenantId - Tenant ID
+ * @param {UploadRateLimiter} rateLimiter - Optional rate limiter instance
+ * @param {Object} options - { useQueue: boolean, priority: string }
+ * @returns {Promise<Object>} { synced, failed, duplicates, queued }
  */
-export async function syncWarehouseData(items, fileName, tenantId = 'default') {
+export async function syncWarehouseData(items, fileName, tenantId = 'default', rateLimiter = null, options = {}) {
   const db = admin.firestore();
+  
+  // If rate limiter is provided and useQueue is true, queue items instead of uploading
+  if (rateLimiter && options.useQueue) {
+    console.log(`\n📝 Queueing ${items.length} items for rate-limited upload...`);
+    const result = rateLimiter.queueItems(items, fileName, options.priority || 'normal');
+    
+    return {
+      synced: 0,
+      failed: 0,
+      duplicates: 0,
+      queued: result.queued,
+      total: items.length,
+      fileName,
+      queued: true,
+      queueTotal: result.total
+    };
+  }
+
+  // Standard immediate sync (respecting daily limits if rate limiter provided)
   let synced = 0;
   let failed = 0;
   let duplicates = 0;
 
   try {
-    // CHANGED: Sync to tenants/{id}/products (warehouse is primary source)
-    // Process in batches
+    // Process in batches with delays to avoid Firestore rate limits
     for (let i = 0; i < items.length; i += BATCH_SIZE) {
+      // Check if rate limit exceeded
+      if (rateLimiter && !rateLimiter.canProcessToday()) {
+        console.warn(`⚠️ Daily upload limit reached. Remaining items queued for tomorrow.`);
+        const remaining = items.slice(i);
+        rateLimiter.queueItems(remaining, fileName, options.priority || 'normal');
+        break;
+      }
+
       const batch = items.slice(i, i + BATCH_SIZE);
-      const result = await processBatch(db, batch, tenantId);
+      const result = await processBatch(db, batch, fileName, tenantId, rateLimiter);
       synced += result.synced;
       failed += result.failed;
       duplicates += result.duplicates;
+      
+      // Update rate limiter usage
+      if (rateLimiter && result.synced > 0) {
+        rateLimiter.todayUsage += result.synced;
+      }
+      
+      // Add delay between batches to avoid rate limiting
+      if (i + BATCH_SIZE < items.length) {
+        await new Promise(resolve => setTimeout(resolve, BATCH_DELAY_MS));
+      }
     }
 
     console.log(`✅ Warehouse sync complete: ${synced} synced, ${failed} failed, ${duplicates} duplicates`);
@@ -45,6 +86,7 @@ export async function syncWarehouseData(items, fileName, tenantId = 'default') {
       synced,
       failed,
       duplicates,
+      queued: 0,
       total: items.length,
       fileName
     };
@@ -58,9 +100,12 @@ export async function syncWarehouseData(items, fileName, tenantId = 'default') {
  * Process a batch of warehouse items
  * @param {Firestore} db - Firestore database instance
  * @param {Array} items - Items to process
+ * @param {string} fileName - Source file name
+ * @param {string} tenantId - Tenant ID
+ * @param {UploadRateLimiter} rateLimiter - Optional rate limiter
  * @returns {Promise<Object>} { synced, failed, duplicates }
  */
-async function processBatch(db, items, tenantId = 'default') {
+async function processBatch(db, items, fileName, tenantId = 'default', rateLimiter = null) {
   const batch = db.batch();
   let synced = 0;
   let failed = 0;
@@ -79,6 +124,7 @@ async function processBatch(db, items, tenantId = 'default') {
         active: true,
         quantity: item.quantity,
         name: item.productName || item.name,
+        sourceFile: fileName || 'unknown',
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
         updatedAt: admin.firestore.FieldValue.serverTimestamp()
       };

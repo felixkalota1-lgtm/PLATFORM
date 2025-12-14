@@ -26,12 +26,6 @@ interface Product {
   category?: string
 }
 
-interface BranchStock {
-  branchName: string
-  quantity: number
-  value: number
-}
-
 interface CategoryStat {
   category: string
   count: number
