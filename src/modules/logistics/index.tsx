@@ -6,7 +6,7 @@ import CompanyVehiclesSection from './company-vehicles';
 export const LogisticsModule: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { vehicles, routes, maintenance, fuelLogs } = useLogisticsStore();
+  const { vehicles, routes } = useLogisticsStore();
 
   const getActiveTab = () => {
     const path = location.pathname.split('/').pop();
@@ -25,9 +25,9 @@ export const LogisticsModule: React.FC = () => {
           {[
             { id: 'fleet', label: 'Fleet Vehicles', count: vehicles.length },
             { id: 'company-vehicles', label: 'Company Equipment', count: null },
-            { id: 'tracking', label: 'Active Routes', count: activeRoutes.length },
-            { id: 'maintenance', label: 'Maintenance', count: maintenance.length },
-            { id: 'fuel', label: 'Fuel Logs', count: fuelLogs.length },
+            { id: 'shipments', label: 'Shipments', count: null },
+            { id: 'tracking', label: 'Vehicle Tracking', count: activeRoutes.length },
+            { id: 'fuel', label: 'Fuel Logs', count: null },
           ].map(tab => (
             <button
               key={tab.id}
@@ -47,8 +47,8 @@ export const LogisticsModule: React.FC = () => {
           <Route path="/" element={<Navigate to="/logistics/fleet" replace />} />
           <Route path="/fleet" element={<VehiclesView />} />
           <Route path="/company-vehicles" element={<CompanyVehiclesSection />} />
+          <Route path="/shipments" element={<ShipmentsView />} />
           <Route path="/tracking" element={<TrackingView routes={activeRoutes} />} />
-          <Route path="/maintenance" element={<MaintenanceView />} />
           <Route path="/fuel" element={<FuelLogsView />} />
         </Routes>
       </div>
@@ -172,73 +172,87 @@ const TrackingView: React.FC<TrackingViewProps> = ({ routes: activeRoutes }: any
   );
 };
 
-const MaintenanceView: React.FC = () => {
-  const { maintenance, vehicles } = useLogisticsStore();
+const ShipmentsView: React.FC = () => {
+  const shipments = [
+    { id: 'SH-001', orderId: 'ORD-4521', company: 'ABC Manufacturing', status: 'in-transit', departure: '2025-12-14', eta: '2025-12-15', driver: 'John Doe', vehicle: 'TK-101' },
+    { id: 'SH-002', orderId: 'ORD-4520', company: 'XYZ Supplies', status: 'delivered', departure: '2025-12-13', eta: '2025-12-14', driver: 'Jane Smith', vehicle: 'TK-102' },
+    { id: 'SH-003', orderId: 'ORD-4519', company: 'Global Trade', status: 'pending', departure: '2025-12-16', eta: '2025-12-17', driver: 'Mike Johnson', vehicle: 'TK-103' },
+  ];
 
   return (
     <div className="bg-white rounded-lg shadow overflow-hidden">
       <div className="p-6 border-b border-gray-200 flex justify-between items-center">
-        <h2 className="text-xl font-bold">Maintenance Records</h2>
+        <h2 className="text-xl font-bold">Shipments</h2>
         <button className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition">
-          + New Record
+          + New Shipment
         </button>
       </div>
 
       <div className="divide-y divide-gray-200">
-        {maintenance.length === 0 ? (
-          <div className="p-6 text-center text-gray-500">
-            No maintenance records yet
-          </div>
-        ) : (
-          maintenance.map((record) => (
-            <div key={record.id} className="p-6 hover:bg-gray-50 transition">
-              <div className="flex justify-between items-start mb-2">
-                <div>
-                  <h3 className="font-semibold text-gray-900">{record.description}</h3>
-                  <p className="text-sm text-gray-600">
-                    {vehicles.find(v => v.id === record.vehicleId)?.make} {vehicles.find(v => v.id === record.vehicleId)?.model}
-                  </p>
-                </div>
-                <span className={`text-xs px-2 py-1 rounded-full font-semibold ${
-                  record.type === 'service' ? 'bg-blue-100 text-blue-800' :
-                  record.type === 'repair' ? 'bg-orange-100 text-orange-800' :
-                  record.type === 'spare-part-replacement' ? 'bg-purple-100 text-purple-800' :
-                  'bg-gray-100 text-gray-800'
-                }`}>
-                  {record.type.toUpperCase()}
-                </span>
+        {shipments.map((shipment) => (
+          <div key={shipment.id} className="p-6 hover:bg-gray-50 transition">
+            <div className="flex justify-between items-start mb-4">
+              <div>
+                <h3 className="font-semibold text-gray-900">{shipment.id} - {shipment.company}</h3>
+                <p className="text-sm text-gray-600">Order: {shipment.orderId}</p>
               </div>
-              
-              <div className="grid grid-cols-3 gap-4 mt-4 pt-4 border-t border-gray-100 text-sm">
-                <div>
-                  <p className="text-gray-600">Date</p>
-                  <p className="font-semibold">{new Date(record.date).toLocaleDateString()}</p>
-                </div>
-                <div>
-                  <p className="text-gray-600">Total Cost</p>
-                  <p className="font-semibold text-red-600">${record.totalCost}</p>
-                </div>
-                <div>
-                  <p className="text-gray-600">Mechanic</p>
-                  <p className="font-semibold">{record.mechanic}</p>
-                </div>
+              <span className={`text-xs px-3 py-1 rounded-full font-semibold ${
+                shipment.status === 'in-transit' ? 'bg-blue-100 text-blue-800' :
+                shipment.status === 'delivered' ? 'bg-green-100 text-green-800' :
+                'bg-yellow-100 text-yellow-800'
+              }`}>
+                {shipment.status.toUpperCase()}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-5 gap-4 text-sm">
+              <div>
+                <p className="text-gray-600">Driver</p>
+                <p className="font-semibold">{shipment.driver}</p>
+              </div>
+              <div>
+                <p className="text-gray-600">Vehicle</p>
+                <p className="font-semibold">{shipment.vehicle}</p>
+              </div>
+              <div>
+                <p className="text-gray-600">Departure</p>
+                <p className="font-semibold">{shipment.departure}</p>
+              </div>
+              <div>
+                <p className="text-gray-600">ETA</p>
+                <p className="font-semibold">{shipment.eta}</p>
+              </div>
+              <div>
+                <button className="bg-blue-100 text-blue-800 px-3 py-2 rounded hover:bg-blue-200 transition text-xs font-semibold">
+                  Track
+                </button>
               </div>
             </div>
-          ))
-        )}
+          </div>
+        ))}
       </div>
     </div>
   );
 };
 
 const FuelLogsView: React.FC = () => {
-  const { fuelLogs, vehicles } = useLogisticsStore();
+  const fuelLogs = [
+    { id: 'FL-001', vehicleId: 'VH-001', vehicle: 'Mercedes Sprinter - TK-101', fuelStation: 'Shell BP - Lusaka Main', date: '2025-12-14', fuelAmount: 50, cost: 275, odometerReading: 45230 },
+    { id: 'FL-002', vehicleId: 'VH-002', vehicle: 'Hino 500 - TK-102', fuelStation: 'PUMA Energy - Ndola', date: '2025-12-14', fuelAmount: 80, cost: 440, odometerReading: 32145 },
+    { id: 'FL-003', vehicleId: 'VH-001', vehicle: 'Mercedes Sprinter - TK-101', fuelStation: 'Shell BP - Chipata', date: '2025-12-13', fuelAmount: 45, cost: 247, odometerReading: 45100 },
+    { id: 'FL-004', vehicleId: 'VH-003', vehicle: 'Volvo FH - TK-103', fuelStation: 'Total Energies - Livingstone', date: '2025-12-13', fuelAmount: 100, cost: 550, odometerReading: 28567 },
+    { id: 'FL-005', vehicleId: 'VH-002', vehicle: 'Hino 500 - TK-102', fuelStation: 'PUMA Energy - Kitwe', date: '2025-12-12', fuelAmount: 75, cost: 412, odometerReading: 32010 },
+    { id: 'FL-006', vehicleId: 'VH-001', vehicle: 'Mercedes Sprinter - TK-101', fuelStation: 'Shell BP - Lusaka Main', date: '2025-12-12', fuelAmount: 50, cost: 275, odometerReading: 45000 },
+  ];
 
   return (
     <div className="bg-white rounded-lg shadow overflow-hidden">
       <div className="p-6 border-b border-gray-200 flex justify-between items-center">
-        <h2 className="text-xl font-bold">Fuel Consumption Logs</h2>
-        <button className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition">
+        <div>
+          <h2 className="text-xl font-bold">Fuel Logs</h2>
+          <p className="text-sm text-gray-600 mt-1">Total fuel consumption tracking and cost management</p>
+        </div>
+        <button className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition font-semibold">
           + Log Fuel
         </button>
       </div>
@@ -251,36 +265,62 @@ const FuelLogsView: React.FC = () => {
         ) : (
           fuelLogs.map((log) => (
             <div key={log.id} className="p-6 hover:bg-gray-50 transition">
-              <div className="flex justify-between items-start mb-2">
+              <div className="flex justify-between items-start mb-4">
                 <div>
-                  <h3 className="font-semibold text-gray-900">
-                    {vehicles.find(v => v.id === log.vehicleId)?.make} {vehicles.find(v => v.id === log.vehicleId)?.model}
-                  </h3>
+                  <h3 className="font-semibold text-gray-900">{log.vehicle}</h3>
                   <p className="text-sm text-gray-600">{log.fuelStation}</p>
                 </div>
+                <span className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm font-semibold">{log.id}</span>
               </div>
 
-              <div className="grid grid-cols-4 gap-4 mt-4 pt-4 border-t border-gray-100 text-sm">
-                <div>
-                  <p className="text-gray-600">Date</p>
-                  <p className="font-semibold">{new Date(log.date).toLocaleDateString()}</p>
+              <div className="grid grid-cols-5 gap-4 text-sm">
+                <div className="bg-gray-50 p-3 rounded">
+                  <p className="text-gray-600 text-xs font-semibold">Date</p>
+                  <p className="font-semibold text-gray-900 mt-1">{log.date}</p>
                 </div>
-                <div>
-                  <p className="text-gray-600">Amount</p>
-                  <p className="font-semibold">{log.fuelAmount}L</p>
+                <div className="bg-gray-50 p-3 rounded">
+                  <p className="text-gray-600 text-xs font-semibold">Fuel Amount</p>
+                  <p className="font-semibold text-gray-900 mt-1">{log.fuelAmount}L</p>
                 </div>
-                <div>
-                  <p className="text-gray-600">Cost</p>
-                  <p className="font-semibold">${log.cost}</p>
+                <div className="bg-gray-50 p-3 rounded">
+                  <p className="text-gray-600 text-xs font-semibold">Cost (ZMW)</p>
+                  <p className="font-semibold text-red-600 mt-1">K{log.cost}</p>
                 </div>
-                <div>
-                  <p className="text-gray-600">Odometer</p>
-                  <p className="font-semibold">{log.odometerReading} km</p>
+                <div className="bg-gray-50 p-3 rounded">
+                  <p className="text-gray-600 text-xs font-semibold">Odometer</p>
+                  <p className="font-semibold text-gray-900 mt-1">{log.odometerReading} km</p>
+                </div>
+                <div className="bg-gray-50 p-3 rounded">
+                  <p className="text-gray-600 text-xs font-semibold">Cost/L</p>
+                  <p className="font-semibold text-gray-900 mt-1">K{(log.cost / log.fuelAmount).toFixed(2)}</p>
                 </div>
               </div>
             </div>
           ))
         )}
+      </div>
+
+      {/* Summary Stats */}
+      <div className="bg-gray-50 p-6 border-t border-gray-200">
+        <h3 className="font-semibold text-gray-900 mb-4">Fuel Summary (Last 6 Logs)</h3>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="bg-white p-4 rounded-lg border border-gray-200">
+            <p className="text-gray-600 text-sm">Total Fuel</p>
+            <p className="text-2xl font-bold text-blue-600">{fuelLogs.reduce((sum, log) => sum + log.fuelAmount, 0)}L</p>
+          </div>
+          <div className="bg-white p-4 rounded-lg border border-gray-200">
+            <p className="text-gray-600 text-sm">Total Cost</p>
+            <p className="text-2xl font-bold text-red-600">K{fuelLogs.reduce((sum, log) => sum + log.cost, 0)}</p>
+          </div>
+          <div className="bg-white p-4 rounded-lg border border-gray-200">
+            <p className="text-gray-600 text-sm">Average Cost/L</p>
+            <p className="text-2xl font-bold text-green-600">K{(fuelLogs.reduce((sum, log) => sum + log.cost, 0) / fuelLogs.reduce((sum, log) => sum + log.fuelAmount, 0)).toFixed(2)}</p>
+          </div>
+          <div className="bg-white p-4 rounded-lg border border-gray-200">
+            <p className="text-gray-600 text-sm">Log Entries</p>
+            <p className="text-2xl font-bold text-purple-600">{fuelLogs.length}</p>
+          </div>
+        </div>
       </div>
     </div>
   );

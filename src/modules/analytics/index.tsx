@@ -97,16 +97,6 @@ export const AnalyticsModule: React.FC = () => {
           >
             Financial
           </button>
-          <button
-            onClick={() => navigate('/analytics/compliance')}
-            className={`px-4 py-2 font-semibold whitespace-nowrap ${
-              activeTab === 'compliance'
-                ? 'text-blue-600 border-b-2 border-blue-600'
-                : 'text-gray-600 hover:text-gray-800'
-            }`}
-          >
-            Compliance
-          </button>
         </div>
 
         <Routes>
@@ -116,7 +106,6 @@ export const AnalyticsModule: React.FC = () => {
           <Route path="/procurement" element={<ProcurementAnalyticsView />} />
           <Route path="/operational" element={<OperationalAnalyticsView />} />
           <Route path="/financial" element={<FinancialAnalyticsView />} />
-          <Route path="/compliance" element={<ComplianceAnalyticsView />} />
         </Routes>
       </div>
     </div>
@@ -419,57 +408,6 @@ const FinancialAnalyticsView: React.FC = () => {
                 </div>
               </div>
             ))}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-const ComplianceAnalyticsView: React.FC = () => {
-  const { complianceData } = useAnalyticsStore();
-
-  return (
-    <div className="space-y-6">
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <MetricCard
-          title="Valid Documents"
-          value={complianceData?.documentsValid || 0}
-          icon="📄"
-        />
-        <MetricCard
-          title="Expiring Soon"
-          value={complianceData?.documentsExpiringSoon || 0}
-          icon="⚠️"
-        />
-        <MetricCard
-          title="Valid Contracts"
-          value={complianceData?.contractsValid || 0}
-          icon="✍️"
-        />
-        <MetricCard
-          title="Compliance Score"
-          value={`${complianceData?.complianceScore.toFixed(0) || 0}/100`}
-          icon="🎯"
-        />
-      </div>
-
-      <div className="bg-white rounded-lg shadow p-6">
-        <h3 className="text-lg font-bold text-gray-900 mb-4">Compliance Status</h3>
-        <div className="space-y-4">
-          <div>
-            <div className="flex justify-between items-center mb-2">
-              <p className="font-semibold text-gray-900">Overall Compliance</p>
-              <p className="text-2xl font-bold text-blue-600">
-                {complianceData?.complianceScore.toFixed(0)}%
-              </p>
-            </div>
-            <div className="w-full bg-gray-200 rounded-full h-4">
-              <div
-                className="bg-green-500 h-4 rounded-full"
-                style={{ width: `${complianceData?.complianceScore || 0}%` }}
-              />
-            </div>
           </div>
         </div>
       </div>

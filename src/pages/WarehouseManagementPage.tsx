@@ -11,8 +11,9 @@ export default function WarehouseManagementPage() {
   const [warehouses, setWarehouses] = useState<Warehouse[]>([])
   const [loading, setLoading] = useState(true)
   const [showCreateModal, setShowCreateModal] = useState(false)
-  const [userRole] = useState(localStorage.getItem('pspm_user_role') || 'staff')
-  const [userId] = useState(JSON.parse(localStorage.getItem('pspm_user') || '{}').uid || '')
+  const userObj = JSON.parse(localStorage.getItem('pspm_user') || '{}')
+  const [userRole] = useState(userObj.role || 'staff')
+  const [userId] = useState(userObj.id || '')
 
   const [formData, setFormData] = useState({
     name: '',

@@ -1,9 +1,11 @@
 import { useState, useMemo } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
-import { Upload, MapPin, Package, AlertCircle, Send, Eye, BarChart3 } from 'lucide-react'
+import { Upload, MapPin, Package, AlertCircle, Send, Eye, BarChart3, Building2, Truck } from 'lucide-react'
 import { useAuth } from '../../hooks/useAuth'
 import ProductUploadModal from '../../components/ProductUploadModal'
 import Warehouse3DViewer from '../../components/Warehouse3DViewer'
+import WarehouseManagementPage from '../../pages/WarehouseManagementPage'
+import SendGoodsPage from '../../pages/SendGoodsPage'
 import WarehouseUploadPortal from './WarehouseUploadPortal'
 import StockTransferManager from './StockTransferManager'
 import AOProductPage from './AOProductPage'
@@ -27,7 +29,8 @@ export default function WarehouseModule() {
     if (path.includes('/analytics')) return 'analytics'
     if (path.includes('/map')) return 'map'
     if (path.includes('/locations')) return 'inventory'
-    if (path.includes('/shipments')) return 'orders'
+    if (path.includes('/manage')) return 'manage'
+    if (path.includes('/send')) return 'send'
     return 'products'
   }, [location.pathname])
 
@@ -37,7 +40,7 @@ export default function WarehouseModule() {
     console.log('✅ Warehouse import successful:', result)
   }
   
-  const handleTabChange = (tab: 'products' | 'upload' | 'transfer' | 'analytics' | 'map' | 'inventory' | 'orders') => {
+  const handleTabChange = (tab: 'products' | 'upload' | 'transfer' | 'analytics' | 'map' | 'inventory' | 'manage' | 'send') => {
     const routeMap = {
       products: '/warehouse/products',
       upload: '/warehouse/upload-portal',
@@ -45,7 +48,8 @@ export default function WarehouseModule() {
       analytics: '/warehouse/analytics',
       map: '/warehouse/map',
       inventory: '/warehouse/locations',
-      orders: '/warehouse/shipments'
+      manage: '/warehouse/manage',
+      send: '/warehouse/send'
     }
     console.log('🔀 Navigating to:', routeMap[tab]) // Debug logging
     navigate(routeMap[tab])
@@ -124,15 +128,26 @@ export default function WarehouseModule() {
               Inventory Locations
             </button>
             <button
-              onClick={() => handleTabChange('orders')}
+              onClick={() => handleTabChange('manage')}
               className={`px-6 py-3 font-medium flex items-center gap-2 transition-colors whitespace-nowrap ${
-                activeTab === 'orders'
+                activeTab === 'manage'
                   ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400'
                   : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-300'
               }`}
             >
-              <AlertCircle size={18} />
-              Pending Orders
+              <Building2 size={18} />
+              Manage Warehouses
+            </button>
+            <button
+              onClick={() => handleTabChange('send')}
+              className={`px-6 py-3 font-medium flex items-center gap-2 transition-colors whitespace-nowrap ${
+                activeTab === 'send'
+                  ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400'
+                  : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-300'
+              }`}
+            >
+              <Truck size={18} />
+              Send Goods
             </button>
           </div>
         </div>
@@ -189,18 +204,8 @@ export default function WarehouseModule() {
         </div>
       )}
 
-      {activeTab === 'orders' && (
-        <div className="space-y-6 p-6">
-          <div className="space-y-4">
-            <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Pending Orders</h2>
-            <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4">
-              <p className="text-yellow-800 dark:text-yellow-200">
-                No pending orders at this time. Orders will appear here when shipments need to be processed.
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
+      {activeTab === 'manage' && <WarehouseManagementPage />}
+      {activeTab === 'send' && <SendGoodsPage />}
     </div>
   )
 }

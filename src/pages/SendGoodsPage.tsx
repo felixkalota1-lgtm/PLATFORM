@@ -11,8 +11,9 @@ export default function SendGoodsPage() {
   const [warehouses, setWarehouses] = useState<Warehouse[]>([])
   const [inventory, setInventory] = useState<InventoryItem[]>([])
   const [loading, setLoading] = useState(false)
-  const [userRole] = useState(localStorage.getItem('pspm_user_role') || 'staff')
-  const [userId] = useState(JSON.parse(localStorage.getItem('pspm_user') || '{}').uid || '')
+  const userObj = JSON.parse(localStorage.getItem('pspm_user') || '{}')
+  const [userRole] = useState(userObj.role || 'staff')
+  const [userId] = useState(userObj.id || '')
 
   const [formData, setFormData] = useState({
     sourceWarehouse: '',

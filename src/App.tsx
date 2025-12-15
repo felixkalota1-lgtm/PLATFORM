@@ -7,6 +7,11 @@ import SendGoodsPage from './pages/SendGoodsPage'
 import BranchStockViewPage from './pages/BranchStockViewPage'
 import Settings from './pages/Settings'
 import AIEmailAssistant from './pages/AIEmailAssistant'
+import B2BOrdersPage from './pages/B2BOrdersPage'
+import OrderTrackingPage from './pages/OrderTrackingPage'
+import VendorManagementPage from './pages/VendorManagementPage'
+import SalesQuotationsPage from './pages/SalesQuotationsPage'
+import ProcurementRequestsPage from './pages/ProcurementRequestsPage'
 import Layout from './components/Layout'
 import { WorkloadThemeProvider } from './contexts/WorkloadThemeContext'
 import { SettingsProvider } from './contexts/SettingsContext'
@@ -27,6 +32,7 @@ import DocumentManagementModule from './modules/document-management'
 import FleetTrackingModule from './modules/fleet-tracking'
 import InquiryModule from './modules/inquiry'
 import AdvancedAccountingModule from './modules/advanced-accounting'
+import CompanyFilesModule from './modules/company-files'
 
 // Route persistence wrapper component
 function RouteWrapper() {
@@ -72,6 +78,15 @@ function App() {
       }
     }
     setMounted(true)
+
+    // Listen for storage changes (when login happens in another tab or window)
+    const handleStorageChange = () => {
+      const user = localStorage.getItem('pspm_user')
+      setIsAuthenticated(!!user)
+    }
+
+    window.addEventListener('storage', handleStorageChange)
+    return () => window.removeEventListener('storage', handleStorageChange)
   }, [])
 
   if (!mounted) {
@@ -107,7 +122,13 @@ function App() {
                       <Route path="/ai-email" element={<AIEmailAssistant />} />
                       <Route path="/warehouse-management" element={<WarehouseManagementPage />} />
                       <Route path="/send-goods" element={<SendGoodsPage />} />
-                      <Route path="/branch-stock" element={<BranchStockViewPage />} />
+                      {/* Dedicated Procurement & Sales Pages */}
+                      <Route path="/b2b-orders" element={<B2BOrdersPage />} />
+                      <Route path="/order-tracking" element={<OrderTrackingPage />} />
+                      <Route path="/vendor-management" element={<VendorManagementPage />} />
+                      <Route path="/sales-quotations" element={<SalesQuotationsPage />} />
+                      <Route path="/procurement-requests" element={<ProcurementRequestsPage />} />
+                      {/* Module Routes */}
                       <Route path="/marketplace/*" element={<MarketplaceModule />} />
                       <Route path="/procurement/*" element={<ProcurementModule />} />
                       <Route path="/sales-procurement/*" element={<SalesAndProcurementPage />} />
@@ -118,6 +139,7 @@ function App() {
                       <Route path="/accounting/*" element={<AccountingModule />} />
                       <Route path="/advanced-accounting/*" element={<AdvancedAccountingModule />} />
                       <Route path="/analytics/*" element={<AnalyticsModule />} />
+                      <Route path="/company-files/*" element={<CompanyFilesModule />} />
                       <Route path="/communication/*" element={<CommunicationModule />} />
                       <Route path="/fleet-tracking/*" element={<FleetTrackingModule />} />
                       <Route path="/inquiry/*" element={<InquiryModule />} />

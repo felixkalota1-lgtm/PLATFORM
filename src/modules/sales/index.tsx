@@ -5,6 +5,7 @@ import { useSalesStore } from './store';
 import SalesQuotationsList from './components/SalesQuotationsList';
 import { useProcurementStore } from '../procurement/store';
 import RequestsList from '../procurement/components/RequestsList';
+import { InquiryModule } from '../inquiry';
 
 export default function SalesAndProcurementPage() {
   const navigate = useNavigate();
@@ -13,7 +14,7 @@ export default function SalesAndProcurementPage() {
   const { requests } = useProcurementStore();
 
   const getActiveTab = () => {
-    const path = location.pathname.split('/').pop();
+    const path = location.pathname.split('/')[location.pathname.split('/').length - 1];
     return path || 'sales';
   };
 
@@ -144,6 +145,16 @@ export default function SalesAndProcurementPage() {
             >
               🛒 Procurement Requests
             </button>
+            <button
+              onClick={() => navigate(`/sales/inquiries`)}
+              className={`px-1 py-4 font-medium border-b-2 transition-colors ${
+                ['inquiries', 'quotes', 'orders'].includes(activeTab)
+                  ? 'border-purple-600 text-purple-600 dark:text-purple-400'
+                  : 'border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+              }`}
+            >
+              🔍 Search & Inquire
+            </button>
           </div>
         </div>
       </div>
@@ -173,6 +184,9 @@ export default function SalesAndProcurementPage() {
               <RequestsList requests={requests} />
             </div>
           } />
+          <Route path="/inquiries*" element={<InquiryModule />} />
+          <Route path="/quotes*" element={<InquiryModule />} />
+          <Route path="/orders*" element={<InquiryModule />} />
         </Routes>
       </div>
     </div>

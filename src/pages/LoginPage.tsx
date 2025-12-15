@@ -1,6 +1,8 @@
 import { useState } from "react"
+import { useNavigate } from "react-router-dom"
 
 export default function LoginPage() {
+  const navigate = useNavigate()
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [loading, setLoading] = useState(false)
@@ -19,7 +21,10 @@ export default function LoginPage() {
       role: 'admin',
       id: Date.now().toString()
     }))
-    window.location.href = "/"
+    // Dispatch storage event to notify other components
+    window.dispatchEvent(new Event('storage'))
+    // Navigate to dashboard
+    navigate("/", { replace: true })
   }
 
   return (

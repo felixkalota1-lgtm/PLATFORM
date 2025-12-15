@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ChevronRight, BarChart3, ShoppingCart, Package, Truck, Users, FileText, MessageSquare, Settings, X } from 'lucide-react'
+import { ChevronRight, BarChart3, ShoppingCart, Package, Truck, Users, FileText, MessageSquare, Settings, X, CreditCard } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useWorkloadTheme } from '../contexts/WorkloadThemeContext'
 
@@ -28,7 +28,6 @@ const menuItems: MenuItem[] = [
       { label: 'Browse Products', href: '/marketplace' },
       { label: 'My Cart', href: '/marketplace/cart' },
       { label: 'Saved Vendors', href: '/marketplace/saved-vendors' },
-      { label: 'Search & Inquire', href: '/inquiry/inquiries' },
     ],
   },
   {
@@ -37,8 +36,8 @@ const menuItems: MenuItem[] = [
     submenu: [
       { label: 'Products and Services', href: '/inventory/products' },
       { label: 'Bulk Upload', href: '/inventory/bulk-upload' },
-      { label: 'Categories', href: '/inventory/categories' },
       { label: 'Stock Levels', href: '/inventory/stock' },
+      { label: 'Branch Inventory', href: '/warehouse/products' },
     ],
   },
   {
@@ -46,29 +45,51 @@ const menuItems: MenuItem[] = [
     icon: <ShoppingCart size={20} />,
     submenu: [
       { label: 'Dashboard', href: '/procurement' },
-      { label: 'B2B Orders', href: '/procurement' },
-      { label: 'Order Tracking', href: '/procurement' },
-      { label: 'Vendor Management', href: '/procurement' },
-      { label: 'Sales Quotations', href: '/sales-procurement' },
-      { label: 'Procurement Requests', href: '/sales-procurement' },
+      { label: 'B2B Orders', href: '/b2b-orders' },
+      { label: 'Order Tracking', href: '/order-tracking' },
+      { label: 'Vendor Management', href: '/vendor-management' },
+      { label: 'Sales Quotations', href: '/sales-quotations' },
+      { label: 'Procurement Requests', href: '/procurement-requests' },
+      { label: 'Search & Inquire', href: '/sales-procurement/inquiries' },
     ],
   },
   {
-    label: 'Warehouse & Logistics',
-    icon: <Truck size={20} />,
+    label: 'Warehouse',
+    icon: <Package size={20} />,
     submenu: [
       { label: 'Warehouse Upload Portal', href: '/warehouse/upload-portal' },
       { label: 'Stock Transfer Manager', href: '/warehouse/transfer' },
       { label: 'Warehouse Analytics', href: '/warehouse/analytics' },
-      { label: 'My Branch Stock', href: '/branch-stock' },
       { label: 'Warehouse Map', href: '/warehouse/map' },
       { label: 'Locations', href: '/warehouse/locations' },
-      { label: 'Manage Warehouses', href: '/warehouse-management' },
-      { label: 'Send Goods', href: '/send-goods' },
+      { label: 'Manage Warehouses', href: '/warehouse/manage' },
+      { label: 'Send Goods', href: '/warehouse/send' },
+    ],
+  },
+  {
+    label: 'Logistics & Fleet',
+    icon: <Truck size={20} />,
+    submenu: [
       { label: 'Fleet Vehicles', href: '/logistics/fleet' },
-      { label: 'Company Equipment', href: '/logistics/equipment' },
+      { label: 'Company Equipment', href: '/logistics/company-vehicles' },
       { label: 'Shipments', href: '/logistics/shipments' },
       { label: 'Vehicle Tracking', href: '/logistics/tracking' },
+    ],
+  },
+  {
+    label: 'Accounting',
+    icon: <CreditCard size={20} />,
+    submenu: [
+      { label: 'Chart of Accounts', href: '/accounting/accounts' },
+      { label: 'Invoices', href: '/accounting/invoices' },
+      { label: 'Receivables', href: '/accounting/receivables' },
+      { label: 'Bills', href: '/accounting/bills' },
+      { label: 'Payables', href: '/accounting/payables' },
+      { label: 'Expenses', href: '/accounting/expenses' },
+      { label: 'Bank Transactions', href: '/accounting/bank' },
+      { label: 'Tax Management', href: '/accounting/tax' },
+      { label: 'Budget Planning', href: '/accounting/budget' },
+      { label: 'Reports', href: '/accounting/reports' },
     ],
   },
   {
@@ -94,6 +115,14 @@ const menuItems: MenuItem[] = [
     ],
   },
   {
+    label: 'Company Files',
+    icon: <FileText size={20} />,
+    submenu: [
+      { label: 'Company Files', href: '/company-files/letters' },
+      { label: 'Equipment', href: '/company-files/equipment' },
+    ],
+  },
+  {
     label: 'Communication',
     icon: <MessageSquare size={20} />,
     submenu: [
@@ -107,7 +136,6 @@ const menuItems: MenuItem[] = [
     icon: <Settings size={20} />,
     submenu: [
       { label: 'Company Documents', href: '/documents' },
-      { label: 'Accounting', href: '/accounting' },
       { label: 'Settings', href: '/settings' },
     ],
   },
