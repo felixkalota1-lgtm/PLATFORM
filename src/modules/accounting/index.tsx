@@ -1,12 +1,11 @@
 import React, { useState, useEffect } from 'react';
+import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import {
   BarChart3,
   FileText,
   CreditCard,
   DollarSign,
   TrendingUp,
-  Plus,
-  Download,
   AlertCircle,
 } from 'lucide-react';
 import accountingService, {
@@ -24,10 +23,9 @@ import AccountsTab from './components/AccountsTab';
 import ReportsTab from './components/ReportsTab';
 import './AccountingModule.css';
 
-type Tab = 'accounts' | 'invoices' | 'bills' | 'expenses' | 'reports';
-
 const AccountingModule: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<Tab>('accounts');
+  const navigate = useNavigate();
+  const location = useLocation();
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [bills, setBills] = useState<Bill[]>([]);
@@ -36,6 +34,11 @@ const AccountingModule: React.FC = () => {
   const [transactions, setTransactions] = useState<BankTransaction[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const getActiveTab = () => {
+    const path = location.pathname.split('/').pop();
+    return path || 'accounts';
+  };
 
   useEffect(() => {
     loadAccountingData();
@@ -69,7 +72,7 @@ const AccountingModule: React.FC = () => {
     }
   };
 
-  // Calculate key metrics
+  const activeTab = getActiveTab();
   const totalRevenue = invoices.reduce((sum, inv) => sum + inv.amount, 0);
   const totalReceivable = invoices.reduce(
     (sum, inv) => sum + (inv.amountPaid < inv.amount ? inv.amount - inv.amountPaid : 0),
@@ -84,36 +87,11 @@ const AccountingModule: React.FC = () => {
   const totalExpenses = expenses.reduce((sum, exp) => sum + exp.amount, 0);
 
   const tabConfig = [
-    {
-      id: 'accounts' as Tab,
-      label: 'Chart of Accounts',
-      icon: <BarChart3 size={20} />,
-      count: accounts.length,
-    },
-    {
-      id: 'invoices' as Tab,
-      label: 'Invoices',
-      icon: <FileText size={20} />,
-      count: invoices.length,
-    },
-    {
-      id: 'bills' as Tab,
-      label: 'Bills',
-      icon: <CreditCard size={20} />,
-      count: bills.length,
-    },
-    {
-      id: 'expenses' as Tab,
-      label: 'Expenses',
-      icon: <DollarSign size={20} />,
-      count: expenses.length,
-    },
-    {
-      id: 'reports' as Tab,
-      label: 'Reports',
-      icon: <TrendingUp size={20} />,
-      count: reports.length,
-    },
+    { id: 'accounts', label: 'Chart of Accounts', icon: <BarChart3 size={20} />, count: accounts.length },
+    { id: 'invoices', label: 'Invoices', icon: <FileText size={20} />, count: invoices.length },
+    { id: 'bills', label: 'Bills', icon: <CreditCard size={20} />, count: bills.length },
+    { id: 'expenses', label: 'Expenses', icon: <DollarSign size={20} />, count: expenses.length },
+    { id: 'reports', label: 'Reports', icon: <TrendingUp size={20} />, count: reports.length },
   ];
 
   return (
@@ -134,16 +112,6 @@ const AccountingModule: React.FC = () => {
                   <p className="text-slate-400 text-sm mt-1">Financial Management & Reporting System</p>
                 </div>
               </div>
-            </div>
-            <div className="flex gap-2">
-              <button className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-medium flex items-center gap-2 transition-colors">
-                <Plus size={18} />
-                New Invoice
-              </button>
-              <button className="px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-300 font-medium flex items-center gap-2 transition-colors">
-                <Download size={18} />
-                Export
-              </button>
             </div>
           </div>
 
@@ -177,13 +145,13 @@ const AccountingModule: React.FC = () => {
         </div>
 
         {/* Tab Navigation */}
-        <div className="bg-slate-900 bg-opacity-50 border-t border-slate-700 overflow-x-auto">
+        <div className="bg-slate-900 bg-opacity-50 border-t border-slate-700 overflow-x-auto sticky">
           <div className="max-w-7xl mx-auto px-6">
             <div className="flex gap-2">
               {tabConfig.map((tab) => (
                 <button
                   key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
+                  onClick={() => navigate(`/accounting/${tab.id}`)}
                   className={`px-4 py-4 font-semibold rounded-t-lg transition-all border-b-2 flex items-center gap-2 whitespace-nowrap ${
                     activeTab === tab.id
                       ? 'border-emerald-500 text-emerald-400 bg-slate-800'
@@ -230,23 +198,14 @@ const AccountingModule: React.FC = () => {
           </div>
         )}
 
-        {activeTab === 'accounts' && (
-          <AccountsTab accounts={accounts} onRefresh={loadAccountingData} />
-        )}
-
-        {activeTab === 'invoices' && (
-          <InvoicesTab invoices={invoices} onRefresh={loadAccountingData} />
-        )}
-
-        {activeTab === 'bills' && <BillsTab bills={bills} onRefresh={loadAccountingData} />}
-
-        {activeTab === 'expenses' && (
-          <ExpensesTab expenses={expenses} onRefresh={loadAccountingData} />
-        )}
-
-        {activeTab === 'reports' && (
-          <ReportsTab reports={reports} transactions={transactions} onRefresh={loadAccountingData} />
-        )}
+        <Routes>
+          <Route path="/" element={<Navigate to="/accounting/accounts" replace />} />
+          <Route path="/accounts" element={<AccountsTab accounts={accounts} onRefresh={loadAccountingData} />} />
+          <Route path="/invoices" element={<InvoicesTab invoices={invoices} onRefresh={loadAccountingData} />} />
+          <Route path="/bills" element={<BillsTab bills={bills} onRefresh={loadAccountingData} />} />
+          <Route path="/expenses" element={<ExpensesTab expenses={expenses} onRefresh={loadAccountingData} />} />
+          <Route path="/reports" element={<ReportsTab reports={reports} transactions={transactions} onRefresh={loadAccountingData} />} />
+        </Routes>
       </div>
     </div>
   );

@@ -1,10 +1,18 @@
 import React, { useState } from 'react';
+import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { useInquiryFlowStore } from './store';
 import type { Order } from '../../types';
 
 export const InquiryModule: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'inquiries' | 'quotes' | 'orders'>('inquiries');
+  const navigate = useNavigate();
+  const location = useLocation();
   const { inquiries, quotes, orders } = useInquiryFlowStore();
+
+  const getActiveTab = () => {
+    const path = location.pathname.split('/').pop();
+    return path || 'inquiries';
+  };
+  const activeTab = getActiveTab();
   
   const pendingInquiries = inquiries.filter((i) => i.status === 'pending');
   const respondedInquiries = inquiries.filter((i) => i.status === 'responded');
@@ -21,7 +29,7 @@ export const InquiryModule: React.FC = () => {
 
         <div className="flex gap-2 mb-6 border-b border-gray-200">
           <button
-            onClick={() => setActiveTab('inquiries')}
+            onClick={() => navigate('/inquiry/inquiries')}
             className={`px-4 py-2 font-semibold ${
               activeTab === 'inquiries'
                 ? 'text-blue-600 border-b-2 border-blue-600'
@@ -31,7 +39,7 @@ export const InquiryModule: React.FC = () => {
             Inquiries ({inquiries.length})
           </button>
           <button
-            onClick={() => setActiveTab('quotes')}
+            onClick={() => navigate('/inquiry/quotes')}
             className={`px-4 py-2 font-semibold ${
               activeTab === 'quotes'
                 ? 'text-blue-600 border-b-2 border-blue-600'
@@ -41,7 +49,7 @@ export const InquiryModule: React.FC = () => {
             Quotations ({quotes.length})
           </button>
           <button
-            onClick={() => setActiveTab('orders')}
+            onClick={() => navigate('/inquiry/orders')}
             className={`px-4 py-2 font-semibold ${
               activeTab === 'orders'
                 ? 'text-blue-600 border-b-2 border-blue-600'
@@ -52,26 +60,27 @@ export const InquiryModule: React.FC = () => {
           </button>
         </div>
 
-        {activeTab === 'inquiries' && (
-          <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 mb-6">
-            <MetricCard label="Pending" value={pendingInquiries.length} color="blue" />
-            <MetricCard label="Responded" value={respondedInquiries.length} color="purple" />
-            <MetricCard label="Ordered" value={orderedInquiries.length} color="green" />
-            <MetricCard label="Cancelled" value={inquiries.filter(i => i.status === 'cancelled').length} color="red" />
-          </div>
-        )}
-        
-        {activeTab === 'quotes' && (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
-            <MetricCard label="Pending" value={pendingQuotes.length} color="yellow" />
-            <MetricCard label="Accepted" value={acceptedQuotes.length} color="green" />
-            <MetricCard label="Rejected" value={rejectedQuotes.length} color="red" />
-          </div>
-        )}
-
-        {activeTab === 'inquiries' && <InquiriesView />}
-        {activeTab === 'quotes' && <QuotesView />}
-        {activeTab === 'orders' && <OrdersView />}
+        <Routes>
+          <Route path="/" element={<Navigate to="/inquiry/inquiries" replace />} />
+          <Route path="/inquiries" element={<>
+            <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 mb-6">
+              <MetricCard label="Pending" value={pendingInquiries.length} color="blue" />
+              <MetricCard label="Responded" value={respondedInquiries.length} color="purple" />
+              <MetricCard label="Ordered" value={orderedInquiries.length} color="green" />
+              <MetricCard label="Cancelled" value={inquiries.filter(i => i.status === 'cancelled').length} color="red" />
+            </div>
+            <InquiriesView />
+          </>} />
+          <Route path="/quotes" element={<>
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
+              <MetricCard label="Pending" value={pendingQuotes.length} color="yellow" />
+              <MetricCard label="Accepted" value={acceptedQuotes.length} color="green" />
+              <MetricCard label="Rejected" value={rejectedQuotes.length} color="red" />
+            </div>
+            <QuotesView />
+          </>} />
+          <Route path="/orders" element={<OrdersView />} />
+        </Routes>
       </div>
     </div>
   );

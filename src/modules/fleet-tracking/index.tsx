@@ -1,9 +1,17 @@
-import React, { useState } from 'react';
+import React from 'react';
+import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { useFleetTrackingStore } from './store';
 
 export const FleetTrackingModule: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'live-map' | 'vehicles' | 'routes' | 'maintenance'>('vehicles');
+  const navigate = useNavigate();
+  const location = useLocation();
   const { vehicles, routes, alerts } = useFleetTrackingStore();
+
+  const getActiveTab = () => {
+    const path = location.pathname.split('/').pop();
+    return path || 'vehicles';
+  };
+  const activeTab = getActiveTab();
 
   const activeRoutes = routes.filter((r) => r.status === 'in-progress');
   const criticalAlerts = alerts.filter((a) => a.severity === 'critical' && !a.acknowledged);
@@ -25,7 +33,7 @@ export const FleetTrackingModule: React.FC = () => {
 
         <div className="flex gap-2 mb-6 border-b border-gray-200 overflow-x-auto">
           <button
-            onClick={() => setActiveTab('live-map')}
+            onClick={() => navigate('/fleet-tracking/live-map')}
             className={`px-4 py-2 font-semibold whitespace-nowrap ${
               activeTab === 'live-map'
                 ? 'text-blue-600 border-b-2 border-blue-600'
@@ -35,7 +43,7 @@ export const FleetTrackingModule: React.FC = () => {
             Live Map
           </button>
           <button
-            onClick={() => setActiveTab('vehicles')}
+            onClick={() => navigate('/fleet-tracking/vehicles')}
             className={`px-4 py-2 font-semibold whitespace-nowrap ${
               activeTab === 'vehicles'
                 ? 'text-blue-600 border-b-2 border-blue-600'
@@ -45,7 +53,7 @@ export const FleetTrackingModule: React.FC = () => {
             Vehicles ({vehicles.length})
           </button>
           <button
-            onClick={() => setActiveTab('routes')}
+            onClick={() => navigate('/fleet-tracking/routes')}
             className={`px-4 py-2 font-semibold whitespace-nowrap ${
               activeTab === 'routes'
                 ? 'text-blue-600 border-b-2 border-blue-600'
@@ -55,7 +63,7 @@ export const FleetTrackingModule: React.FC = () => {
             Active Routes ({activeRoutes.length})
           </button>
           <button
-            onClick={() => setActiveTab('maintenance')}
+            onClick={() => navigate('/fleet-tracking/maintenance')}
             className={`px-4 py-2 font-semibold whitespace-nowrap ${
               activeTab === 'maintenance'
                 ? 'text-blue-600 border-b-2 border-blue-600'
@@ -66,10 +74,13 @@ export const FleetTrackingModule: React.FC = () => {
           </button>
         </div>
 
-        {activeTab === 'live-map' && <LiveMapView />}
-        {activeTab === 'vehicles' && <VehiclesView />}
-        {activeTab === 'routes' && <RoutesView />}
-        {activeTab === 'maintenance' && <MaintenanceView />}
+        <Routes>
+          <Route path="/" element={<Navigate to="/fleet-tracking/vehicles" replace />} />
+          <Route path="/live-map" element={<LiveMapView />} />
+          <Route path="/vehicles" element={<VehiclesView />} />
+          <Route path="/routes" element={<RoutesView />} />
+          <Route path="/maintenance" element={<MaintenanceView />} />
+        </Routes>
       </div>
     </div>
   );

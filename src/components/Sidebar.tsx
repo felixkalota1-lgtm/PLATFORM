@@ -27,8 +27,8 @@ const menuItems: MenuItem[] = [
     submenu: [
       { label: 'Browse Products', href: '/marketplace' },
       { label: 'My Cart', href: '/marketplace/cart' },
-      { label: 'Saved Vendors', href: '/marketplace/vendors' },
-      { label: 'Search & Inquire', href: '/marketplace/search' },
+      { label: 'Saved Vendors', href: '/marketplace/saved-vendors' },
+      { label: 'Search & Inquire', href: '/inquiry/inquiries' },
     ],
   },
   {
@@ -65,9 +65,10 @@ const menuItems: MenuItem[] = [
       { label: 'Locations', href: '/warehouse/locations' },
       { label: 'Manage Warehouses', href: '/warehouse-management' },
       { label: 'Send Goods', href: '/send-goods' },
+      { label: 'Fleet Vehicles', href: '/logistics/fleet' },
+      { label: 'Company Equipment', href: '/logistics/equipment' },
       { label: 'Shipments', href: '/logistics/shipments' },
       { label: 'Vehicle Tracking', href: '/logistics/tracking' },
-      { label: 'Fleet Management', href: '/logistics/fleet' },
     ],
   },
   {
@@ -105,7 +106,7 @@ const menuItems: MenuItem[] = [
     label: 'Documents & Settings',
     icon: <Settings size={20} />,
     submenu: [
-      { label: 'Company Documents', href: '/settings/documents' },
+      { label: 'Company Documents', href: '/documents' },
       { label: 'Accounting', href: '/accounting' },
       { label: 'Settings', href: '/settings' },
     ],

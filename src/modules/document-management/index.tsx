@@ -1,10 +1,18 @@
-import React, { useState } from 'react';
+import React from 'react';
+import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { useDocumentStore } from './store';
 
 export const DocumentManagementModule: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'documents' | 'expiring' | 'templates' | 'audit'>('documents');
+  const navigate = useNavigate();
+  const location = useLocation();
   const { documents, notifications, templates, auditLogs } = useDocumentStore();
   
+  const getActiveTab = () => {
+    const path = location.pathname.split('/').pop();
+    return path || 'documents';
+  };
+
+  const activeTab = getActiveTab();
   const expiringDocs = documents.filter(d => d.status === 'expiring-soon' || d.status === 'expired');
   const pendingNotifications = notifications.filter(n => !n.acknowledged);
 
@@ -23,53 +31,34 @@ export const DocumentManagementModule: React.FC = () => {
           )}
         </div>
 
-        <div className="flex gap-2 mb-6 border-b border-gray-200">
-          <button
-            onClick={() => setActiveTab('documents')}
-            className={`px-4 py-2 font-semibold ${
-              activeTab === 'documents'
-                ? 'text-blue-600 border-b-2 border-blue-600'
-                : 'text-gray-600 hover:text-gray-800'
-            }`}
-          >
-            All Documents ({documents.length})
-          </button>
-          <button
-            onClick={() => setActiveTab('expiring')}
-            className={`px-4 py-2 font-semibold ${
-              activeTab === 'expiring'
-                ? 'text-blue-600 border-b-2 border-blue-600'
-                : 'text-gray-600 hover:text-gray-800'
-            }`}
-          >
-            Expiring Soon ({expiringDocs.length})
-          </button>
-          <button
-            onClick={() => setActiveTab('templates')}
-            className={`px-4 py-2 font-semibold ${
-              activeTab === 'templates'
-                ? 'text-blue-600 border-b-2 border-blue-600'
-                : 'text-gray-600 hover:text-gray-800'
-            }`}
-          >
-            Templates ({templates.length})
-          </button>
-          <button
-            onClick={() => setActiveTab('audit')}
-            className={`px-4 py-2 font-semibold ${
-              activeTab === 'audit'
-                ? 'text-blue-600 border-b-2 border-blue-600'
-                : 'text-gray-600 hover:text-gray-800'
-            }`}
-          >
-            Audit Log ({auditLogs.length})
-          </button>
+        <div className="flex gap-2 mb-6 border-b border-gray-200 overflow-x-auto sticky top-0 bg-gray-50 pb-2">
+          {[
+            { id: 'documents', label: 'All Documents', count: documents.length },
+            { id: 'expiring', label: 'Expiring Soon', count: expiringDocs.length },
+            { id: 'templates', label: 'Templates', count: templates.length },
+            { id: 'audit', label: 'Audit Log', count: auditLogs.length },
+          ].map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => navigate(`/document-management/${tab.id}`)}
+              className={`px-4 py-2 font-semibold whitespace-nowrap ${
+                activeTab === tab.id
+                  ? 'text-blue-600 border-b-2 border-blue-600'
+                  : 'text-gray-600 hover:text-gray-800'
+              }`}
+            >
+              {tab.label} ({tab.count})
+            </button>
+          ))}
         </div>
 
-        {activeTab === 'documents' && <DocumentsListView />}
-        {activeTab === 'expiring' && <ExpiringDocumentsView />}
-        {activeTab === 'templates' && <TemplatesView />}
-        {activeTab === 'audit' && <AuditLogView />}
+        <Routes>
+          <Route path="/" element={<Navigate to="/document-management/documents" replace />} />
+          <Route path="/documents" element={<DocumentsListView />} />
+          <Route path="/expiring" element={<ExpiringDocumentsView />} />
+          <Route path="/templates" element={<TemplatesView />} />
+          <Route path="/audit" element={<AuditLogView />} />
+        </Routes>
       </div>
     </div>
   );

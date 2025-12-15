@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { FileText, CheckCircle, Clock, AlertCircle } from 'lucide-react';
 import { useSalesStore } from './store';
 import SalesQuotationsList from './components/SalesQuotationsList';
@@ -6,9 +7,17 @@ import { useProcurementStore } from '../procurement/store';
 import RequestsList from '../procurement/components/RequestsList';
 
 export default function SalesAndProcurementPage() {
-  const [activeTab, setActiveTab] = useState<'sales' | 'procurement'>('sales');
+  const navigate = useNavigate();
+  const location = useLocation();
   const { quotations } = useSalesStore();
   const { requests } = useProcurementStore();
+
+  const getActiveTab = () => {
+    const path = location.pathname.split('/').pop();
+    return path || 'sales';
+  };
+
+  const activeTab = getActiveTab();
 
   const salesStats = [
     {
@@ -112,11 +121,11 @@ export default function SalesAndProcurementPage() {
       </div>
 
       {/* Tabs */}
-      <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
+      <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 sticky top-0 z-10">
         <div className="max-w-7xl mx-auto px-6">
           <div className="flex gap-8">
             <button
-              onClick={() => setActiveTab('sales')}
+              onClick={() => navigate(`/sales/sales`)}
               className={`px-1 py-4 font-medium border-b-2 transition-colors ${
                 activeTab === 'sales'
                   ? 'border-emerald-600 text-emerald-600 dark:text-emerald-400'
@@ -126,7 +135,7 @@ export default function SalesAndProcurementPage() {
               💰 Sales Quotations
             </button>
             <button
-              onClick={() => setActiveTab('procurement')}
+              onClick={() => navigate(`/sales/procurement`)}
               className={`px-1 py-4 font-medium border-b-2 transition-colors ${
                 activeTab === 'procurement'
                   ? 'border-blue-600 text-blue-600 dark:text-blue-400'
@@ -141,28 +150,30 @@ export default function SalesAndProcurementPage() {
 
       {/* Content */}
       <div className="max-w-7xl mx-auto px-6 py-8">
-        {activeTab === 'sales' && (
-          <div className="space-y-6">
-            <div className="bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-lg p-4">
-              <p className="text-emerald-900 dark:text-emerald-100">
-                💡 <strong>Tip:</strong> Create sales quotations from products in your inventory. Click
-                the "💰 Create Sale Quote" button on any product to get started!
-              </p>
+        <Routes>
+          <Route path="/" element={<Navigate to="/sales/sales" replace />} />
+          <Route path="/sales" element={
+            <div className="space-y-6">
+              <div className="bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-lg p-4">
+                <p className="text-emerald-900 dark:text-emerald-100">
+                  💡 <strong>Tip:</strong> Create sales quotations from products in your inventory. Click
+                  the "💰 Create Sale Quote" button on any product to get started!
+                </p>
+              </div>
+              <SalesQuotationsList />
             </div>
-            <SalesQuotationsList />
-          </div>
-        )}
-
-        {activeTab === 'procurement' && (
-          <div className="space-y-6">
-            <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
-              <p className="text-blue-900 dark:text-blue-100">
-                💡 <strong>Tip:</strong> Create procurement requests to request quotations from your suppliers.
-              </p>
+          } />
+          <Route path="/procurement" element={
+            <div className="space-y-6">
+              <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+                <p className="text-blue-900 dark:text-blue-100">
+                  💡 <strong>Tip:</strong> Create procurement requests to request quotations from your suppliers.
+                </p>
+              </div>
+              <RequestsList requests={requests} />
             </div>
-            <RequestsList requests={requests} />
-          </div>
-        )}
+          } />
+        </Routes>
       </div>
     </div>
   );

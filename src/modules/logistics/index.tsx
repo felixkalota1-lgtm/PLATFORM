@@ -1,62 +1,56 @@
 import React from 'react';
+import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { useLogisticsStore } from './store';
+import CompanyVehiclesSection from './company-vehicles';
 
 export const LogisticsModule: React.FC = () => {
-  const [activeTab, setActiveTab] = React.useState<'vehicles' | 'tracking' | 'maintenance' | 'fuel'>('vehicles');
+  const navigate = useNavigate();
+  const location = useLocation();
   const { vehicles, routes, maintenance, fuelLogs } = useLogisticsStore();
+
+  const getActiveTab = () => {
+    const path = location.pathname.split('/').pop();
+    return path || 'fleet';
+  };
+
+  const activeTab = getActiveTab();
+  const activeRoutes = routes.filter(r => r.status === 'in-progress');
 
   return (
     <div className="w-full h-full bg-gray-50 p-6">
       <div className="max-w-7xl mx-auto">
         <h1 className="text-3xl font-bold text-gray-900 mb-8">Fleet & Logistics Management</h1>
 
-        <div className="flex gap-2 mb-6 border-b border-gray-200">
-          <button
-            onClick={() => setActiveTab('vehicles')}
-            className={`px-4 py-2 font-semibold ${
-              activeTab === 'vehicles'
-                ? 'text-blue-600 border-b-2 border-blue-600'
-                : 'text-gray-600 hover:text-gray-800'
-            }`}
-          >
-            Vehicles ({vehicles.length})
-          </button>
-          <button
-            onClick={() => setActiveTab('tracking')}
-            className={`px-4 py-2 font-semibold ${
-              activeTab === 'tracking'
-                ? 'text-blue-600 border-b-2 border-blue-600'
-                : 'text-gray-600 hover:text-gray-800'
-            }`}
-          >
-            Active Routes ({routes.filter(r => r.status === 'in-progress').length})
-          </button>
-          <button
-            onClick={() => setActiveTab('maintenance')}
-            className={`px-4 py-2 font-semibold ${
-              activeTab === 'maintenance'
-                ? 'text-blue-600 border-b-2 border-blue-600'
-                : 'text-gray-600 hover:text-gray-800'
-            }`}
-          >
-            Maintenance ({maintenance.length})
-          </button>
-          <button
-            onClick={() => setActiveTab('fuel')}
-            className={`px-4 py-2 font-semibold ${
-              activeTab === 'fuel'
-                ? 'text-blue-600 border-b-2 border-blue-600'
-                : 'text-gray-600 hover:text-gray-800'
-            }`}
-          >
-            Fuel Logs ({fuelLogs.length})
-          </button>
+        <div className="flex gap-2 mb-6 border-b border-gray-200 overflow-x-auto sticky top-0 bg-gray-50 pb-2">
+          {[
+            { id: 'fleet', label: 'Fleet Vehicles', count: vehicles.length },
+            { id: 'company-vehicles', label: 'Company Equipment', count: null },
+            { id: 'tracking', label: 'Active Routes', count: activeRoutes.length },
+            { id: 'maintenance', label: 'Maintenance', count: maintenance.length },
+            { id: 'fuel', label: 'Fuel Logs', count: fuelLogs.length },
+          ].map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => navigate(`/logistics/${tab.id}`)}
+              className={`px-4 py-2 font-semibold whitespace-nowrap ${
+                activeTab === tab.id
+                  ? 'text-blue-600 border-b-2 border-blue-600'
+                  : 'text-gray-600 hover:text-gray-800'
+              }`}
+            >
+              {tab.label} {tab.count !== null && `(${tab.count})`}
+            </button>
+          ))}
         </div>
 
-        {activeTab === 'vehicles' && <VehiclesView />}
-        {activeTab === 'tracking' && <TrackingView />}
-        {activeTab === 'maintenance' && <MaintenanceView />}
-        {activeTab === 'fuel' && <FuelLogsView />}
+        <Routes>
+          <Route path="/" element={<Navigate to="/logistics/fleet" replace />} />
+          <Route path="/fleet" element={<VehiclesView />} />
+          <Route path="/company-vehicles" element={<CompanyVehiclesSection />} />
+          <Route path="/tracking" element={<TrackingView routes={activeRoutes} />} />
+          <Route path="/maintenance" element={<MaintenanceView />} />
+          <Route path="/fuel" element={<FuelLogsView />} />
+        </Routes>
       </div>
     </div>
   );
@@ -112,10 +106,11 @@ const VehiclesView: React.FC = () => {
   );
 };
 
-const TrackingView: React.FC = () => {
-  const { routes } = useLogisticsStore();
-  const activeRoutes = routes.filter(r => r.status === 'in-progress');
+interface TrackingViewProps {
+  routes: any[];
+}
 
+const TrackingView: React.FC<TrackingViewProps> = ({ routes: activeRoutes }: any) => {
   return (
     <div className="bg-white rounded-lg shadow">
       <div className="p-6 border-b border-gray-200">
@@ -129,7 +124,7 @@ const TrackingView: React.FC = () => {
           </div>
         ) : (
           <div className="space-y-4">
-            {activeRoutes.map((route) => (
+            {activeRoutes.map((route: any) => (
               <div key={route.id} className="border border-gray-200 rounded-lg p-4">
                 <div className="flex justify-between items-start mb-4">
                   <div>

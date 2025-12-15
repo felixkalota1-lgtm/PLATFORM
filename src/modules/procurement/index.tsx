@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import procurementService, { Order } from '../../services/procurementService';
 import OrderManagement from './components/OrderManagement';
@@ -7,17 +8,22 @@ import OrderTracking from './components/OrderTracking';
 import ProcurementDashboard from './components/ProcurementDashboard';
 import './ProcurementModule.css';
 
-type Tab = 'dashboard' | 'orders' | 'tracking' | 'vendors';
-
 const ProcurementModule: React.FC = () => {
+  const navigate = useNavigate();
+  const location = useLocation();
   const { user } = useAuth();
   const tenantId = user?.tenantId || 'default';
-  const [activeTab, setActiveTab] = useState<Tab>('dashboard');
   const [orders, setOrders] = useState<Order[]>([]);
   const [receivedOrders, setReceivedOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [unreadCount, setUnreadCount] = useState(0);
+
+  // Get active tab from URL path
+  const getActiveTab = () => {
+    const path = location.pathname.split('/').pop()
+    return path || 'dashboard'
+  }
 
   useEffect(() => {
     if (!user) return;
@@ -67,6 +73,8 @@ const ProcurementModule: React.FC = () => {
     return <div className="procurement-loading">Loading...</div>;
   }
 
+  const activeTab = getActiveTab()
+
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
       {/* Header */}
@@ -86,54 +94,33 @@ const ProcurementModule: React.FC = () => {
       </div>
 
       {/* Navigation Tabs */}
-      <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
+      <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 sticky top-0 z-10">
         <div className="max-w-7xl mx-auto px-6">
-          <div className="flex gap-4">
-            <button
-              onClick={() => setActiveTab('dashboard')}
-              className={`px-4 py-4 font-medium border-b-2 transition-colors flex items-center gap-2 ${
-                activeTab === 'dashboard'
-                  ? 'border-blue-600 text-blue-600 dark:text-blue-400'
-                  : 'border-transparent text-gray-600 dark:text-gray-400'
-              }`}
-            >
-              <span>📊</span> Dashboard
-            </button>
-            <button
-              onClick={() => setActiveTab('orders')}
-              className={`px-4 py-4 font-medium border-b-2 transition-colors flex items-center gap-2 ${
-                activeTab === 'orders'
-                  ? 'border-blue-600 text-blue-600 dark:text-blue-400'
-                  : 'border-transparent text-gray-600 dark:text-gray-400'
-              }`}
-            >
-              <span>📦</span> Orders
-              {unreadCount > 0 && (
-                <span className="ml-2 bg-red-500 text-white text-xs px-2 py-1 rounded-full">
-                  {unreadCount}
-                </span>
-              )}
-            </button>
-            <button
-              onClick={() => setActiveTab('tracking')}
-              className={`px-4 py-4 font-medium border-b-2 transition-colors flex items-center gap-2 ${
-                activeTab === 'tracking'
-                  ? 'border-blue-600 text-blue-600 dark:text-blue-400'
-                  : 'border-transparent text-gray-600 dark:text-gray-400'
-              }`}
-            >
-              <span>🚚</span> Tracking
-            </button>
-            <button
-              onClick={() => setActiveTab('vendors')}
-              className={`px-4 py-4 font-medium border-b-2 transition-colors flex items-center gap-2 ${
-                activeTab === 'vendors'
-                  ? 'border-blue-600 text-blue-600 dark:text-blue-400'
-                  : 'border-transparent text-gray-600 dark:text-gray-400'
-              }`}
-            >
-              <span>🏢</span> Vendors
-            </button>
+          <div className="flex gap-4 overflow-x-auto">
+            {[
+              { id: 'dashboard', label: 'Dashboard', icon: '📊' },
+              { id: 'orders', label: 'Orders', icon: '📦' },
+              { id: 'tracking', label: 'Tracking', icon: '🚚' },
+              { id: 'vendors', label: 'Vendors', icon: '🏢' },
+            ].map(tab => (
+              <button
+                key={tab.id}
+                onClick={() => navigate(`/procurement/${tab.id}`)}
+                className={`px-4 py-4 font-medium border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap ${
+                  activeTab === tab.id
+                    ? 'border-blue-600 text-blue-600 dark:text-blue-400'
+                    : 'border-transparent text-gray-600 dark:text-gray-400'
+                }`}
+              >
+                <span>{tab.icon}</span>
+                {tab.label}
+                {tab.id === 'orders' && unreadCount > 0 && (
+                  <span className="ml-2 bg-red-500 text-white text-xs px-2 py-1 rounded-full">
+                    {unreadCount}
+                  </span>
+                )}
+              </button>
+            ))}
           </div>
         </div>
       </div>
@@ -161,38 +148,41 @@ const ProcurementModule: React.FC = () => {
           </div>
         )}
 
-        {!loading && activeTab === 'dashboard' && (
-          <ProcurementDashboard
-            sentOrdersCount={orders.length}
-            receivedOrdersCount={receivedOrders.length}
-            unreadCount={unreadCount}
-            recentOrders={[...orders, ...receivedOrders]
-              .sort((a, b) => b.createdAt.toMillis() - a.createdAt.toMillis())
-              .slice(0, 5)}
-            onViewOrders={() => setActiveTab('orders')}
-          />
-        )}
-
-        {!loading && activeTab === 'orders' && (
-          <OrderManagement
-            sentOrders={orders}
-            receivedOrders={receivedOrders}
-            tenantId={tenantId}
-            onOrderCreated={() => {
-              procurementService.getOrdersBySender(tenantId).then(setOrders);
-            }}
-          />
-        )}
-
-        {!loading && activeTab === 'tracking' && (
-          <OrderTracking orders={[...orders, ...receivedOrders]} />
-        )}
-
-        {!loading && activeTab === 'vendors' && (
-          <VendorManagement tenantId={tenantId} />
-        )}
+        <Routes>
+          <Route path="/" element={<Navigate to="/procurement/dashboard" replace />} />
+          <Route path="/dashboard" element={
+            !loading && (
+              <ProcurementDashboard
+                sentOrdersCount={orders.length}
+                receivedOrdersCount={receivedOrders.length}
+                unreadCount={unreadCount}
+                recentOrders={[...orders, ...receivedOrders]
+                  .sort((a, b) => b.createdAt.toMillis() - a.createdAt.toMillis())
+                  .slice(0, 5)}
+                onViewOrders={() => navigate('/procurement/orders')}
+              />
+            )
+          } />
+          <Route path="/orders" element={
+            !loading && (
+              <OrderManagement
+                sentOrders={orders}
+                receivedOrders={receivedOrders}
+                tenantId={tenantId}
+                onOrderCreated={() => {
+                  procurementService.getOrdersBySender(tenantId).then(setOrders);
+                }}
+              />
+            )
+          } />
+          <Route path="/tracking" element={
+            !loading && <OrderTracking orders={[...orders, ...receivedOrders]} />
+          } />
+          <Route path="/vendors" element={
+            !loading && <VendorManagement tenantId={tenantId} />
+          } />
+        </Routes>
       </div>
-
     </div>
   );
 };

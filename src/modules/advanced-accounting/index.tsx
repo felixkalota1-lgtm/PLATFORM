@@ -1,8 +1,10 @@
-import React, { useState } from 'react';
+import React from 'react';
+import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { useAdvancedAccountingStore } from './store';
 
 export const AdvancedAccountingModule: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'journals' | 'ledger' | 'reports' | 'budgets' | 'tax' | 'depreciation'>('journals');
+  const navigate = useNavigate();
+  const location = useLocation();
   const {
     journals,
     generalLedgers,
@@ -12,6 +14,12 @@ export const AdvancedAccountingModule: React.FC = () => {
     depreciationSchedules,
   } = useAdvancedAccountingStore();
 
+  const getActiveTab = () => {
+    const path = location.pathname.split('/').pop();
+    return path || 'journals';
+  };
+  const activeTab = getActiveTab();
+
   return (
     <div className="w-full h-full bg-gray-50 p-6">
       <div className="max-w-7xl mx-auto">
@@ -19,7 +27,7 @@ export const AdvancedAccountingModule: React.FC = () => {
 
         <div className="flex gap-2 mb-6 border-b border-gray-200 overflow-x-auto">
           <button
-            onClick={() => setActiveTab('journals')}
+            onClick={() => navigate('/advanced-accounting/journals')}
             className={`px-4 py-2 font-semibold whitespace-nowrap ${
               activeTab === 'journals'
                 ? 'text-blue-600 border-b-2 border-blue-600'
@@ -29,7 +37,7 @@ export const AdvancedAccountingModule: React.FC = () => {
             Journals ({journals.length})
           </button>
           <button
-            onClick={() => setActiveTab('ledger')}
+            onClick={() => navigate('/advanced-accounting/ledger')}
             className={`px-4 py-2 font-semibold whitespace-nowrap ${
               activeTab === 'ledger'
                 ? 'text-blue-600 border-b-2 border-blue-600'
@@ -39,7 +47,7 @@ export const AdvancedAccountingModule: React.FC = () => {
             General Ledger ({generalLedgers.length})
           </button>
           <button
-            onClick={() => setActiveTab('reports')}
+            onClick={() => navigate('/advanced-accounting/reports')}
             className={`px-4 py-2 font-semibold whitespace-nowrap ${
               activeTab === 'reports'
                 ? 'text-blue-600 border-b-2 border-blue-600'
@@ -49,7 +57,7 @@ export const AdvancedAccountingModule: React.FC = () => {
             Reports ({financialStatements.length})
           </button>
           <button
-            onClick={() => setActiveTab('budgets')}
+            onClick={() => navigate('/advanced-accounting/budgets')}
             className={`px-4 py-2 font-semibold whitespace-nowrap ${
               activeTab === 'budgets'
                 ? 'text-blue-600 border-b-2 border-blue-600'
@@ -59,7 +67,7 @@ export const AdvancedAccountingModule: React.FC = () => {
             Budgets ({budgets.length})
           </button>
           <button
-            onClick={() => setActiveTab('tax')}
+            onClick={() => navigate('/advanced-accounting/tax')}
             className={`px-4 py-2 font-semibold whitespace-nowrap ${
               activeTab === 'tax'
                 ? 'text-blue-600 border-b-2 border-blue-600'
@@ -69,7 +77,7 @@ export const AdvancedAccountingModule: React.FC = () => {
             Tax ({taxCalculations.length})
           </button>
           <button
-            onClick={() => setActiveTab('depreciation')}
+            onClick={() => navigate('/advanced-accounting/depreciation')}
             className={`px-4 py-2 font-semibold whitespace-nowrap ${
               activeTab === 'depreciation'
                 ? 'text-blue-600 border-b-2 border-blue-600'
@@ -80,12 +88,15 @@ export const AdvancedAccountingModule: React.FC = () => {
           </button>
         </div>
 
-        {activeTab === 'journals' && <JournalsView />}
-        {activeTab === 'ledger' && <LedgerView />}
-        {activeTab === 'reports' && <ReportsView />}
-        {activeTab === 'budgets' && <BudgetsView />}
-        {activeTab === 'tax' && <TaxView />}
-        {activeTab === 'depreciation' && <DepreciationView />}
+        <Routes>
+          <Route path="/" element={<Navigate to="/advanced-accounting/journals" replace />} />
+          <Route path="/journals" element={<JournalsView />} />
+          <Route path="/ledger" element={<LedgerView />} />
+          <Route path="/reports" element={<ReportsView />} />
+          <Route path="/budgets" element={<BudgetsView />} />
+          <Route path="/tax" element={<TaxView />} />
+          <Route path="/depreciation" element={<DepreciationView />} />
+        </Routes>
       </div>
     </div>
   );

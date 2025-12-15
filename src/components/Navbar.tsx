@@ -1,9 +1,10 @@
-import { Menu, LogOut, Bell, Moon, Sun, Settings, Mail } from 'lucide-react'
+import { Menu, LogOut, Moon, Sun, Settings, Mail } from 'lucide-react'
 import { useAppStore } from '../store/appStore'
 import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { useState } from 'react'
 import WorkloadDisplay from './WorkloadDisplay'
+import NotificationCenter from './NotificationCenter'
 
 interface NavbarProps {
   onMenuClick: () => void
@@ -13,7 +14,6 @@ export default function Navbar({ onMenuClick }: NavbarProps) {
   const { 
     currentUser, 
     currentCompany, 
-    notifications, 
     setCurrentUser, 
     setCurrentCompany,
     clearCart,
@@ -23,7 +23,6 @@ export default function Navbar({ onMenuClick }: NavbarProps) {
   } = useAppStore()
   const navigate = useNavigate()
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
-  const unreadCount = notifications.filter(n => !n.read).length
 
   const handleLogout = () => {
     console.log('User logging out...')
@@ -83,14 +82,8 @@ export default function Navbar({ onMenuClick }: NavbarProps) {
             )}
           </button>
 
-          <div className="relative cursor-pointer hover:text-blue-600 dark:hover:text-blue-400">
-            <Bell className="w-5 h-5 text-gray-600 dark:text-gray-400" />
-            {unreadCount > 0 && (
-              <span className="absolute top-0 right-0 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
-                {unreadCount}
-              </span>
-            )}
-          </div>
+          {/* Notification Center */}
+          <NotificationCenter userId={currentUser?.id} />
 
           <div className="flex items-center gap-3 pl-4 border-l border-gray-200 dark:border-gray-700">
             <div className="text-right">

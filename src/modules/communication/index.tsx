@@ -1,51 +1,50 @@
 import React from 'react';
+import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { useCommunicationStore } from './store';
 
 export const CommunicationModule: React.FC = () => {
-  const [activeTab, setActiveTab] = React.useState<'messages' | 'orders' | 'requests'>('messages');
+  const navigate = useNavigate();
+  const location = useLocation();
   const { messages, directorOrders, departmentRequests } = useCommunicationStore();
+
+  const getActiveTab = () => {
+    const path = location.pathname.split('/').pop();
+    return path || 'messages';
+  };
+
+  const activeTab = getActiveTab();
 
   return (
     <div className="w-full h-full bg-gray-50 p-6">
       <div className="max-w-7xl mx-auto">
         <h1 className="text-3xl font-bold text-gray-900 mb-8">Communication Hub</h1>
         
-        <div className="flex gap-2 mb-6 border-b border-gray-200">
-          <button
-            onClick={() => setActiveTab('messages')}
-            className={`px-4 py-2 font-semibold ${
-              activeTab === 'messages'
-                ? 'text-blue-600 border-b-2 border-blue-600'
-                : 'text-gray-600 hover:text-gray-800'
-            }`}
-          >
-            Team Messages ({messages.length})
-          </button>
-          <button
-            onClick={() => setActiveTab('orders')}
-            className={`px-4 py-2 font-semibold ${
-              activeTab === 'orders'
-                ? 'text-blue-600 border-b-2 border-blue-600'
-                : 'text-gray-600 hover:text-gray-800'
-            }`}
-          >
-            Director Orders ({directorOrders.length})
-          </button>
-          <button
-            onClick={() => setActiveTab('requests')}
-            className={`px-4 py-2 font-semibold ${
-              activeTab === 'requests'
-                ? 'text-blue-600 border-b-2 border-blue-600'
-                : 'text-gray-600 hover:text-gray-800'
-            }`}
-          >
-            Department Requests ({departmentRequests.length})
-          </button>
+        <div className="flex gap-2 mb-6 border-b border-gray-200 overflow-x-auto sticky top-0 bg-gray-50 pb-2">
+          {[
+            { id: 'messages', label: 'Team Messages', count: messages.length },
+            { id: 'orders', label: 'Director Orders', count: directorOrders.length },
+            { id: 'requests', label: 'Department Requests', count: departmentRequests.length },
+          ].map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => navigate(`/communication/${tab.id}`)}
+              className={`px-4 py-2 font-semibold whitespace-nowrap ${
+                activeTab === tab.id
+                  ? 'text-blue-600 border-b-2 border-blue-600'
+                  : 'text-gray-600 hover:text-gray-800'
+              }`}
+            >
+              {tab.label} ({tab.count})
+            </button>
+          ))}
         </div>
 
-        {activeTab === 'messages' && <TeamMessagesView />}
-        {activeTab === 'orders' && <DirectorOrdersView />}
-        {activeTab === 'requests' && <DepartmentRequestsView />}
+        <Routes>
+          <Route path="/" element={<Navigate to="/communication/messages" replace />} />
+          <Route path="/messages" element={<TeamMessagesView />} />
+          <Route path="/orders" element={<DirectorOrdersView />} />
+          <Route path="/requests" element={<DepartmentRequestsView />} />
+        </Routes>
       </div>
     </div>
   );

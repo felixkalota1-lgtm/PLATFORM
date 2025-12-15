@@ -1,9 +1,17 @@
-import React, { useState } from 'react';
+import React from 'react';
+import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { useAnalyticsStore } from './store';
 
 export const AnalyticsModule: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'sales' | 'inventory' | 'procurement' | 'operational' | 'financial' | 'compliance'>('sales');
+  const navigate = useNavigate();
+  const location = useLocation();
   const { dateRange, setDateRange } = useAnalyticsStore();
+
+  const getActiveTab = () => {
+    const path = location.pathname.split('/').pop();
+    return path || 'sales';
+  };
+  const activeTab = getActiveTab();
 
   return (
     <div className="w-full h-full bg-gray-50 p-6">
@@ -40,7 +48,7 @@ export const AnalyticsModule: React.FC = () => {
 
         <div className="flex gap-2 mb-6 border-b border-gray-200 overflow-x-auto">
           <button
-            onClick={() => setActiveTab('sales')}
+            onClick={() => navigate('/analytics/sales')}
             className={`px-4 py-2 font-semibold whitespace-nowrap ${
               activeTab === 'sales'
                 ? 'text-blue-600 border-b-2 border-blue-600'
@@ -50,7 +58,7 @@ export const AnalyticsModule: React.FC = () => {
             Sales
           </button>
           <button
-            onClick={() => setActiveTab('inventory')}
+            onClick={() => navigate('/analytics/inventory')}
             className={`px-4 py-2 font-semibold whitespace-nowrap ${
               activeTab === 'inventory'
                 ? 'text-blue-600 border-b-2 border-blue-600'
@@ -60,7 +68,7 @@ export const AnalyticsModule: React.FC = () => {
             Inventory
           </button>
           <button
-            onClick={() => setActiveTab('procurement')}
+            onClick={() => navigate('/analytics/procurement')}
             className={`px-4 py-2 font-semibold whitespace-nowrap ${
               activeTab === 'procurement'
                 ? 'text-blue-600 border-b-2 border-blue-600'
@@ -70,7 +78,7 @@ export const AnalyticsModule: React.FC = () => {
             Procurement
           </button>
           <button
-            onClick={() => setActiveTab('operational')}
+            onClick={() => navigate('/analytics/operational')}
             className={`px-4 py-2 font-semibold whitespace-nowrap ${
               activeTab === 'operational'
                 ? 'text-blue-600 border-b-2 border-blue-600'
@@ -80,7 +88,7 @@ export const AnalyticsModule: React.FC = () => {
             Operational
           </button>
           <button
-            onClick={() => setActiveTab('financial')}
+            onClick={() => navigate('/analytics/financial')}
             className={`px-4 py-2 font-semibold whitespace-nowrap ${
               activeTab === 'financial'
                 ? 'text-blue-600 border-b-2 border-blue-600'
@@ -90,7 +98,7 @@ export const AnalyticsModule: React.FC = () => {
             Financial
           </button>
           <button
-            onClick={() => setActiveTab('compliance')}
+            onClick={() => navigate('/analytics/compliance')}
             className={`px-4 py-2 font-semibold whitespace-nowrap ${
               activeTab === 'compliance'
                 ? 'text-blue-600 border-b-2 border-blue-600'
@@ -101,12 +109,15 @@ export const AnalyticsModule: React.FC = () => {
           </button>
         </div>
 
-        {activeTab === 'sales' && <SalesAnalyticsView />}
-        {activeTab === 'inventory' && <InventoryAnalyticsView />}
-        {activeTab === 'procurement' && <ProcurementAnalyticsView />}
-        {activeTab === 'operational' && <OperationalAnalyticsView />}
-        {activeTab === 'financial' && <FinancialAnalyticsView />}
-        {activeTab === 'compliance' && <ComplianceAnalyticsView />}
+        <Routes>
+          <Route path="/" element={<Navigate to="/analytics/sales" replace />} />
+          <Route path="/sales" element={<SalesAnalyticsView />} />
+          <Route path="/inventory" element={<InventoryAnalyticsView />} />
+          <Route path="/procurement" element={<ProcurementAnalyticsView />} />
+          <Route path="/operational" element={<OperationalAnalyticsView />} />
+          <Route path="/financial" element={<FinancialAnalyticsView />} />
+          <Route path="/compliance" element={<ComplianceAnalyticsView />} />
+        </Routes>
       </div>
     </div>
   );
