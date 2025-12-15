@@ -187,6 +187,77 @@ export const INTEGRATION_EVENTS = {
 
   // === FINANCIAL EVENTS ===
   INVOICE_CREATED: 'finance:invoice_created',
+
+  // === QUALITY CONTROL EVENTS ===
+  QUALITY_INSPECTION_INITIATED: 'quality:inspection_initiated',
+  QUALITY_INSPECTION_PASSED: 'quality:inspection_passed',
+  REJECTED_ITEMS_RETURN_TO_VENDOR: 'quality:rejected_items_return_to_vendor',
+  REJECTED_ITEMS_SCRAPPED: 'quality:rejected_items_scrapped',
+  VENDOR_QC_SCORE_UPDATED: 'quality:vendor_qc_score_updated',
+
+  // === CUSTOMER MANAGEMENT EVENTS ===
+  CUSTOMER_ORDER_RECORDED: 'customer:order_recorded',
+  CUSTOMER_COMMUNICATION_LOGGED: 'customer:communication_logged',
+  CUSTOMER_FOLLOWUP_SCHEDULED: 'customer:followup_scheduled',
+  CUSTOMER_RATING_UPDATED: 'customer:rating_updated',
+
+  // === RETURNS & COMPLAINTS EVENTS ===
+  RETURN_AUTHORIZATION_CREATED: 'returns:authorization_created',
+  RETURN_AUTHORIZATION_APPROVED: 'returns:authorization_approved',
+  RETURN_RECEIVED: 'returns:return_received',
+  REFUND_PROCESSED: 'refunds:refund_processed',
+  CUSTOMER_COMPLAINT_CREATED: 'complaints:complaint_created',
+  CUSTOMER_COMPLAINT_RESOLVED: 'complaints:complaint_resolved',
+
+  // === BUDGET & FINANCE EVENTS ===
+  BUDGET_ALLOCATED: 'budget:allocated',
+  BUDGET_THRESHOLD_EXCEEDED: 'budget:threshold_exceeded',
+  BUDGET_EXHAUSTED: 'budget:exhausted',
+  BUDGET_REQUEST_CREATED: 'budget:request_created',
+  BUDGET_REQUEST_APPROVED: 'budget:request_approved',
+  BUDGET_REQUEST_REJECTED: 'budget:request_rejected',
+  BUDGET_WARNING: 'budget:warning',
+
+  // === INVENTORY ADJUSTMENTS EVENTS ===
+  INVENTORY_ADJUSTMENT_RECORDED: 'inventory:adjustment_recorded',
+  INVENTORY_VARIANCE_ALERT: 'inventory:variance_alert',
+  INVENTORY_DAMAGE_RECORDED: 'inventory:damage_recorded',
+  INVENTORY_VARIANCE_ANALYSIS_COMPLETE: 'inventory:variance_analysis_complete',
+
+  // === BRANCH MANAGEMENT EVENTS ===
+  BRANCH_CREATED: 'branch:created',
+  BRANCH_INVENTORY_UPDATED: 'branch:inventory_updated',
+  BRANCH_INVENTORY_SYNCED: 'branch:inventory_synced',
+  INTER_BRANCH_TRANSFER_INITIATED: 'branch:transfer_initiated',
+  INTER_BRANCH_TRANSFER_STATUS_UPDATED: 'branch:transfer_status_updated',
+  BRANCH_REPORT_GENERATED: 'branch:report_generated',
+
+  // === SUPPLIER ORDERS EVENTS ===
+  PURCHASE_ORDER_CREATED: 'supplier:purchase_order_created',
+  PURCHASE_ORDER_CONFIRMED: 'supplier:purchase_order_confirmed',
+  PURCHASE_ORDER_RECEIPT_RECORDED: 'supplier:purchase_order_receipt_recorded',
+  PURCHASE_ORDER_VARIANCE_DETECTED: 'supplier:purchase_order_variance_detected',
+  VENDOR_DELIVERY_PERFORMANCE_CALCULATED: 'supplier:vendor_delivery_performance_calculated',
+  REORDER_SUGGESTION_GENERATED: 'supplier:reorder_suggestion_generated',
+  REORDER_SUGGESTION_APPROVED: 'supplier:reorder_suggestion_approved',
+
+  // === ASSET MANAGEMENT EVENTS ===
+  FIXED_ASSET_ADDED: 'asset:fixed_asset_added',
+  ASSET_LOCATION_UPDATED: 'asset:location_updated',
+  ASSET_RETIRED: 'asset:retired',
+  ASSET_DEPRECIATION_RECORDED: 'asset:depreciation_recorded',
+  ASSET_MAINTENANCE_RECORDED: 'asset:maintenance_recorded',
+  ASSET_MAINTENANCE_ALERT: 'asset:maintenance_alert',
+
+  // === REPORTING & DASHBOARDS EVENTS ===
+  SUPPLY_CHAIN_ANALYTICS_AGGREGATED: 'reporting:supply_chain_analytics_aggregated',
+  SALES_ANALYTICS_AGGREGATED: 'reporting:sales_analytics_aggregated',
+  FINANCIAL_ANALYTICS_AGGREGATED: 'reporting:financial_analytics_aggregated',
+  DASHBOARD_SNAPSHOT_CREATED: 'reporting:dashboard_snapshot_created',
+  INVENTORY_KPI_CALCULATED: 'reporting:inventory_kpi_calculated',
+  PROCUREMENT_KPI_CALCULATED: 'reporting:procurement_kpi_calculated',
+  SALES_KPI_CALCULATED: 'reporting:sales_kpi_calculated',
+  KPI_ALERT_TRIGGERED: 'reporting:kpi_alert_triggered',
 };
 
 /**
