@@ -14,6 +14,8 @@
 import { useState, useEffect } from 'react'
 import { Send, AlertCircle, TrendingUp, History, Zap } from 'lucide-react'
 import { useAuth } from '../../hooks/useAuth'
+import { eventBus, INTEGRATION_EVENTS } from '../../services/integrationEventBus'
+import { useIntegrationStore } from '../../services/integrationStore'
 import TransferForm from './components/TransferForm'
 import TransferHistory from './components/TransferHistory'
 import AIRecommendations from './components/AIRecommendations'
@@ -71,10 +73,40 @@ export default function StockTransferManager() {
       pendingCount: prev.pendingCount + 1,
       totalValueTransferred: prev.totalValueTransferred + transfer.totalValue,
     }))
+
+    // === EMIT INTEGRATION EVENT ===
+    // Notify inventory system and other modules that stock is being transferred
+    eventBus.emit(INTEGRATION_EVENTS.WAREHOUSE_TRANSFER_INITIATED, {
+      transferId: transfer.id,
+      source: transfer.fromWarehouse,
+      destination: transfer.toLocation,
+      destinationName: transfer.toLocationName,
+      items: transfer.items,
+      totalValue: transfer.totalValue,
+      timestamp: new Date(),
+      initiatedBy: user?.uid,
+    })
+
+    // Add to integration store for real-time visibility
+    useIntegrationStore.getState().createTransfer({
+      id: transfer.id || `transfer_${Date.now()}`,
+      source: transfer.fromWarehouse,
+      destination: transfer.toLocation,
+      items: transfer.items,
+      status: 'pending',
+      createdAt: new Date(),
+    })
   }
 
   const handleTransferApproved = () => {
     setRefreshKey(prev => prev + 1)
+    
+    // === EMIT INTEGRATION EVENT ===
+    // Notify inventory system that approved transfer is ready to ship
+    eventBus.emit(INTEGRATION_EVENTS.WAREHOUSE_TRANSFER_COMPLETED, {
+      timestamp: new Date(),
+      initiatedBy: user?.uid,
+    })
   }
 
   // Check if user is authorized

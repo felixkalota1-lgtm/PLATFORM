@@ -132,10 +132,9 @@ const menuItems: MenuItem[] = [
     ],
   },
   {
-    label: 'Documents & Settings',
+    label: 'Settings',
     icon: <Settings size={20} />,
     submenu: [
-      { label: 'Company Documents', href: '/documents' },
       { label: 'Settings', href: '/settings' },
     ],
   },
