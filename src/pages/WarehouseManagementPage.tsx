@@ -60,8 +60,6 @@ export default function WarehouseManagementPage() {
           manager: userId,
           staff: [userId],
           isMainWarehouse: formData.type === 'warehouse',
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
         },
         userRole
       )

@@ -4,18 +4,18 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc && vite build",
-    "preview": "vite preview",
-    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
+    "dev": "node node_modules/vite/bin/vite.js",
+    "build": "node node_modules/typescript/bin/tsc && node node_modules/vite/bin/vite.js build",
+    "preview": "node node_modules/vite/bin/vite.js preview",
+    "lint": "node node_modules/eslint/bin/eslint.js . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "warehouse-watcher": "node services/warehouse-file-watcher/index.js",
     "warehouse-watcher:dev": "node --watch services/warehouse-file-watcher/index.js"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.3.4",
     "@huggingface/inference": "^4.13.5",
-    "@react-three/drei": "^10.7.7",
-    "@react-three/fiber": "^9.4.2",
+    "@react-three/drei": "^9.91.1",
+    "@react-three/fiber": "^8.15.16",
     "@tensorflow/tfjs": "^4.22.0",
     "axios": "^1.6.7",
     "clsx": "^2.0.0",
@@ -45,7 +45,7 @@
     "react-hook-form": "^7.49.1",
     "react-hot-toast": "^2.4.1",
     "react-konva": "^19.2.1",
-    "react-leaflet": "^5.0.0",
+    "react-leaflet": "^4.2.1",
     "react-pdf": "^10.2.0",
     "react-router-dom": "^6.20.0",
     "recharts": "^2.10.3",
@@ -71,6 +71,6 @@
     "postcss": "^8.4.32",
     "tailwindcss": "^3.3.6",
     "typescript": "^5.9.3",
-    "vite": "^5.0.8"
+    "vite": "^5.4.21"
   }
 }

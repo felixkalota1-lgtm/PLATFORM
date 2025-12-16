@@ -79,7 +79,7 @@ export default class ErrorBoundary extends React.Component<ErrorBoundaryProps, E
               Return to Home
             </button>
 
-            {process.env.NODE_ENV === 'development' && this.state.errorInfo && (
+            {import.meta.env.DEV && this.state.errorInfo && (
               <details className="mt-6 p-4 bg-gray-100 rounded text-xs text-gray-700">
                 <summary className="font-bold cursor-pointer mb-2">
                   Technical Details (Development Only)

@@ -1,9 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { ShoppingCart, Plus, Filter, Search, TrendingUp, AlertCircle, CheckCircle, Clock } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import procurementService, { Order } from '../services/procurementService';
+import { eventBus as integrationEventBus } from '../services/integrationEventBus';
 
 const B2BOrdersPage: React.FC = () => {
+  const navigate = useNavigate();
   const { user } = useAuth();
   const tenantId = user?.tenantId || 'default';
   const [orders, setOrders] = useState<Order[]>([]);
@@ -37,6 +40,64 @@ const B2BOrdersPage: React.FC = () => {
       setLoading(false);
     }
   };
+
+  const handleCreateOrder = () => {
+    // Navigate to create order form or open modal
+    navigate('/procurement');
+    integrationEventBus.emit('B2B_CREATE_ORDER_CLICKED', {
+      timestamp: new Date(),
+      tenantId: tenantId,
+    });
+  };
+
+  const handleViewOrderDetails = (order: Order) => {
+    integrationEventBus.emit('B2B_ORDER_VIEWED', {
+      orderId: order.id,
+      status: order.status,
+      timestamp: new Date(),
+    });
+  };
+
+  const handleAcceptOrder = (order: Order) => {
+    // Emit event for order acceptance
+    integrationEventBus.emit('B2B_ORDER_ACCEPTED', {
+      orderId: order.id,
+      toCompanyName: order.toCompanyName,
+      totalAmount: order.totalAmount,
+      timestamp: new Date(),
+    });
+    
+    // Show success message and reload
+    alert(`Order ${order.orderNumber} accepted!`);
+    loadOrders();
+  };
+
+  const handleRejectOrder = (order: Order) => {
+    // Emit event for order rejection
+    integrationEventBus.emit('B2B_ORDER_REJECTED', {
+      orderId: order.id,
+      toCompanyName: order.toCompanyName,
+      timestamp: new Date(),
+    });
+    
+    alert(`Order ${order.orderNumber} rejected!`);
+    loadOrders();
+  };
+
+  const handleConvertToSalesOrder = (order: Order) => {
+    // Emit event to convert to sales order
+    integrationEventBus.emit('B2B_ORDER_CONVERT_TO_SALES', {
+      orderId: order.id,
+      items: order.items,
+      totalAmount: order.totalAmount,
+      toCompanyName: order.toCompanyName,
+      timestamp: new Date(),
+    });
+    
+    alert(`Order converted to sales order. Will be processed by Sales module.`);
+    loadOrders();
+  };
+
 
   const filteredOrders = React.useMemo(() => {
     let result = filterType === 'sent' ? orders : filterType === 'received' ? receivedOrders : [...orders, ...receivedOrders];
@@ -99,7 +160,9 @@ const B2BOrdersPage: React.FC = () => {
                 </div>
               </div>
             </div>
-            <button className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold flex items-center gap-2 transition-colors">
+            <button 
+              onClick={handleCreateOrder}
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold flex items-center gap-2 transition-colors">
               <Plus size={20} /> Create Order
             </button>
           </div>
@@ -223,12 +286,32 @@ const B2BOrdersPage: React.FC = () => {
                 </div>
 
                 <div className="pt-4 border-t border-gray-200 dark:border-gray-700 flex gap-2">
-                  <button className="flex-1 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium text-sm transition-colors">
+                  <button 
+                    onClick={() => handleViewOrderDetails(order)}
+                    className="flex-1 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium text-sm transition-colors">
                     View Details
                   </button>
-                  <button className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg font-medium text-sm hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
-                    Actions
-                  </button>
+                  {filterType === 'received' && order.status === 'draft' && (
+                    <>
+                      <button 
+                        onClick={() => handleAcceptOrder(order)}
+                        className="flex-1 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-medium text-sm transition-colors">
+                        Accept
+                      </button>
+                      <button 
+                        onClick={() => handleRejectOrder(order)}
+                        className="flex-1 px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium text-sm transition-colors">
+                        Reject
+                      </button>
+                    </>
+                  )}
+                  {filterType === 'sent' && order.status === 'accepted' && (
+                    <button 
+                      onClick={() => handleConvertToSalesOrder(order)}
+                      className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg font-medium text-sm hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+                      Convert to Sales
+                    </button>
+                  )}
                 </div>
               </div>
             ))}
@@ -238,7 +321,9 @@ const B2BOrdersPage: React.FC = () => {
             <ShoppingCart className="mx-auto text-gray-400 dark:text-gray-600" size={48} />
             <h3 className="mt-4 text-lg font-semibold text-gray-900 dark:text-white">No Orders Found</h3>
             <p className="text-gray-600 dark:text-gray-400 mt-2">Try adjusting your filters or create a new order to get started</p>
-            <button className="mt-6 px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold transition-colors">
+            <button 
+              onClick={handleCreateOrder}
+              className="mt-6 px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold transition-colors">
               Create First Order
             </button>
           </div>

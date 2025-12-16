@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ChevronRight, BarChart3, ShoppingCart, Package, Truck, Users, FileText, MessageSquare, Settings, X, CreditCard } from 'lucide-react'
+import { ChevronRight, BarChart3, ShoppingCart, Package, Truck, Users, FileText, MessageSquare, Settings, X, CreditCard, CheckCircle, AlertCircle } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useWorkloadTheme } from '../contexts/WorkloadThemeContext'
 
@@ -129,6 +129,92 @@ const menuItems: MenuItem[] = [
       { label: 'Messages', href: '/communication/messages' },
       { label: 'Teams', href: '/communication/teams' },
       { label: 'Notifications', href: '/communication/notifications' },
+    ],
+  },
+  {
+    label: 'Quality Control',
+    icon: <CheckCircle size={20} />,
+    submenu: [
+      { label: 'QC Inspections', href: '/quality-control' },
+      { label: 'Reject Handling', href: '/quality-control/rejects' },
+      { label: 'Vendor QC Scores', href: '/quality-control/vendor-scores' },
+    ],
+  },
+  {
+    label: 'Customer Management',
+    icon: <Users size={20} />,
+    submenu: [
+      { label: 'Customers', href: '/customer-management' },
+      { label: 'Order History', href: '/customer-management/order-history' },
+      { label: 'Communications Log', href: '/customer-management/communications' },
+      { label: 'Follow-up Alerts', href: '/customer-management/follow-ups' },
+    ],
+  },
+  {
+    label: 'Returns & Complaints',
+    icon: <AlertCircle size={20} />,
+    submenu: [
+      { label: 'Return Requests', href: '/returns-complaints' },
+      { label: 'Refund Processing', href: '/returns-complaints/refunds' },
+      { label: 'Complaint Management', href: '/returns-complaints/complaints' },
+      { label: 'RMA Tracking', href: '/returns-complaints/rma' },
+    ],
+  },
+  {
+    label: 'Budget & Finance',
+    icon: <CreditCard size={20} />,
+    submenu: [
+      { label: 'Budget Tracking', href: '/budget-finance' },
+      { label: 'Department Budgets', href: '/budget-finance/departments' },
+      { label: 'Spending Alerts', href: '/budget-finance/alerts' },
+      { label: 'Budget Approval', href: '/budget-finance/approval' },
+    ],
+  },
+  {
+    label: 'Inventory Adjustments',
+    icon: <Package size={20} />,
+    submenu: [
+      { label: 'Physical Count', href: '/inventory-adjustments' },
+      { label: 'Damage/Shrinkage', href: '/inventory-adjustments/damage' },
+      { label: 'Variance Analysis', href: '/inventory-adjustments/variance' },
+    ],
+  },
+  {
+    label: 'Branch Management',
+    icon: <BarChart3 size={20} />,
+    submenu: [
+      { label: 'Branch Coordination', href: '/branch-management' },
+      { label: 'Inter-branch Transfer', href: '/branch-management/transfers' },
+      { label: 'Branch Reporting', href: '/branch-management/reports' },
+    ],
+  },
+  {
+    label: 'Supplier Orders',
+    icon: <ShoppingCart size={20} />,
+    submenu: [
+      { label: 'Purchase Orders', href: '/supplier-orders' },
+      { label: 'Vendor Performance', href: '/supplier-orders/vendor-performance' },
+      { label: 'Reorder Suggestions', href: '/supplier-orders/reorder' },
+      { label: 'Receipt Matching', href: '/supplier-orders/receipts' },
+    ],
+  },
+  {
+    label: 'Asset Management',
+    icon: <Package size={20} />,
+    submenu: [
+      { label: 'Fixed Assets', href: '/asset-management' },
+      { label: 'Depreciation', href: '/asset-management/depreciation' },
+      { label: 'Maintenance Schedule', href: '/asset-management/maintenance' },
+    ],
+  },
+  {
+    label: 'Reporting & Dashboards',
+    icon: <BarChart3 size={20} />,
+    submenu: [
+      { label: 'Supply Chain Analytics', href: '/reporting-dashboards' },
+      { label: 'Sales Metrics', href: '/reporting-dashboards/sales' },
+      { label: 'Financial Reports', href: '/reporting-dashboards/financial' },
+      { label: 'KPI Dashboard', href: '/reporting-dashboards/kpi' },
     ],
   },
   {

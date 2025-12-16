@@ -1,16 +1,16 @@
 import { useState } from 'react';
-import { useInquiryStore } from '../store';
+import { useInquiryFlowStore } from '../store';
 import {
   ChevronDown,
   ChevronUp,
   Trash2,
   Mail,
   Phone,
-  MapPin,
   Clock,
   DollarSign,
 } from 'lucide-react';
-import { Inquiry, InquiryStatus } from '../types';
+
+type InquiryStatus = 'new' | 'contacted' | 'quoted' | 'won' | 'lost' | 'archived';
 
 const statusColors: Record<InquiryStatus, { bg: string; text: string; badge: string }> = {
   new: { bg: 'bg-blue-50 dark:bg-blue-900/20', text: 'text-blue-700 dark:text-blue-300', badge: 'bg-blue-100 dark:bg-blue-800' },
@@ -29,9 +29,9 @@ const priorityColors: Record<string, string> = {
 };
 
 export default function InquiriesList() {
-  const inquiries = useInquiryStore((state) => state.getFilteredInquiries());
-  const updateInquiry = useInquiryStore((state) => state.updateInquiry);
-  const deleteInquiry = useInquiryStore((state) => state.deleteInquiry);
+  const inquiries = useInquiryFlowStore((state: any) => state.inquiries);
+  const updateInquiry = useInquiryFlowStore((state: any) => state.updateInquiry);
+  const cancelInquiry = useInquiryFlowStore((state: any) => state.cancelInquiry);
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const handleStatusChange = (id: string, newStatus: InquiryStatus) => {
@@ -40,6 +40,10 @@ export default function InquiriesList() {
 
   const toggleExpand = (id: string) => {
     setExpandedId(expandedId === id ? null : id);
+  };
+
+  const deleteInquiry = (id: string) => {
+    cancelInquiry(id);
   };
 
   if (inquiries.length === 0) {
@@ -54,9 +58,9 @@ export default function InquiriesList() {
 
   return (
     <div className="space-y-3">
-      {inquiries.map((inquiry) => {
+      {inquiries.map((inquiry: any) => {
         const isExpanded = expandedId === inquiry.id;
-        const colors = statusColors[inquiry.status];
+        const colors = statusColors[inquiry.status as InquiryStatus];
 
         return (
           <div

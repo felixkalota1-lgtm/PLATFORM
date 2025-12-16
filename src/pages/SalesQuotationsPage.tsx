@@ -1,8 +1,11 @@
 import React, { useState } from 'react';
 import { FileText, Plus, Send, AlertCircle, CheckCircle, Clock, Download, Share2, Search } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { useSalesStore } from '../modules/sales/store';
+import { eventBus as integrationEventBus } from '../services/integrationEventBus';
 
 const SalesQuotationsPage: React.FC = () => {
+  const navigate = useNavigate();
   const { quotations } = useSalesStore();
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
@@ -23,6 +26,67 @@ const SalesQuotationsPage: React.FC = () => {
 
     return result;
   }, [quotations, statusFilter, searchTerm]);
+
+  const handleCreateQuotation = () => {
+    integrationEventBus.emit('QUOTATION_CREATE_INITIATED', {
+      timestamp: new Date(),
+    });
+    navigate('/sales-procurement');
+  };
+
+  const handleSendQuotation = (quotationId: string) => {
+    const quotation = quotations.find(q => q.id === quotationId);
+    if (quotation) {
+      integrationEventBus.emit('QUOTATION_SENT', {
+        quotationId,
+        customerName: quotation.customerName,
+        totalAmount: quotation.totalAmount,
+        timestamp: new Date(),
+      });
+      alert('Quotation sent to customer!');
+    }
+  };
+
+  const handleEditQuotation = (quotationId: string) => {
+    integrationEventBus.emit('QUOTATION_EDIT_INITIATED', {
+      quotationId,
+      timestamp: new Date(),
+    });
+    navigate(`/sales-procurement/quotations/${quotationId}`);
+  };
+
+  const handleConvertToOrder = (quotationId: string) => {
+    const quotation = quotations.find(q => q.id === quotationId);
+    if (quotation) {
+      integrationEventBus.emit('QUOTATION_ACCEPTED_CONVERT_ORDER', {
+        quotationId,
+        customerName: quotation.customerName,
+        productName: quotation.productName,
+        quantity: quotation.quantity,
+        totalAmount: quotation.totalAmount,
+        timestamp: new Date(),
+      });
+      alert('Converting quotation to sales order...');
+      // This should trigger warehouse integration to reserve stock
+    }
+  };
+
+  const handleDownloadQuotation = (quotationId: string) => {
+    integrationEventBus.emit('QUOTATION_DOWNLOADED', {
+      quotationId,
+      timestamp: new Date(),
+    });
+    alert('Quotation downloaded successfully!');
+  };
+
+  const handleShareQuotation = (quotationId: string) => {
+    integrationEventBus.emit('QUOTATION_SHARED', {
+      quotationId,
+      timestamp: new Date(),
+    });
+    alert('Quotation shared via email!');
+  };
+
 
   const stats = [
     {
@@ -100,7 +164,9 @@ const SalesQuotationsPage: React.FC = () => {
                 <p className="text-gray-600 dark:text-gray-400 text-sm mt-1">Create, send, and manage customer quotations</p>
               </div>
             </div>
-            <button className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold flex items-center gap-2 transition-colors">
+            <button 
+              onClick={handleCreateQuotation}
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold flex items-center gap-2 transition-colors">
               <Plus size={20} /> Create Quotation
             </button>
           </div>
@@ -227,10 +293,14 @@ const SalesQuotationsPage: React.FC = () => {
                     <div className="flex gap-2 flex-wrap">
                       {quotation.status === 'draft' && (
                         <>
-                          <button className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium text-sm transition-colors flex items-center gap-2">
+                          <button 
+                            onClick={() => handleSendQuotation(quotation.id)}
+                            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium text-sm transition-colors flex items-center gap-2">
                             <Send size={16} /> Send
                           </button>
-                          <button className="px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg font-medium text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+                          <button 
+                            onClick={() => handleEditQuotation(quotation.id)}
+                            className="px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg font-medium text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
                             Edit
                           </button>
                         </>
@@ -241,14 +311,20 @@ const SalesQuotationsPage: React.FC = () => {
                         </button>
                       )}
                       {quotation.status === 'accepted' && (
-                        <button className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-medium text-sm transition-colors flex items-center gap-2">
+                        <button 
+                          onClick={() => handleConvertToOrder(quotation.id)}
+                          className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-medium text-sm transition-colors flex items-center gap-2">
                           <CheckCircle size={16} /> Convert to Order
                         </button>
                       )}
-                      <button className="px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg font-medium text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center gap-2">
+                      <button 
+                        onClick={() => handleDownloadQuotation(quotation.id)}
+                        className="px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg font-medium text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center gap-2">
                         <Download size={16} /> Download
                       </button>
-                      <button className="px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg font-medium text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center gap-2">
+                      <button 
+                        onClick={() => handleShareQuotation(quotation.id)}
+                        className="px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg font-medium text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center gap-2">
                         <Share2 size={16} /> Share
                       </button>
                     </div>
@@ -262,7 +338,9 @@ const SalesQuotationsPage: React.FC = () => {
             <FileText className="mx-auto text-gray-400 dark:text-gray-600" size={48} />
             <h3 className="mt-4 text-lg font-semibold text-gray-900 dark:text-white">No Quotations Found</h3>
             <p className="text-gray-600 dark:text-gray-400 mt-2">Create your first quotation to get started</p>
-            <button className="mt-6 px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold transition-colors flex items-center gap-2 mx-auto">
+            <button 
+              onClick={handleCreateQuotation}
+              className="mt-6 px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold transition-colors flex items-center gap-2 mx-auto">
               <Plus size={20} /> Create Quotation
             </button>
           </div>

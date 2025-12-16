@@ -83,12 +83,12 @@ export default function Navbar({ onMenuClick }: NavbarProps) {
           </button>
 
           {/* Notification Center */}
-          <NotificationCenter userId={currentUser?.id} />
+          <NotificationCenter userId={currentUser?.id || 'guest'} />
 
           <div className="flex items-center gap-3 pl-4 border-l border-gray-200 dark:border-gray-700">
             <div className="text-right">
-              <p className="text-sm font-medium text-gray-900 dark:text-white">{currentUser?.email}</p>
-              <p className="text-xs text-gray-500 dark:text-gray-400 capitalize">{currentUser?.role}</p>
+              <p className="text-sm font-medium text-gray-900 dark:text-white">{currentUser?.email || 'User'}</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400 capitalize">{currentUser?.role || 'user'}</p>
             </div>
             <button 
               onClick={() => setShowLogoutConfirm(true)}

@@ -353,7 +353,7 @@ export default function WarehouseUploadPortal() {
         onClose={() => setIsManualOpen(false)}
         tenantId={tenantId}
         onSuccess={handleManualSuccess}
-        targetCollection="warehouse_inventory"
+        targetCollection="warehouse"
       />
     </div>
   )

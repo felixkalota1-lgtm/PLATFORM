@@ -281,7 +281,7 @@ export async function sendGoodsToWarehouse(
       quantity,
       status: 'pending',
       initiatedBy: userId,
-      createdAt: serverTimestamp(),
+      createdAt: serverTimestamp() as any,
       notes,
     };
 

@@ -33,6 +33,15 @@ import FleetTrackingModule from './modules/fleet-tracking'
 import InquiryModule from './modules/inquiry'
 import AdvancedAccountingModule from './modules/advanced-accounting'
 import CompanyFilesModule from './modules/company-files'
+import QualityControlModule from './modules/quality-control'
+import CustomerManagementModule from './modules/customer-management'
+import ReturnsComplaintsModule from './modules/returns-complaints'
+import BudgetFinanceModule from './modules/budget-finance'
+import InventoryAdjustmentsModule from './modules/inventory-adjustments'
+import BranchManagementModule from './modules/branch-management'
+import SupplierOrdersModule from './modules/supplier-orders'
+import AssetManagementModule from './modules/asset-management'
+import ReportingDashboardsModule from './modules/reporting-dashboards'
 
 // Route persistence wrapper component
 function RouteWrapper() {
@@ -144,6 +153,16 @@ function App() {
                       <Route path="/fleet-tracking/*" element={<FleetTrackingModule />} />
                       <Route path="/inquiry/*" element={<InquiryModule />} />
                       <Route path="/documents/*" element={<DocumentManagementModule />} />
+                      {/* New Integrated Modules Routes */}
+                      <Route path="/quality-control/*" element={<QualityControlModule />} />
+                      <Route path="/customer-management/*" element={<CustomerManagementModule />} />
+                      <Route path="/returns-complaints/*" element={<ReturnsComplaintsModule />} />
+                      <Route path="/budget-finance/*" element={<BudgetFinanceModule />} />
+                      <Route path="/inventory-adjustments/*" element={<InventoryAdjustmentsModule />} />
+                      <Route path="/branch-management/*" element={<BranchManagementModule />} />
+                      <Route path="/supplier-orders/*" element={<SupplierOrdersModule />} />
+                      <Route path="/asset-management/*" element={<AssetManagementModule />} />
+                      <Route path="/reporting-dashboards/*" element={<ReportingDashboardsModule />} />
                       <Route path="*" element={<Navigate to="/" replace />} />
                     </Routes>
                   </Layout>

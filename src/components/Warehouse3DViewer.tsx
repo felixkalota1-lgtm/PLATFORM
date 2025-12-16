@@ -64,6 +64,7 @@ export const Warehouse3DViewer = () => {
         </div>
       )}
       <Warehouse3D
+        warehouseId="default"
         inventory={inventory}
         onSelectLocation={(location) => {
           console.log('Selected location:', location)

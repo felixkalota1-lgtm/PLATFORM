@@ -249,7 +249,7 @@ const ReceivablesTab: React.FC<{ invoices: Invoice[], totalReceivable: number, o
             <div key={inv.id} className="bg-slate-800 p-4 rounded border border-slate-600 flex justify-between items-center">
               <div>
                 <p className="text-white font-semibold">{inv.id}</p>
-                <p className="text-slate-400 text-sm">{inv.description || 'Invoice'}</p>
+                <p className="text-slate-400 text-sm">Invoice</p>
               </div>
               <div className="text-right">
                 <p className="text-cyan-400 font-bold">${(inv.amount - inv.amountPaid).toFixed(2)}</p>

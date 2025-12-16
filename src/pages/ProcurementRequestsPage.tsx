@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { ShoppingCart, Plus, Send, TrendingUp, AlertCircle, CheckCircle, Clock, Search, Eye } from 'lucide-react';
+import { ShoppingCart, Plus, Send, TrendingUp, Clock, CheckCircle, AlertCircle, Search, Eye } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { eventBus as integrationEventBus } from '../services/integrationEventBus';
 
 interface ProcurementRequest {
   id: string;
@@ -22,6 +24,7 @@ interface ProcurementRequest {
 }
 
 const ProcurementRequestsPage: React.FC = () => {
+  const navigate = useNavigate();
   const [requests, setRequests] = useState<ProcurementRequest[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -134,6 +137,58 @@ const ProcurementRequestsPage: React.FC = () => {
     }
   };
 
+  const handleCreateRequest = () => {
+    integrationEventBus.emit('PROCUREMENT_REQUEST_CREATE_INITIATED', {
+      timestamp: new Date(),
+    });
+    navigate('/procurement');
+  };
+
+  const handleSubmitRequest = (request: ProcurementRequest) => {
+    integrationEventBus.emit('PROCUREMENT_REQUEST_SUBMITTED', {
+      requestId: request.id,
+      requestNumber: request.requestNumber,
+      totalBudget: request.totalBudget,
+      items: request.items,
+      department: request.department,
+      timestamp: new Date(),
+    });
+    alert(`Request ${request.requestNumber} submitted for approval!`);
+    loadRequests();
+  };
+
+  const handleApproveRequest = (request: ProcurementRequest) => {
+    integrationEventBus.emit('PROCUREMENT_REQUEST_APPROVED', {
+      requestId: request.id,
+      requestNumber: request.requestNumber,
+      totalBudget: request.totalBudget,
+      items: request.items,
+      department: request.department,
+      timestamp: new Date(),
+    });
+    alert(`Request ${request.requestNumber} approved! Budget reserved.`);
+    loadRequests();
+  };
+
+  const handleRejectRequest = (request: ProcurementRequest) => {
+    integrationEventBus.emit('PROCUREMENT_REQUEST_REJECTED', {
+      requestId: request.id,
+      requestNumber: request.requestNumber,
+      timestamp: new Date(),
+    });
+    alert(`Request ${request.requestNumber} rejected!`);
+    loadRequests();
+  };
+
+  const handleViewQuotations = (request: ProcurementRequest) => {
+    integrationEventBus.emit('PROCUREMENT_QUOTATIONS_VIEWED', {
+      requestId: request.id,
+      quotationCount: request.quotationResponses || 0,
+      timestamp: new Date(),
+    });
+    navigate(`/procurement/quotations?requestId=${request.id}`);
+  };
+
   const filteredRequests = React.useMemo(() => {
     let result = requests;
 
@@ -231,7 +286,9 @@ const ProcurementRequestsPage: React.FC = () => {
                 <p className="text-gray-600 dark:text-gray-400 text-sm mt-1">Create requests, collect quotations, and manage procurement process</p>
               </div>
             </div>
-            <button className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-semibold flex items-center gap-2 transition-colors">
+            <button 
+              onClick={handleCreateRequest}
+              className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-semibold flex items-center gap-2 transition-colors">
               <Plus size={20} /> New Request
             </button>
           </div>
@@ -381,7 +438,9 @@ const ProcurementRequestsPage: React.FC = () => {
                     <div className="flex gap-2 flex-wrap">
                       {request.status === 'draft' && (
                         <>
-                          <button className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium text-sm transition-colors flex items-center gap-2">
+                          <button 
+                            onClick={() => handleSubmitRequest(request)}
+                            className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium text-sm transition-colors flex items-center gap-2">
                             <Send size={16} /> Submit
                           </button>
                           <button className="px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg font-medium text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
@@ -391,15 +450,21 @@ const ProcurementRequestsPage: React.FC = () => {
                       )}
                       {request.status === 'submitted' && (
                         <>
-                          <button className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-medium text-sm transition-colors flex items-center gap-2">
+                          <button 
+                            onClick={() => handleApproveRequest(request)}
+                            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-medium text-sm transition-colors flex items-center gap-2">
                             <CheckCircle size={16} /> Approve
                           </button>
-                          <button className="px-4 py-2 border border-red-300 dark:border-red-600 text-red-700 dark:text-red-300 rounded-lg font-medium text-sm hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
+                          <button 
+                            onClick={() => handleRejectRequest(request)}
+                            className="px-4 py-2 border border-red-300 dark:border-red-600 text-red-700 dark:text-red-300 rounded-lg font-medium text-sm hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
                             Reject
                           </button>
                         </>
                       )}
-                      <button className="px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg font-medium text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center gap-2">
+                      <button 
+                        onClick={() => handleViewQuotations(request)}
+                        className="px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg font-medium text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center gap-2">
                         <Eye size={16} /> View Quotations ({request.quotationResponses})
                       </button>
                     </div>
@@ -413,7 +478,9 @@ const ProcurementRequestsPage: React.FC = () => {
             <ShoppingCart className="mx-auto text-gray-400 dark:text-gray-600" size={48} />
             <h3 className="mt-4 text-lg font-semibold text-gray-900 dark:text-white">No Requests Found</h3>
             <p className="text-gray-600 dark:text-gray-400 mt-2">Create a new procurement request to get started</p>
-            <button className="mt-6 px-6 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-semibold transition-colors flex items-center gap-2 mx-auto">
+            <button 
+              onClick={handleCreateRequest}
+              className="mt-6 px-6 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-semibold transition-colors flex items-center gap-2 mx-auto">
               <Plus size={20} /> Create Request
             </button>
           </div>
