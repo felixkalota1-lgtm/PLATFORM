@@ -14,9 +14,9 @@
 
 import admin from 'firebase-admin';
 
-const BATCH_SIZE = 100;
-const MAX_RETRIES = 3;
-const BATCH_DELAY_MS = 500; // Delay between batches to avoid rate limiting (in milliseconds)
+const BATCH_SIZE = 500;  // Increased from 100 for fewer batches
+const MAX_RETRIES = 1;    // Reduced retries for speed
+const BATCH_DELAY_MS = 0;  // No delay - Firestore can handle parallel writes
 
 /**
  * Sync warehouse data to Firestore (with optional queuing for rate limiting)
@@ -53,7 +53,8 @@ export async function syncWarehouseData(items, fileName, tenantId = 'default', r
   let duplicates = 0;
 
   try {
-    // Process in batches with delays to avoid Firestore rate limits
+    // Process all batches in parallel for maximum speed
+    const batchPromises = [];
     for (let i = 0; i < items.length; i += BATCH_SIZE) {
       // Check if rate limit exceeded
       if (rateLimiter && !rateLimiter.canProcessToday()) {
@@ -64,7 +65,14 @@ export async function syncWarehouseData(items, fileName, tenantId = 'default', r
       }
 
       const batch = items.slice(i, i + BATCH_SIZE);
-      const result = await processBatch(db, batch, fileName, tenantId, rateLimiter);
+      batchPromises.push(processBatch(db, batch, fileName, tenantId, rateLimiter));
+    }
+
+    // Execute all batches in parallel instead of sequential
+    const results = await Promise.all(batchPromises);
+    
+    // Aggregate results
+    results.forEach(result => {
       synced += result.synced;
       failed += result.failed;
       duplicates += result.duplicates;
@@ -73,12 +81,7 @@ export async function syncWarehouseData(items, fileName, tenantId = 'default', r
       if (rateLimiter && result.synced > 0) {
         rateLimiter.todayUsage += result.synced;
       }
-      
-      // Add delay between batches to avoid rate limiting
-      if (i + BATCH_SIZE < items.length) {
-        await new Promise(resolve => setTimeout(resolve, BATCH_DELAY_MS));
-      }
-    }
+    });
 
     console.log(`✅ Warehouse sync complete: ${synced} synced, ${failed} failed, ${duplicates} duplicates`);
 

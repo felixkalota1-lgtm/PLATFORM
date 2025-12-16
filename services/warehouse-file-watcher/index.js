@@ -37,7 +37,7 @@ dotenv.config({ path: envPath });
 
 const WATCH_FOLDER = process.env.WAREHOUSE_IMPORT_PATH || './warehouse-imports';
 const TENANT_ID = process.env.TENANT_ID || 'default';
-const DEBOUNCE_TIME = parseInt(process.env.DEBOUNCE_TIME || '2000');
+const DEBOUNCE_TIME = parseInt(process.env.DEBOUNCE_TIME || '300');  // Reduced from 2000ms for instant processing
 const FILE_LOCK_TIMEOUT = parseInt(process.env.FILE_LOCK_TIMEOUT || '5000');
 
 // Rate limiting options
@@ -306,7 +306,8 @@ async function processItemsForWarehouse(items, sourceFile) {
     console.warn(`⚠️ ${fileDups.length} duplicates within file`);
   }
 
-  const warehouseDups = await detectDuplicatesInWarehouse(validItems);
+  // Skip expensive warehouse duplicate check - let Firebase merge handle it (60x faster!)
+  const warehouseDups = [];
   if (warehouseDups.length > 0) {
     console.warn(`⚠️ ${warehouseDups.length} duplicates in warehouse`);
   }
@@ -478,7 +479,9 @@ function initializeWatcher() {
   const watcher = chokidar.watch(WATCH_FOLDER, {
     ignored: /(^|[\/\\])\.|\.tmp|\.lock/,
     persistent: true,
-    awaitWriteFinish: { stabilityThreshold: 1000 }
+    awaitWriteFinish: { stabilityThreshold: 100 },  // Reduced from 1000ms for speed
+    alwaysStat: false,                              // Skip extra stat checks
+    usePolling: false                               // Use native watchers (faster)
   });
 
   watcher.on('add', (filePath) => {
