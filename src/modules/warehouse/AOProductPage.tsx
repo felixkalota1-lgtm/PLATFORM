@@ -48,36 +48,33 @@ export default function AOProductPage() {
   const [generatingImages, setGeneratingImages] = useState<string[]>([])
   const observerTarget = useRef<HTMLDivElement>(null)
 
-  // Refresh totals from Firestore
-  const refreshTotals = useCallback(async () => {
+  // Refresh totals - Calculate from loaded products for speed
+  // For full warehouse totals, use the allProducts array we already have
+  const refreshTotals = useCallback(() => {
     try {
-      console.log('🔄 Refreshing warehouse totals...')
-      const productsRef = collection(db, 'warehouse_inventory')
-      const allSnap = await getDocs(productsRef)
-      console.log(`📦 Fetched ${allSnap.docs.length} products for totals`)
+      console.log('🔄 Refreshing warehouse totals from loaded data...')
       
       let totalQty = 0
       let totalVal = 0
       let lowStockCount = 0
       
-      allSnap.docs.forEach((doc) => {
-        const data = doc.data()
-        const qty = data.quantity || data.stock || data.Stock || data.qty || data.count || 0
-        const price = data.price || 0
+      allProducts.forEach((product) => {
+        const qty = product.quantity || 0
+        const price = product.price || 0
         totalQty += qty
         totalVal += qty * price
         if (qty < 10) lowStockCount++
       })
       
-      setTotalProductCount(allSnap.docs.length)
+      setTotalProductCount(allProducts.length)
       setWarehouseTotalQty(totalQty)
       setWarehouseTotalValue(totalVal)
       setLowStockCount(lowStockCount)
-      console.log(`✅ Totals updated: ${allSnap.docs.length} items, ${totalQty} qty, $${totalVal}, ${lowStockCount} low stock`)
+      console.log(`✅ Totals updated: ${allProducts.length} items, ${totalQty} qty, $${totalVal}, ${lowStockCount} low stock`)
     } catch (error) {
       console.error('Error refreshing totals:', error)
     }
-  }, [])
+  }, [allProducts])
 
   // Generate AI image for product
   const generateProductImage = useCallback(async (product: Product) => {
@@ -159,9 +156,6 @@ export default function AOProductPage() {
         setDisplayedProducts(loadedProducts)
         setLoading(false)
         
-        // Background: Refresh totals
-        refreshTotals()
-        
       } catch (error) {
         console.error('Error:', error)
         setLoading(false)
@@ -169,7 +163,12 @@ export default function AOProductPage() {
     }
 
     loadProducts()
-  }, [tenantId, refreshTotals])
+  }, [tenantId])
+
+  // Recalculate totals whenever products load
+  useEffect(() => {
+    refreshTotals()
+  }, [allProducts, refreshTotals])
 
   // Handle search
   useEffect(() => {
@@ -184,21 +183,6 @@ export default function AOProductPage() {
       setDisplayedProducts(filtered)
     }
     setCurrentPage(1)
-  }, [searchTerm, allProducts])
-
-  // Handle search
-  useEffect(() => {
-    if (!searchTerm.trim()) {
-      setDisplayedProducts(allProducts)
-    } else {
-      const term = searchTerm.toLowerCase()
-      const filtered = allProducts.filter(product =>
-        product.name.toLowerCase().includes(term) ||
-        product.sku.toLowerCase().includes(term)
-      )
-      setDisplayedProducts(filtered)
-    }
-    setCurrentPage(1) // Reset to first page on search
   }, [searchTerm, allProducts])
 
   // Sort products
