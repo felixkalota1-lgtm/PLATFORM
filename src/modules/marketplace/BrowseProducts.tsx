@@ -18,8 +18,18 @@ export default function BrowseProducts({ mockProducts }: BrowseProductsProps) {
 
   return (
     <div className="space-y-6">
+      {/* Empty State - No Products */}
+      {mockProducts.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-16 bg-gray-50 dark:bg-gray-800 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600">
+          <div className="text-6xl mb-4">📭</div>
+          <h3 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Marketplace Empty</h3>
+          <p className="text-gray-600 dark:text-gray-400 text-center max-w-md mb-6">No products available yet. Vendors will start publishing their products here. Come back soon!</p>
+          <button className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium transition-colors">Refresh</button>
+        </div>
+      ) : null}
+
       {/* View Mode Toggle */}
-      {!selectedProduct && (
+      {!selectedProduct && mockProducts.length > 0 && (
         <div className="flex justify-end gap-2">
           <button
             onClick={() => setViewMode('grid')}

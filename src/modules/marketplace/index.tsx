@@ -1,15 +1,21 @@
+import { useState, useEffect } from 'react'
 import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom'
-import { ShoppingCart, Home, Package, Heart } from 'lucide-react'
+import { ShoppingCart, Home, Package, Heart, AlertCircle, Store } from 'lucide-react'
 import BrowseProducts from './BrowseProducts'
 import ShoppingCartComponent from './components/ShoppingCart'
 import OrderHistory from './components/OrderHistory'
 import SavedVendorsComponent from './saved-vendors'
+import MyListings from './components/MyListings'
 import { useMarketplaceStore } from './store'
+import { useMarketplaceProducts } from '../../hooks/useMarketplaceProducts'
+import { MarketplaceProduct } from '../../services/marketplaceService'
 
 export default function MarketplaceModule() {
   const navigate = useNavigate()
   const location = useLocation()
   const { cart } = useMarketplaceStore()
+  const { products: realProducts, loading, error } = useMarketplaceProducts()
+  const [products, setProducts] = useState<MarketplaceProduct[]>([])
 
   // Get active tab from URL path
   const getActiveTab = () => {
@@ -17,65 +23,12 @@ export default function MarketplaceModule() {
     return path || 'browse'
   }
 
-  const mockProducts: Array<any> = [
-    {
-      id: '1',
-      name: 'Professional Desk Lamp',
-      description: 'High-quality LED desk lamp with adjustable brightness',
-      sku: 'LAMP-001',
-      price: 89.99,
-      comparePrice: 129.99,
-      quantity: 45,
-      category: 'office-supplies',
-      images: ['https://picsum.photos/400/300?random=1'],
-      vendor: { id: 'vendor-1', name: 'Office Pro', rating: 4.8 },
-      tags: ['office', 'lighting', 'led'],
-      createdAt: new Date(),
-      updatedAt: new Date(),
-      status: 'active' as const,
-      specifications: {
-        Brightness: '1000 Lumens',
-        'Color Temperature': '3000K-6500K',
-        Power: '12W',
-      },
-    },
-    {
-      id: '2',
-      name: 'Ergonomic Office Chair',
-      description: 'Premium ergonomic chair with lumbar support and armrests',
-      sku: 'CHAIR-001',
-      price: 299.99,
-      comparePrice: 399.99,
-      quantity: 12,
-      category: 'furniture',
-      images: ['https://picsum.photos/400/300?random=2'],
-      vendor: { id: 'vendor-2', name: 'Furniture Elite', rating: 4.6 },
-      tags: ['furniture', 'office', 'ergonomic'],
-      createdAt: new Date(),
-      updatedAt: new Date(),
-      status: 'active' as const,
-      specifications: {
-        Height: '100-110 cm',
-        Material: 'Mesh',
-        'Max Weight': '120 kg',
-      },
-    },
-    {
-      id: '3',
-      name: 'Wireless Keyboard',
-      description: 'Compact wireless keyboard with long battery life',
-      sku: 'KB-001',
-      price: 49.99,
-      quantity: 78,
-      category: 'electronics',
-      images: ['https://picsum.photos/400/300?random=3'],
-      vendor: { id: 'vendor-1', name: 'Office Pro', rating: 4.8 },
-      tags: ['electronics', 'keyboard', 'wireless'],
-      createdAt: new Date(),
-      updatedAt: new Date(),
-      status: 'active' as const,
-    },
-  ]
+  // NO MOCK DATA - Use only real products from Firebase
+  useEffect(() => {
+    if (realProducts) {
+      setProducts(realProducts)
+    }
+  }, [realProducts])
 
   const activeTab = getActiveTab()
 
@@ -84,10 +37,36 @@ export default function MarketplaceModule() {
       {/* Header */}
       <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 sticky top-0 z-10">
         <div className="max-w-7xl mx-auto px-6 py-6">
+          {/* Loading and Error States */}
+          {loading && !products.length && (
+            <div className="mb-4 p-4 bg-blue-50 dark:bg-blue-900 border border-blue-200 dark:border-blue-700 rounded-lg flex items-center gap-2">
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+              <span className="text-sm text-blue-700 dark:text-blue-200">
+                Loading marketplace products...
+              </span>
+            </div>
+          )}
+
+          {error && (
+            <div className="mb-4 p-4 bg-yellow-50 dark:bg-yellow-900 border border-yellow-200 dark:border-yellow-700 rounded-lg flex items-center gap-2">
+              <AlertCircle className="w-5 h-5 text-yellow-600 dark:text-yellow-400" />
+              <span className="text-sm text-yellow-700 dark:text-yellow-200">
+                {error} - Showing mock data
+              </span>
+            </div>
+          )}
+
           <div className="flex items-center justify-between mb-4">
-            <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-              Marketplace
-            </h1>
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
+                Marketplace
+              </h1>
+              <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                {products.length > 0
+                  ? `${products.length} products available from our vendors`
+                  : 'No products available yet'}
+              </p>
+            </div>
             <div className="flex items-center gap-2">
               <span className="text-sm text-gray-600 dark:text-gray-400">
                 {cart.length} items
@@ -103,10 +82,11 @@ export default function MarketplaceModule() {
             </div>
           </div>
 
-          {/* Navigation Tabs */}
+          {/* Navigation Tabs - Clean and simple, no dropdown menu */}
           <div className="flex gap-2 overflow-x-auto pb-2">
             {[
               { id: 'browse', label: 'Browse Products', icon: Home },
+              { id: 'my-listings', label: 'My Listings', icon: Store },
               { id: 'cart', label: 'Shopping Cart', icon: ShoppingCart },
               { id: 'orders', label: 'Order History', icon: Package },
               { id: 'saved-vendors', label: 'Saved Vendors', icon: Heart },
@@ -132,7 +112,8 @@ export default function MarketplaceModule() {
       <div className="max-w-7xl mx-auto px-6 py-8">
         <Routes>
           <Route path="/" element={<Navigate to="/marketplace/browse" replace />} />
-          <Route path="/browse" element={<BrowseProducts mockProducts={mockProducts} />} />
+          <Route path="/browse" element={<BrowseProducts mockProducts={products as any} />} />
+          <Route path="/my-listings" element={<MyListings />} />
           <Route path="/cart" element={<ShoppingCartComponent />} />
           <Route path="/orders" element={<OrderHistory />} />
           <Route path="/saved-vendors" element={<SavedVendorsComponent />} />

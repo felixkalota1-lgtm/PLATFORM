@@ -17,6 +17,7 @@ export type AuditAction =
   | 'CHANGE_SETTINGS'
   | 'ACCESS_MODULE'
   | 'PERMISSION_DENIED'
+  | 'ACCESS_DENIED'
   | 'ERROR'
   | 'OTHER'
 
@@ -233,3 +234,26 @@ export const auditLogger = new AuditLogger()
 
 // Load persisted logs on initialization
 auditLogger.loadFromStorage()
+
+// Wrapper functions for convenient exports
+export const auditLog = (
+  action: AuditAction,
+  userId: string,
+  tenantId: string,
+  details?: Record<string, any>
+): void => {
+  auditLogger.log(userId, 'audit-user@company.com', tenantId, action, 'general', action, 'success', undefined, undefined, details)
+}
+
+export const logAccessDenied = (
+  userId: string,
+  tenantId: string,
+  module: string,
+  userRole: string
+): void => {
+  auditLogger.log(userId, 'audit-user@company.com', tenantId, 'ACCESS_DENIED', module, 'Access denied', 'denied', undefined, undefined, {
+    module,
+    userRole,
+    timestamp: new Date().toISOString()
+  })
+}

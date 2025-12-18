@@ -461,3 +461,148 @@ export async function getWarehouseStats(
     return null;
   }
 }
+
+/**
+ * Create a new inventory location (branch)
+ */
+export async function createInventory(
+  inventoryData: Partial<Warehouse>,
+  userRole: string
+): Promise<string> {
+  try {
+    if (userRole !== 'director' && userRole !== 'admin' && userRole !== 'warehouse_manager') {
+      throw new Error('Insufficient permissions to create inventory');
+    }
+
+    const newWarehouse: Warehouse = {
+      id: '',
+      name: inventoryData.name || '',
+      type: inventoryData.type || 'branch',
+      location: inventoryData.location || {
+        city: '',
+        state: '',
+        address: '',
+        zipCode: ''
+      },
+      capacity: inventoryData.capacity || 0,
+      isMainWarehouse: false,
+      parentWarehouse: inventoryData.parentWarehouse || '',
+      manager: inventoryData.manager || '',
+      staff: inventoryData.staff || [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    const newDocRef = doc(collection(db, WAREHOUSES_COLLECTION));
+    await setDoc(newDocRef, {
+      ...newWarehouse,
+      id: newDocRef.id
+    });
+
+    return newDocRef.id;
+  } catch (error) {
+    console.error('Error creating inventory:', error);
+    throw error;
+  }
+}
+
+/**
+ * Get inventory locations by warehouse
+ */
+export async function getInventoryByWarehouse(
+  parentWarehouseId: string,
+  userRole: string
+): Promise<Warehouse[]> {
+  try {
+    if (userRole !== 'director' && userRole !== 'admin' && userRole !== 'warehouse_manager') {
+      console.warn('Insufficient permissions to view inventory');
+      return [];
+    }
+
+    const q = query(
+      collection(db, WAREHOUSES_COLLECTION),
+      where('parentWarehouse', '==', parentWarehouseId)
+    );
+
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    })) as Warehouse[];
+  } catch (error) {
+    console.error('Error getting inventory by warehouse:', error);
+    return [];
+  }
+}
+
+/**
+ * Update inventory location
+ */
+export async function updateInventory(
+  inventoryId: string,
+  updates: Partial<Warehouse>,
+  userRole: string
+): Promise<void> {
+  try {
+    if (userRole !== 'director' && userRole !== 'admin' && userRole !== 'warehouse_manager') {
+      throw new Error('Insufficient permissions to update inventory');
+    }
+
+    const inventoryRef = doc(db, WAREHOUSES_COLLECTION, inventoryId);
+    await updateDoc(inventoryRef, {
+      ...updates,
+      updatedAt: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Error updating inventory:', error);
+    throw error;
+  }
+}
+
+/**
+ * Delete inventory location
+ */
+export async function deleteInventory(
+  inventoryId: string,
+  userRole: string
+): Promise<void> {
+  try {
+    if (userRole !== 'director' && userRole !== 'admin' && userRole !== 'warehouse_manager') {
+      throw new Error('Insufficient permissions to delete inventory');
+    }
+
+    await deleteDoc(doc(db, WAREHOUSES_COLLECTION, inventoryId));
+  } catch (error) {
+    console.error('Error deleting inventory:', error);
+    throw error;
+  }
+}
+
+/**
+ * Get inventory by user assignment
+ * Used when employee logs in to show their assigned inventory
+ */
+export async function getInventoryByUser(userId: string): Promise<Warehouse | null> {
+  try {
+    const userAccess = await getUserWarehouseAccess(userId);
+    if (!userAccess || !userAccess.assignedWarehouses || userAccess.assignedWarehouses.length === 0) {
+      return null;
+    }
+
+    // Get the first assigned warehouse (primary assignment)
+    const inventoryId = userAccess.assignedWarehouses[0];
+    const inventoryDoc = await getDoc(doc(db, WAREHOUSES_COLLECTION, inventoryId));
+
+    if (inventoryDoc.exists()) {
+      return {
+        id: inventoryDoc.id,
+        ...inventoryDoc.data()
+      } as Warehouse;
+    }
+
+    return null;
+  } catch (error) {
+    console.error('Error getting user inventory:', error);
+    return null;
+  }
+}

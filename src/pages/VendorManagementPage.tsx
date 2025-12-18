@@ -35,91 +35,9 @@ const VendorManagementPage: React.FC = () => {
       setLoading(true);
       setError(null);
 
-      // Mock vendor data - in production this would come from the backend
-      const mockVendors: Vendor[] = [
-        {
-          id: 'vendor-1',
-          name: 'GlobalTech Supplies',
-          email: 'sales@globaltech.com',
-          phone: '+1-555-0101',
-          address: '123 Industrial Way',
-          city: 'New York',
-          country: 'USA',
-          rating: 4.8,
-          totalOrders: 156,
-          isSaved: true,
-          categories: ['Electronics', 'Components'],
-          responseTime: '2-4 hours',
-          reliabilityScore: 98,
-          lastOrder: new Date(),
-        },
-        {
-          id: 'vendor-2',
-          name: 'Prime Manufacturing Ltd',
-          email: 'info@primemfg.com',
-          phone: '+44-20-7946-0958',
-          address: '45 Commerce Street',
-          city: 'London',
-          country: 'UK',
-          rating: 4.6,
-          totalOrders: 89,
-          isSaved: true,
-          categories: ['Manufacturing', 'Machinery'],
-          responseTime: '4-6 hours',
-          reliabilityScore: 95,
-          lastOrder: new Date(Date.now() - 86400000),
-        },
-        {
-          id: 'vendor-3',
-          name: 'EcoSupply Solutions',
-          email: 'contact@ecosupply.com',
-          phone: '+61-2-8123-4567',
-          address: '789 Green Boulevard',
-          city: 'Sydney',
-          country: 'Australia',
-          rating: 4.7,
-          totalOrders: 203,
-          isSaved: false,
-          categories: ['Eco-Products', 'Packaging'],
-          responseTime: '1-2 hours',
-          reliabilityScore: 99,
-          lastOrder: new Date(Date.now() - 604800000),
-        },
-        {
-          id: 'vendor-4',
-          name: 'QuickShip Distributors',
-          email: 'orders@quickship.com',
-          phone: '+1-555-0102',
-          address: '567 Distribution Center',
-          city: 'Los Angeles',
-          country: 'USA',
-          rating: 4.4,
-          totalOrders: 67,
-          isSaved: false,
-          categories: ['Distribution', 'Logistics'],
-          responseTime: '3-5 hours',
-          reliabilityScore: 92,
-          lastOrder: new Date(Date.now() - 1209600000),
-        },
-        {
-          id: 'vendor-5',
-          name: 'Asian Trade Partners',
-          email: 'biz@asiantradeparts.com',
-          phone: '+86-21-3310-5555',
-          address: '234 Import Avenue',
-          city: 'Shanghai',
-          country: 'China',
-          rating: 4.5,
-          totalOrders: 124,
-          isSaved: true,
-          categories: ['Textiles', 'Wholesale'],
-          responseTime: '6-8 hours',
-          reliabilityScore: 94,
-          lastOrder: new Date(Date.now() - 2592000000),
-        },
-      ];
-
-      setVendors(mockVendors);
+      // Load vendors from backend/database
+      // TODO: Connect to actual backend API or Firestore collection
+      setVendors([]);
     } catch (err) {
       console.error('Error loading vendors:', err);
       setError('Failed to load vendor data');

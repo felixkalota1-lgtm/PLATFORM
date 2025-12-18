@@ -58,7 +58,7 @@ const ProcurementDashboard: React.FC<ProcurementDashboardProps> = ({
 
         <div className="metric-card">
           <div className="metric-content">
-            <div className="metric-icon total">💰</div>
+            <div className="metric-icon total">$</div>
             <div className="metric-text">
               <h3>Total Order Value</h3>
               <p className="metric-value">${totalValue.toFixed(2)}</p>
@@ -79,7 +79,7 @@ const ProcurementDashboard: React.FC<ProcurementDashboardProps> = ({
           Create RFQ
         </button>
         <button className="action-btn secondary" onClick={onViewOrders}>
-          <span className="icon">📦</span>
+          <span className="icon">[Order]</span>
           View All Orders
         </button>
       </div>

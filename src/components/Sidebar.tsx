@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ChevronRight, BarChart3, ShoppingCart, Package, Truck, Users, FileText, MessageSquare, Settings, X, CreditCard, CheckCircle, AlertCircle, Menu } from 'lucide-react'
+import { ChevronRight, BarChart3, ShoppingCart, Package, Truck, Users, FileText, MessageSquare, Settings, X, CreditCard, CheckCircle, AlertCircle } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useWorkloadTheme } from '../contexts/WorkloadThemeContext'
 
@@ -63,6 +63,7 @@ const menuItems: MenuItem[] = [
       { label: 'Warehouse Map', href: '/warehouse/map' },
       { label: 'Locations', href: '/warehouse/locations' },
       { label: 'Manage Warehouses', href: '/warehouse/manage' },
+      { label: 'Inventory Locations', href: '/inventory-management' },
       { label: 'Send Goods', href: '/warehouse/send' },
     ],
   },
@@ -229,7 +230,6 @@ const menuItems: MenuItem[] = [
 export default function Sidebar({ open, onToggle }: SidebarProps) {
   const [expandedItems, setExpandedItems] = useState<string[]>([])
   const { theme } = useWorkloadTheme()
-  const [isHovering, setIsHovering] = useState(false)
 
   const toggleExpand = (label: string) => {
     setExpandedItems(prev =>
@@ -241,104 +241,59 @@ export default function Sidebar({ open, onToggle }: SidebarProps) {
 
   return (
     <>
-      {/* Overlay backdrop */}
+      {/* Overlay for mobile */}
       {open && (
         <div
-          className="fixed inset-0 z-30"
+          className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden"
           onClick={onToggle}
-          onMouseMove={() => {}}
         />
       )}
 
-      {/* Sliding Sidebar Overlay */}
+      {/* Sidebar */}
       <aside
-        onMouseEnter={() => setIsHovering(true)}
-        onMouseLeave={() => {
-          setIsHovering(false)
-          onToggle() // Auto-close when mouse leaves
-        }}
+        className={`fixed lg:relative w-64 h-screen text-white overflow-y-auto transition-all duration-300 z-50 lg:z-auto ${
+          open ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
+        }`}
         style={{
-          position: 'fixed',
-          left: 0,
-          top: 0,
-          bottom: 0,
-          width: open ? '280px' : '70px',
-          backgroundColor: theme.colors.surface,
-          borderRight: `1px solid ${theme.colors.border}`,
-          zIndex: 50,
-          transition: 'width 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-          overflowY: 'auto',
-          overflowX: 'hidden',
-          boxShadow: open ? '0 10px 40px rgba(0, 0, 0, 0.3)' : 'none',
+          background: theme.gradients.bg,
+          color: theme.colors.text,
+          transition: 'all 0.5s ease-in-out'
         }}
       >
-        <div className="h-full flex flex-col">
-          {/* Sidebar Header */}
-          <div
-            style={{
-              padding: '1rem',
-              borderBottom: `1px solid ${theme.colors.border}`,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-            }}
-          >
-            {open && (
-              <h2 style={{ color: theme.colors.text }} className="font-bold text-lg">
-                Menu
-              </h2>
-            )}
-            <button
-              onClick={onToggle}
-              style={{
-                color: theme.colors.text,
-                background: 'none',
-                border: 'none',
-                cursor: 'pointer',
-                padding: '0.5rem',
-              }}
-            >
-              <X size={20} />
+        <div className="p-6">
+          <div className="flex items-center justify-between mb-8">
+            <h2 className="text-2xl font-bold">PSPM</h2>
+            <button onClick={onToggle} className="lg:hidden">
+              <X size={24} />
             </button>
           </div>
 
-          {/* Navigation */}
-          <nav
-            style={{
-              flex: 1,
-              padding: '1rem 0.5rem',
-              overflowY: 'auto',
-            }}
-          >
+          <nav className="space-y-2">
             {menuItems.map((item) => (
-              <div key={item.label} className="mb-2">
+              <div key={item.label}>
                 {item.href ? (
                   <Link
                     to={item.href}
                     style={{
                       color: theme.colors.text,
-                      padding: '0.75rem',
-                      width: '100%',
+                      padding: '0.75rem 1rem',
                       display: 'flex',
                       alignItems: 'center',
-                      gap: open ? '0.75rem' : '0',
+                      gap: '0.75rem',
                       borderRadius: '0.5rem',
                       transition: 'all 0.2s ease',
-                      cursor: 'pointer',
-                      justifyContent: open ? 'flex-start' : 'center',
+                      cursor: 'pointer'
                     }}
-                    className="rounded-lg hover:scale-110"
+                    className="rounded-lg"
                     onMouseEnter={(e) => {
-                      e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)'
-                      e.currentTarget.style.transform = 'scale(1.08)'
+                      e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.1)';
                     }}
                     onMouseLeave={(e) => {
-                      e.currentTarget.style.backgroundColor = 'transparent'
-                      e.currentTarget.style.transform = 'scale(1)'
+                      e.currentTarget.style.backgroundColor = 'transparent';
                     }}
                   >
-                    <span style={{ display: 'flex', alignItems: 'center' }}>{item.icon}</span>
-                    {open && <span className="text-sm font-medium">{item.label}</span>}
+                    {item.icon}
+                    <span className="text-sm font-medium">{item.label}</span>
                   </Link>
                 ) : (
                   <>
@@ -346,43 +301,35 @@ export default function Sidebar({ open, onToggle }: SidebarProps) {
                       onClick={() => toggleExpand(item.label)}
                       style={{
                         color: theme.colors.text,
-                        padding: '0.75rem',
+                        padding: '0.75rem 1rem',
                         width: '100%',
                         display: 'flex',
                         alignItems: 'center',
-                        gap: open ? '0.75rem' : '0',
+                        gap: '0.75rem',
                         borderRadius: '0.5rem',
                         transition: 'all 0.2s ease',
                         cursor: 'pointer',
                         border: 'none',
-                        backgroundColor: 'transparent',
-                        justifyContent: open ? 'space-between' : 'center',
+                        backgroundColor: 'transparent'
                       }}
                       onMouseEnter={(e) => {
-                        e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)'
-                        e.currentTarget.style.transform = 'scale(1.08)'
+                        e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.1)';
                       }}
                       onMouseLeave={(e) => {
-                        e.currentTarget.style.backgroundColor = 'transparent'
-                        e.currentTarget.style.transform = 'scale(1)'
+                        e.currentTarget.style.backgroundColor = 'transparent';
                       }}
                     >
-                      <span style={{ display: 'flex', alignItems: 'center' }}>{item.icon}</span>
-                      {open && (
-                        <>
-                          <span className="text-sm font-medium flex-1 text-left">{item.label}</span>
-                          <ChevronRight
-                            size={16}
-                            className={`transition-transform ${
-                              expandedItems.includes(item.label) ? 'rotate-90' : ''
-                            }`}
-                          />
-                        </>
-                      )}
+                      {item.icon}
+                      <span className="text-sm font-medium flex-1 text-left">{item.label}</span>
+                      <ChevronRight
+                        size={16}
+                        className={`transition-transform ${
+                          expandedItems.includes(item.label) ? 'rotate-90' : ''
+                        }`}
+                      />
                     </button>
 
-                    {/* Submenu */}
-                    {open && expandedItems.includes(item.label) && item.submenu && (
+                    {expandedItems.includes(item.label) && item.submenu && (
                       <div className="ml-4 space-y-1 animate-slide-in">
                         {item.submenu.map((subitem) => (
                           <Link
@@ -396,14 +343,12 @@ export default function Sidebar({ open, onToggle }: SidebarProps) {
                               borderRadius: '0.375rem',
                               transition: 'all 0.2s ease',
                             }}
-                            className="hover:bg-white hover:bg-opacity-20 rounded block"
+                            className="hover:bg-white hover:bg-opacity-20 rounded"
                             onMouseEnter={(e) => {
-                              e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.3)'
-                              e.currentTarget.style.transform = 'scale(1.05) translateX(4px)'
+                              e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.3)';
                             }}
                             onMouseLeave={(e) => {
-                              e.currentTarget.style.backgroundColor = 'transparent'
-                              e.currentTarget.style.transform = 'scale(1) translateX(0)'
+                              e.currentTarget.style.backgroundColor = 'transparent';
                             }}
                           >
                             {subitem.label}
@@ -418,27 +363,6 @@ export default function Sidebar({ open, onToggle }: SidebarProps) {
           </nav>
         </div>
       </aside>
-
-      {/* Toggle Button (visible when sidebar is closed) */}
-      {!open && (
-        <button
-          onClick={onToggle}
-          style={{
-            position: 'fixed',
-            left: '15px',
-            top: '20px',
-            zIndex: 40,
-            color: theme.colors.text,
-            background: 'none',
-            border: 'none',
-            cursor: 'pointer',
-            padding: '0.5rem',
-          }}
-          className="hover:scale-110 transition-transform"
-        >
-          <Menu size={24} />
-        </button>
-      )}
     </>
   )
 }

@@ -52,37 +52,12 @@ export default function BranchStockViewPage() {
     loadBranchInventory()
   }, [user, userBranchId])
 
-  const generateFakeData = (): BranchInventoryItem[] => {
-    const products = [
-      { sku: 'ELEC-001', name: 'Wireless Mouse', category: 'Electronics', qty: 45 },
-      { sku: 'ELEC-002', name: 'USB-C Cable (6ft)', category: 'Electronics', qty: 120 },
-      { sku: 'ELEC-003', name: 'Monitor Stand', category: 'Electronics', qty: 12 },
-      { sku: 'FURN-001', name: 'Office Chair', category: 'Furniture', qty: 8 },
-      { sku: 'FURN-002', name: 'Standing Desk', category: 'Furniture', qty: 15 },
-      { sku: 'FURN-003', name: 'File Cabinet', category: 'Furniture', qty: 3 },
-      { sku: 'SUPP-001', name: 'Notebook Set', category: 'Supplies', qty: 250 },
-      { sku: 'SUPP-002', name: 'Pen Pack (12pcs)', category: 'Supplies', qty: 180 },
-      { sku: 'SUPP-003', name: 'Sticky Notes', category: 'Supplies', qty: 89 },
-      { sku: 'SUPP-004', name: 'Folders (pack of 50)', category: 'Supplies', qty: 5 },
-    ]
-
-    return products.map((p, idx) => ({
-      id: `fake-${idx}`,
-      sku: p.sku,
-      productName: p.name,
-      quantity: p.qty,
-      category: p.category,
-      receivedAt: { toDate: () => new Date(Date.now() - Math.random() * 30 * 24 * 60 * 60 * 1000) },
-      sourceWarehouse: 'Main Warehouse',
-    }))
-  }
-
   const loadBranchInventory = async () => {
     try {
       setLoading(true)
       setError('')
 
-      // Try to load from Firestore, fall back to fake data for testing
+      // Load from Firestore
       const q = query(
         collection(db, 'branch_inventory'),
         where('branchId', '==', userBranchId)
@@ -94,16 +69,11 @@ export default function BranchStockViewPage() {
         ...doc.data(),
       })) as BranchInventoryItem[]
 
-      // If no data found, use fake data for testing
-      if (items.length === 0) {
-        console.log('No real data found, using fake data for testing')
-        setInventory(generateFakeData())
-      } else {
-        setInventory(items)
-      }
+      setInventory(items)
     } catch (err) {
-      console.error('Error loading branch inventory, using fake data:', err)
-      setInventory(generateFakeData())
+      console.error('Error loading branch inventory:', err)
+      setError('Failed to load inventory data')
+      setInventory([])
     } finally {
       setLoading(false)
     }

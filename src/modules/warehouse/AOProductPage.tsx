@@ -8,10 +8,12 @@
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { Search, Package, TrendingDown, DollarSign, Eye } from 'lucide-react'
+import { Search, Package, TrendingDown, DollarSign, Eye, ShoppingCart, CheckCircle, AlertCircle as AlertCircleIcon } from 'lucide-react'
 import { useAuth } from '../../hooks/useAuth'
 import { db } from '../../services/firebase'
 import { collection, query, getDocs, limit, where, updateDoc, doc, getFirestore } from 'firebase/firestore'
+import { publishProductsToMarketplace } from '../../utils/marketplacePublisher'
+import { removeUndefinedValues, validateNoUndefinedValues } from '../../utils/cleanData'
 
 interface Product {
   id: string
@@ -22,6 +24,8 @@ interface Product {
   category?: string
   description?: string
   image?: string
+  warehouseId?: string
+  companyName?: string
 }
 
 export default function AOProductPage() {
@@ -30,6 +34,8 @@ export default function AOProductPage() {
   const [allProducts, setAllProducts] = useState<Product[]>([])
   const [displayedProducts, setDisplayedProducts] = useState<Product[]>([])
   const [searchTerm, setSearchTerm] = useState('')
+  const [selectedCompany, setSelectedCompany] = useState<string>('all')
+  const [companies, setCompanies] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
   const [editingProduct, setEditingProduct] = useState<Product | null>(null)
@@ -47,12 +53,20 @@ export default function AOProductPage() {
   const [autoGenerateImages, setAutoGenerateImages] = useState(false)
   const [generatingImages, setGeneratingImages] = useState<string[]>([])
   const observerTarget = useRef<HTMLDivElement>(null)
+  
+  // Marketplace publishing states
+  const [selectedProductsForMarketplace, setSelectedProductsForMarketplace] = useState<Set<string>>(new Set())
+  const [postedProductIds, setPostedProductIds] = useState<Set<string>>(new Set())
+  const [publishingToMarketplace, setPublishingToMarketplace] = useState(false)
+  const [showPublishModal, setShowPublishModal] = useState(false)
+  const [publishMessage, setPublishMessage] = useState('')
+  const [publishError, setPublishError] = useState('')
 
   // Refresh totals - Calculate from loaded products for speed
   // For full warehouse totals, use the allProducts array we already have
   const refreshTotals = useCallback(() => {
     try {
-      console.log('🔄 Refreshing warehouse totals from loaded data...')
+      console.log('Refreshing warehouse totals from loaded data...')
       
       let totalQty = 0
       let totalVal = 0
@@ -70,31 +84,231 @@ export default function AOProductPage() {
       setWarehouseTotalQty(totalQty)
       setWarehouseTotalValue(totalVal)
       setLowStockCount(lowStockCount)
-      console.log(`✅ Totals updated: ${allProducts.length} items, ${totalQty} qty, $${totalVal}, ${lowStockCount} low stock`)
+      console.log(`Totals updated: ${allProducts.length} items, ${totalQty} qty, $${totalVal}, ${lowStockCount} low stock`)
     } catch (error) {
       console.error('Error refreshing totals:', error)
     }
   }, [allProducts])
 
-  // Generate AI image for product
+  // Load posted products from marketplace to show badges
+  useEffect(() => {
+    const loadPostedProducts = async () => {
+      try {
+        if (!user?.uid) {
+          console.log('No user UID available for marketplace check')
+          return
+        }
+
+        console.log('🔍 Checking which warehouse products are posted to marketplace...')
+        const marketplaceRef = collection(db, 'marketplaceProducts')
+        const q = query(marketplaceRef, where('vendorId', '==', user.uid))
+        const snapshot = await getDocs(q)
+        
+        const posted = new Set<string>()
+        snapshot.forEach((doc) => {
+          const sku = doc.data().sku
+          if (sku) {
+            posted.add(sku)
+            console.log(`Found posted product: ${sku}`)
+          }
+        })
+        
+        setPostedProductIds(posted)
+        console.log(`Total posted products: ${posted.size}`)
+      } catch (error) {
+        console.error('Error loading posted products:', error)
+      }
+    }
+
+    loadPostedProducts()
+  }, [user?.uid])
+
+  // Toggle product selection for marketplace publishing
+  const toggleProductSelection = (productId: string) => {
+    const newSelected = new Set(selectedProductsForMarketplace)
+    if (newSelected.has(productId)) {
+      newSelected.delete(productId)
+    } else {
+      newSelected.add(productId)
+    }
+    setSelectedProductsForMarketplace(newSelected)
+  }
+
+  // Select all displayed products
+  const selectAllDisplayedProducts = () => {
+    if (selectedProductsForMarketplace.size === displayedProducts.length && displayedProducts.length > 0) {
+      // Deselect all if already selected
+      setSelectedProductsForMarketplace(new Set())
+    } else {
+      // Select all displayed products
+      const allIds = new Set(displayedProducts.map(p => p.id))
+      setSelectedProductsForMarketplace(allIds)
+    }
+  }
+
+  // Get selected products for publishing
+  const productsToPublish = displayedProducts.filter(p => selectedProductsForMarketplace.has(p.id))
+
+  // Handle marketplace publish
+  const handlePublishToMarketplace = async () => {
+    if (!user?.uid || !user?.tenantId) {
+      setPublishError('You must be logged in to publish to marketplace')
+      console.error('Missing user UID or tenantId:', { uid: user?.uid, tenantId: user?.tenantId })
+      return
+    }
+
+    if (productsToPublish.length === 0) {
+      setPublishError('Please select at least one product')
+      return
+    }
+
+    setPublishingToMarketplace(true)
+    setPublishMessage('')
+    setPublishError('')
+
+    try {
+      console.log('📤 Publishing to marketplace:', {
+        count: productsToPublish.length,
+        vendorId: user.uid,
+        companyId: user.tenantId,
+        companyName: user.displayName
+      })
+
+      const productsPayload = productsToPublish.map(p => ({
+        id: p.id,
+        name: p.name,
+        sku: p.sku,
+        price: p.price,
+        quantity: p.quantity,
+        category: p.category || 'Uncategorized',
+        description: p.description || '',
+        image: p.image || ''
+      }))
+
+      // Remove undefined values before sending to Firebase
+      const cleanedPayload = productsPayload.map(product => removeUndefinedValues(product))
+
+      // Validate all required fields before publishing
+      const validationErrors: string[] = []
+      cleanedPayload.forEach((product, index) => {
+        if (!product.name || product.name.trim() === '') {
+          validationErrors.push(`Product ${index + 1}: Missing product name`)
+        }
+        if (!product.sku || product.sku.trim() === '') {
+          validationErrors.push(`Product ${index + 1}: Missing SKU`)
+        }
+        if (product.price <= 0) {
+          validationErrors.push(`Product ${index + 1}: Price must be greater than 0`)
+        }
+        if (product.quantity < 0) {
+          validationErrors.push(`Product ${index + 1}: Quantity cannot be negative`)
+        }
+        if (!product.category || product.category.trim() === '') {
+          validationErrors.push(`Product ${index + 1}: Missing category`)
+        }
+      })
+
+      if (validationErrors.length > 0) {
+        const errorSummary = validationErrors.slice(0, 5).join('\n')
+        const moreErrors = validationErrors.length > 5 ? `\n... and ${validationErrors.length - 5} more errors` : ''
+        setPublishError(`Validation failed:\n${errorSummary}${moreErrors}`)
+        console.error('Validation errors:', validationErrors)
+        return
+      }
+
+      console.log('📋 Publishing products:', {
+        productCount: productsPayload.length,
+        userId: user.uid,
+        tenantId: user.tenantId,
+        company: user.displayName || 'My Company'
+      })
+
+      const result = await publishProductsToMarketplace(
+        cleanedPayload,
+        user.uid,
+        user.tenantId,
+        user.displayName || 'My Company'
+      )
+
+      console.log('📊 Publish result:', {
+        successful: result.successful,
+        failed: result.failed,
+        productIds: result.productIds
+      })
+
+      if (result.successful > 0) {
+        setPublishMessage(`Successfully published ${result.successful} product(s) to marketplace!${result.failed > 0 ? ` (${result.failed} failed)` : ''}`)
+        console.log('Publish successful:', result)
+        
+        // Update posted products list
+        const newPosted = new Set(postedProductIds)
+        productsToPublish.forEach(p => {
+          if (p.sku) newPosted.add(p.sku)
+        })
+        setPostedProductIds(newPosted)
+        
+        // Clear selection
+        setSelectedProductsForMarketplace(new Set())
+        
+        // Close modal after delay
+        setTimeout(() => {
+          setShowPublishModal(false)
+        }, 2000)
+      } else {
+        setPublishError(`Failed to publish: ${result.failed} products failed. Check console for details.`)
+        console.error('Publish failed:', {
+          failed: result.failed,
+          successful: result.successful,
+          productIds: result.productIds,
+          requestDetails: {
+            productCount: productsPayload.length,
+            userId: user.uid,
+            tenantId: user.tenantId
+          }
+        })
+      }
+    } catch (error: any) {
+      const errorMsg = error?.message || 'Unknown error occurred'
+      const errorDetails = error?.response?.data || error?.stack || ''
+      setPublishError(`Error publishing to marketplace: ${errorMsg}`)
+      console.error('Publish error:', {
+        message: errorMsg,
+        error: error,
+        details: errorDetails,
+        requestData: {
+          productCount: productsToPublish.length,
+          userId: user.uid,
+          tenantId: user.tenantId
+        }
+      })
+    } finally {
+      setPublishingToMarketplace(false)
+    }
+  }
+
+  const confirmPublishToMarketplace = () => {
+    setShowPublishModal(true)
+    setPublishMessage('')
+    setPublishError('')
+  }
   const generateProductImage = useCallback(async (product: Product) => {
     try {
       setGeneratingImages(prev => [...prev, product.id])
       
-      console.log(`🎨 Generating AI image for ${product.name}...`)
+      console.log(`Generating AI image for ${product.name}...`)
       
       // Placeholder for AI API call - you'll need to implement the actual service
       // For now, we'll use a placeholder image URL
       const imageUrl = `https://picsum.photos/400/400?random=${Math.random()}`
       
-      // Update product with new image
+      // Update product with new image - TENANT SCOPED
       const db = getFirestore()
-      const warehouseRef = collection(db, 'warehouse_inventory')
+      const warehouseRef = collection(db, 'tenants', tenantId, 'warehouse_inventory')
       const q = query(warehouseRef, where('sku', '==', product.sku))
       const snapshot = await getDocs(q)
       
       if (!snapshot.empty) {
-        const docRef = doc(db, 'warehouse_inventory', snapshot.docs[0].id)
+        const docRef = doc(db, 'tenants', tenantId, 'warehouse_inventory', snapshot.docs[0].id)
         await updateDoc(docRef, { image: imageUrl })
         
         // Update local state
@@ -105,7 +319,7 @@ export default function AOProductPage() {
         }
       }
       
-      console.log(`✅ Image generated for ${product.name}`)
+      console.log(`Image generated for ${product.name}`)
       setGeneratingImages(prev => prev.filter(id => id !== product.id))
     } catch (error) {
       console.error('Error generating image:', error)
@@ -114,32 +328,28 @@ export default function AOProductPage() {
   }, [editingProduct?.id])
 
 
-  // Load products from Firestore
+  // Load products from Firestore - TENANT ISOLATED
   useEffect(() => {
     const loadProducts = async () => {
       try {
         setLoading(true)
         
-        // Try to get warehouse_inventory collection first (where uploaded items go)
-        let productsRef = collection(db, 'warehouse_inventory')
-        let snapshot = await getDocs(query(productsRef, limit(1)))
-        
-        if (snapshot.empty) {
-          // Fallback to tenant-specific products
-          productsRef = collection(db, 'tenants', tenantId, 'products')
-          snapshot = await getDocs(query(productsRef, limit(50)))
-          console.log('Using tenant products collection')
-        } else {
-          // warehouse_inventory has data, fetch 50 items
-          snapshot = await getDocs(query(productsRef, limit(50)))
-          console.log('Using warehouse_inventory collection')
+        if (!tenantId || tenantId === 'default') {
+          console.warn('No tenant ID available - user may not be properly authenticated')
+          setAllProducts([])
+          setDisplayedProducts([])
+          setLoading(false)
+          return
         }
         
-        const loadedProducts: Product[] = snapshot.docs.map((doc, idx) => {
+        // Load ONLY from tenant's warehouse_inventory - NO CROSS-TENANT DATA
+        const productsRef = collection(db, 'tenants', tenantId, 'warehouse_inventory')
+        const snapshot = await getDocs(query(productsRef, limit(500)))
+        
+        console.log(`Loaded ${snapshot.docs.length} warehouse items for tenant: ${tenantId}`)
+        
+        const loadedProducts: Product[] = snapshot.docs.map((doc) => {
           const data = doc.data()
-          if (idx === 0) {
-            console.log('First item:', data)
-          }
           return {
             id: doc.id,
             name: data.name || data.productName || '',
@@ -149,6 +359,8 @@ export default function AOProductPage() {
             category: data.category || '',
             description: data.description || '',
             image: data.image || '',
+            warehouseId: data.warehouseId || data.warehouse_id || tenantId,
+            companyName: data.companyName || data.company_name || undefined,
           }
         })
         
@@ -157,7 +369,9 @@ export default function AOProductPage() {
         setLoading(false)
         
       } catch (error) {
-        console.error('Error:', error)
+        console.error('Error loading warehouse inventory:', error)
+        setAllProducts([])
+        setDisplayedProducts([])
         setLoading(false)
       }
     }
@@ -170,18 +384,20 @@ export default function AOProductPage() {
     refreshTotals()
   }, [allProducts, refreshTotals])
 
-  // Handle search
+  // Handle search - NO COMPANY FILTER (data is already tenant-isolated)
   useEffect(() => {
-    if (!searchTerm.trim()) {
-      setDisplayedProducts(allProducts)
-    } else {
+    let filtered = allProducts
+    
+    // Filter by search term only
+    if (searchTerm.trim()) {
       const term = searchTerm.toLowerCase()
-      const filtered = allProducts.filter(product =>
+      filtered = filtered.filter(product =>
         product.name.toLowerCase().includes(term) ||
         product.sku.toLowerCase().includes(term)
       )
-      setDisplayedProducts(filtered)
     }
+    
+    setDisplayedProducts(filtered)
     setCurrentPage(1)
   }, [searchTerm, allProducts])
 
@@ -359,6 +575,137 @@ export default function AOProductPage() {
         )}
       </div>
 
+      {/* Selection Status Bar for Marketplace Publishing */}
+      {selectedProductsForMarketplace.size > 0 && (
+        <div className="fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 p-4 shadow-lg z-40">
+          <div className="max-w-full mx-auto flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <ShoppingCart size={20} className="text-blue-600 dark:text-blue-400" />
+              <span className="font-semibold text-gray-900 dark:text-white">
+                {selectedProductsForMarketplace.size} product{selectedProductsForMarketplace.size !== 1 ? 's' : ''} selected
+              </span>
+              <span className="text-sm text-gray-600 dark:text-gray-400">
+                Total value: ${productsToPublish.reduce((sum, p) => sum + (p.price * p.quantity), 0).toLocaleString('en-US', { maximumFractionDigits: 2 })}
+              </span>
+            </div>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setSelectedProductsForMarketplace(new Set())}
+                className="px-4 py-2 bg-gray-300 dark:bg-gray-600 text-gray-900 dark:text-white rounded-lg hover:bg-gray-400 dark:hover:bg-gray-500 transition-colors font-medium"
+              >
+                Clear Selection
+              </button>
+              <button
+                onClick={confirmPublishToMarketplace}
+                className="px-6 py-2 bg-gradient-to-r from-green-500 to-emerald-500 text-white rounded-lg hover:from-green-600 hover:to-emerald-600 transition-colors font-semibold flex items-center gap-2"
+              >
+                <ShoppingCart size={18} />
+                Add to Marketplace
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Publish Confirmation Modal */}
+      {showPublishModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-lg max-w-md w-full shadow-xl">
+            <div className="bg-blue-50 dark:bg-blue-900 px-6 py-4 border-b border-blue-200 dark:border-blue-700">
+              <h3 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                <ShoppingCart size={20} className="text-blue-600 dark:text-blue-400" />
+                Publish to Marketplace
+              </h3>
+            </div>
+
+            <div className="p-6 space-y-4">
+              {publishMessage && (
+                <div className="flex items-start gap-3 p-4 bg-green-50 dark:bg-green-900 border border-green-200 dark:border-green-700 rounded-lg">
+                  <CheckCircle size={20} className="text-green-600 dark:text-green-400 flex-shrink-0 mt-0.5" />
+                  <p className="text-green-800 dark:text-green-200 font-medium">{publishMessage}</p>
+                </div>
+              )}
+
+              {publishError && (
+                <div className="flex items-start gap-3 p-4 bg-red-50 dark:bg-red-900 border border-red-200 dark:border-red-700 rounded-lg">
+                  <AlertCircleIcon size={20} className="text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
+                  <div className="text-red-800 dark:text-red-200 font-medium">
+                    {publishError.split('\n').map((line, idx) => (
+                      <p key={idx} className={idx === 0 ? '' : 'text-sm mt-1'}>
+                        {line}
+                      </p>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {!publishMessage && (
+                <>
+                  <div>
+                    <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
+                      You are about to publish <strong className="text-gray-900 dark:text-white">{productsToPublish.length} product{productsToPublish.length !== 1 ? 's' : ''}</strong> to the marketplace.
+                    </p>
+                    <div className="space-y-2 max-h-60 overflow-y-auto bg-gray-50 dark:bg-gray-700 rounded-lg p-3">
+                      {productsToPublish.map((product) => (
+                        <div key={product.id} className="flex justify-between items-start text-sm border-b border-gray-200 dark:border-gray-600 pb-2 last:border-0">
+                          <div>
+                            <p className="font-medium text-gray-900 dark:text-white">{product.name}</p>
+                            <p className="text-xs text-gray-600 dark:text-gray-400">SKU: {product.sku}</p>
+                          </div>
+                          <div className="text-right">
+                            <p className="font-semibold text-gray-900 dark:text-white">${product.price.toFixed(2)}</p>
+                            <p className="text-xs text-gray-600 dark:text-gray-400">Qty: {product.quantity}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="bg-blue-50 dark:bg-blue-900 border border-blue-200 dark:border-blue-700 rounded-lg p-3">
+                    <p className="text-sm text-blue-800 dark:text-blue-200">
+                      💡 These products will be visible to all buyers on the marketplace and can be purchased directly.
+                    </p>
+                  </div>
+                </>
+              )}
+            </div>
+
+            <div className="border-t border-gray-200 dark:border-gray-700 px-6 py-4 flex justify-end gap-3 bg-gray-50 dark:bg-gray-700">
+              <button
+                onClick={() => {
+                  setShowPublishModal(false)
+                  setPublishMessage('')
+                  setPublishError('')
+                }}
+                disabled={publishingToMarketplace}
+                className="px-4 py-2 bg-gray-300 dark:bg-gray-600 text-gray-900 dark:text-white rounded-lg hover:bg-gray-400 dark:hover:bg-gray-500 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {publishMessage ? 'Close' : 'Cancel'}
+              </button>
+              {!publishMessage && (
+                <button
+                  onClick={handlePublishToMarketplace}
+                  disabled={publishingToMarketplace || productsToPublish.length === 0}
+                  className="px-6 py-2 bg-gradient-to-r from-green-500 to-emerald-500 text-white rounded-lg hover:from-green-600 hover:to-emerald-600 transition-colors font-semibold disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                >
+                  {publishingToMarketplace ? (
+                    <>
+                      <span className="animate-spin">⏳</span>
+                      Publishing...
+                    </>
+                  ) : (
+                    <>
+                      <ShoppingCart size={18} />
+                      Publish Now
+                    </>
+                  )}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Products Table */}
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
         {loading ? (
@@ -376,6 +723,15 @@ export default function AOProductPage() {
             <table className="w-full">
               <thead className="bg-gray-100 dark:bg-gray-700 border-b border-gray-200 dark:border-gray-600">
                 <tr>
+                  <th className="px-4 py-3 text-left">
+                    <input
+                      type="checkbox"
+                      checked={selectedProductsForMarketplace.size === displayedProducts.length && displayedProducts.length > 0}
+                      onChange={selectAllDisplayedProducts}
+                      className="w-5 h-5 rounded border-gray-300 cursor-pointer"
+                      title="Select all displayed products"
+                    />
+                  </th>
                   <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900 dark:text-white">Product Name</th>
                   <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900 dark:text-white">SKU</th>
                   <th className="px-6 py-3 text-right text-sm font-semibold text-gray-900 dark:text-white">Price</th>
@@ -386,78 +742,102 @@ export default function AOProductPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                {paginatedProducts.map((product) => (
-                  <tr key={product.id} className="hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
-                    <td className="px-6 py-4 text-sm text-gray-900 dark:text-white font-medium">
-                      <div className="flex items-center gap-2">
-                        <Package size={16} className="text-blue-600 dark:text-blue-400" />
-                        {product.name}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-400 font-mono">
-                      {product.sku}
-                    </td>
-                    <td className="px-6 py-4 text-sm text-right text-gray-900 dark:text-white font-semibold">
-                      <div className="flex items-center justify-end gap-1">
-                        <DollarSign size={16} className="text-gray-400" />
-                        {((product.price || 0).toFixed(2))}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 text-sm text-right text-gray-900 dark:text-white font-semibold">
-                      {(product.quantity || 0).toLocaleString()}
-                    </td>
-                    <td className="px-6 py-4 text-sm text-right text-gray-900 dark:text-white font-semibold">
-                      ${(((product.price || 0) * (product.quantity || 0)).toLocaleString('en-US', { maximumFractionDigits: 2 }))}
-                    </td>
-                    <td className="px-6 py-4 text-sm text-center">
-                      {(product.quantity || 0) < 10 ? (
-                        <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300">
-                          <TrendingDown size={14} />
-                          Low Stock
-                        </span>
-                      ) : (product.quantity || 0) < 50 ? (
-                        <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold bg-yellow-100 dark:bg-yellow-900 text-yellow-700 dark:text-yellow-300">
-                          Medium
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300">
-                          In Stock
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-6 py-4 text-sm text-center">
-                      <div className="flex items-center justify-center gap-2">
-                        <button
-                          onClick={() => setSelectedProduct(product)}
-                          className="inline-flex items-center gap-1 px-3 py-1 rounded text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900 transition-colors"
-                        >
-                          <Eye size={16} />
-                          View
-                        </button>
-                        {autoGenerateImages && (
-                          <button
-                            onClick={() => generateProductImage(product)}
-                            disabled={generatingImages.includes(product.id)}
-                            className="inline-flex items-center gap-1 px-3 py-1 rounded text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                            title="Generate AI image for this product"
-                          >
-                            {generatingImages.includes(product.id) ? (
-                              <>
-                                <span className="animate-spin">⏳</span>
-                                Generating...
-                              </>
-                            ) : (
-                              <>
-                                <span>🎨</span>
-                                Generate
-                              </>
-                            )}
-                          </button>
+                {paginatedProducts.map((product) => {
+                  const isPosted = postedProductIds.has(product.sku)
+                  const isSelected = selectedProductsForMarketplace.has(product.id)
+                  
+                  return (
+                    <tr 
+                      key={product.id} 
+                      className={`transition-colors ${isSelected ? 'bg-blue-50 dark:bg-blue-900 hover:bg-blue-100 dark:hover:bg-blue-800' : 'hover:bg-gray-50 dark:hover:bg-gray-700'}`}
+                    >
+                      <td className="px-4 py-4 text-center">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => toggleProductSelection(product.id)}
+                          disabled={isPosted}
+                          className="w-5 h-5 rounded border-gray-300 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
+                          title={isPosted ? "Already posted to marketplace" : "Select to publish to marketplace"}
+                        />
+                      </td>
+                      <td className="px-6 py-4 text-sm text-gray-900 dark:text-white font-medium">
+                        <div className="flex items-center gap-2">
+                          <Package size={16} className="text-blue-600 dark:text-blue-400" />
+                          <span>{product.name}</span>
+                          {isPosted && (
+                            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300">
+                              <CheckCircle size={12} />
+                              Posted
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-400 font-mono">
+                        {product.sku}
+                      </td>
+                      <td className="px-6 py-4 text-sm text-right text-gray-900 dark:text-white font-semibold">
+                        <div className="flex items-center justify-end gap-1">
+                          <DollarSign size={16} className="text-gray-400" />
+                          {((product.price || 0).toFixed(2))}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 text-sm text-right text-gray-900 dark:text-white font-semibold">
+                        {(product.quantity || 0).toLocaleString()}
+                      </td>
+                      <td className="px-6 py-4 text-sm text-right text-gray-900 dark:text-white font-semibold">
+                        ${(((product.price || 0) * (product.quantity || 0)).toLocaleString('en-US', { maximumFractionDigits: 2 }))}
+                      </td>
+                      <td className="px-6 py-4 text-sm text-center">
+                        {(product.quantity || 0) < 10 ? (
+                          <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300">
+                            <TrendingDown size={14} />
+                            Low Stock
+                          </span>
+                        ) : (product.quantity || 0) < 50 ? (
+                          <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold bg-yellow-100 dark:bg-yellow-900 text-yellow-700 dark:text-yellow-300">
+                            Medium
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300">
+                            In Stock
+                          </span>
                         )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                      </td>
+                      <td className="px-6 py-4 text-sm text-center">
+                        <div className="flex items-center justify-center gap-2">
+                          <button
+                            onClick={() => setSelectedProduct(product)}
+                            className="inline-flex items-center gap-1 px-3 py-1 rounded text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900 transition-colors"
+                          >
+                            <Eye size={16} />
+                            View
+                          </button>
+                          {autoGenerateImages && (
+                            <button
+                              onClick={() => generateProductImage(product)}
+                              disabled={generatingImages.includes(product.id)}
+                              className="inline-flex items-center gap-1 px-3 py-1 rounded text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                              title="Generate AI image for this product"
+                            >
+                              {generatingImages.includes(product.id) ? (
+                                <>
+                                  <span className="animate-spin">⏳</span>
+                                  Generating...
+                                </>
+                              ) : (
+                                <>
+                                  <span>🎨</span>
+                                  Generate
+                                </>
+                              )}
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           </div>
@@ -561,8 +941,8 @@ export default function AOProductPage() {
                         quantity: parseInt(String(editingProduct.quantity)) || 0,
                       }
 
-                      // Try to find and update in warehouse_inventory
-                      const warehouseRef = collection(db, 'warehouse_inventory')
+                      // Update in tenant's warehouse_inventory ONLY - TENANT SCOPED
+                      const warehouseRef = collection(db, 'tenants', tenantId, 'warehouse_inventory')
                       const q = query(
                         warehouseRef,
                         where('sku', '==', editingProduct.sku)
@@ -570,19 +950,8 @@ export default function AOProductPage() {
                       const snapshot = await getDocs(q)
 
                       if (!snapshot.empty) {
-                        const docRef = doc(db, 'warehouse_inventory', snapshot.docs[0].id)
+                        const docRef = doc(db, 'tenants', tenantId, 'warehouse_inventory', snapshot.docs[0].id)
                         await updateDoc(docRef, updatedProduct)
-                      } else {
-                        // Fallback to tenant products
-                        const tenantId = localStorage.getItem('selectedTenantId') || 'default'
-                        const tenantRef = doc(
-                          db,
-                          'tenants',
-                          tenantId,
-                          'products',
-                          editingProduct.id
-                        )
-                        await updateDoc(tenantRef, updatedProduct)
                       }
 
                       // Update local state

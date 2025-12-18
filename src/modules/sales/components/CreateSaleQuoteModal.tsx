@@ -246,7 +246,7 @@ export default function CreateSaleQuoteModal({
 
           {/* Product Information */}
           <div className="border-b border-gray-200 dark:border-gray-700 pb-6">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">📦 Product Information</h3>
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Product Information</h3>
 
             <div className="space-y-4">
               <div>

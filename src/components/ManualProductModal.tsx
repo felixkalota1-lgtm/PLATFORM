@@ -124,10 +124,10 @@ export default function ManualProductModal({
         imageUrl = await getDownloadURL(imageRef);
       }
 
-      // Add product to Firestore - using correct nested collection path
+      // Add product to Firestore - TENANT SCOPED ONLY
       const productsRef = targetCollection === 'warehouse'
-        ? collection(db, 'tenants', tenantId, 'products')
-        : collection(db, 'warehouse_inventory');
+        ? collection(db, 'tenants', tenantId, 'warehouse_inventory')
+        : collection(db, 'tenants', tenantId, 'products');
       console.log('Adding product with tenantId:', tenantId, 'and data:', {
         name: formData.name.trim(),
         description: formData.description.trim(),

@@ -28,19 +28,14 @@ export const WorkloadThemeProvider: React.FC<WorkloadThemeProviderProps> = ({ ch
   const [theme, setTheme] = useState<WorkloadThemeConfig>(getWorkloadTheme(0))
   const [dailyInfo, setDailyInfo] = useState(workloadService.getDailyUsageInfo())
 
-  // Update theme every 2 seconds based on current workload
+  // Update theme on demand only (no automatic refresh to prevent data loss)
   useEffect(() => {
-    const updateTheme = () => {
-      const currentIntensity = workloadService.calculateIntensity(settings.workStartHour, settings.workEndHour)
-      setIntensity(currentIntensity)
-      setTheme(getWorkloadTheme(currentIntensity))
-      setDailyInfo(workloadService.getDailyUsageInfo())
-      applyTheme(getWorkloadTheme(currentIntensity))
-    }
-
-    updateTheme()
-    const interval = setInterval(updateTheme, 2000)
-    return () => clearInterval(interval)
+    // Initial theme load only
+    const currentIntensity = workloadService.calculateIntensity(settings.workStartHour, settings.workEndHour)
+    setIntensity(currentIntensity)
+    setTheme(getWorkloadTheme(currentIntensity))
+    setDailyInfo(workloadService.getDailyUsageInfo())
+    applyTheme(getWorkloadTheme(currentIntensity))
   }, [settings.workStartHour, settings.workEndHour])
 
   const refreshMetrics = () => {

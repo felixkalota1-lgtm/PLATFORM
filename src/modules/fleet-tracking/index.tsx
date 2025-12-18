@@ -25,7 +25,7 @@ export const FleetTrackingModule: React.FC = () => {
           {criticalAlerts.length > 0 && (
             <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
               <p className="text-red-800 font-semibold">
-                ⚠️ {criticalAlerts.length} critical maintenance alert(s)
+                Alert: {criticalAlerts.length} critical maintenance alert(s)
               </p>
             </div>
           )}

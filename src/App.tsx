@@ -1,7 +1,10 @@
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { useEffect, useState } from 'react'
+import { useAuth } from './hooks/useAuth'
 import LoginPage from './pages/LoginPage'
 import DashboardPage from './pages/DashboardPage'
+import AccessDeniedPage from './pages/AccessDeniedPage'
+import UserProfilePage from './pages/UserProfilePage'
 import WarehouseManagementPage from './pages/WarehouseManagementPage'
 import SendGoodsPage from './pages/SendGoodsPage'
 import BranchStockViewPage from './pages/BranchStockViewPage'
@@ -12,6 +15,7 @@ import OrderTrackingPage from './pages/OrderTrackingPage'
 import VendorManagementPage from './pages/VendorManagementPage'
 import SalesQuotationsPage from './pages/SalesQuotationsPage'
 import ProcurementRequestsPage from './pages/ProcurementRequestsPage'
+import InventoryManagementPage from './pages/InventoryManagementPage'
 import Layout from './components/Layout'
 import { WorkloadThemeProvider } from './contexts/WorkloadThemeContext'
 import { SettingsProvider } from './contexts/SettingsContext'
@@ -43,59 +47,101 @@ import SupplierOrdersModule from './modules/supplier-orders'
 import AssetManagementModule from './modules/asset-management'
 import ReportingDashboardsModule from './modules/reporting-dashboards'
 
+/**
+ * Module-level access control wrapper
+ */
+const ModuleRoute: React.FC<{ children: React.ReactNode; module: string }> = ({ children, module }) => {
+  const { user, loading, canAccess } = useAuth()
+  const navigate = useNavigate()
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-screen bg-gray-50 dark:bg-gray-900">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600 dark:text-gray-400">Loading...</p>
+        </div>
+      </div>
+    )
+  }
+
+  // Not authenticated - use Route's own redirect
+  if (!user) {
+    return <Navigate to="/login" replace />
+  }
+
+  // Check module access
+  if (!canAccess(module)) {
+    // Use navigate to ensure clean transition
+    navigate('/access-denied', { replace: true })
+    return null
+  }
+
+  return <>{children}</>
+}
+
 // Route persistence wrapper component
 function RouteWrapper() {
   const navigate = useNavigate()
   const location = useLocation()
+  const { user, loading } = useAuth()
   const [initialized, setInitialized] = useState(false)
 
   useEffect(() => {
-    // On first load, check if there's a saved route
-    if (!initialized) {
+    // Only run after auth finishes loading
+    if (loading) return
+
+    // On first load, check if there's a saved route for authenticated users
+    if (!initialized && user) {
       const savedRoute = localStorage.getItem('pspm_last_route')
       if (savedRoute && location.pathname === '/') {
         // Redirect to saved route if we're at root
         navigate(savedRoute, { replace: true })
       }
       setInitialized(true)
+    } else if (!initialized && !user) {
+      setInitialized(true)
     }
-  }, [])
+  }, [loading, user, initialized, location.pathname, navigate])
 
-  // Save current route whenever location changes
+  // Save current route whenever location changes (only for authenticated users)
   useEffect(() => {
-    if (location.pathname !== '/login') {
+    if (user && location.pathname !== '/login' && location.pathname !== '/access-denied') {
       localStorage.setItem('pspm_last_route', location.pathname)
     }
-  }, [location])
+  }, [location, user])
+
+  return null
+}
+
+/**
+ * Auth Guard Component - Ensures user is authenticated before showing content
+ */
+function AuthGuard() {
+  const { loading } = useAuth()
+  const location = useLocation()
+
+  // Show loading screen while auth state is being determined
+  if (loading && location.pathname !== '/login' && location.pathname !== '/access-denied') {
+    return (
+      <div className="w-full h-screen flex items-center justify-center bg-gradient-to-r from-blue-500 to-purple-600">
+        <div className="text-white text-center">
+          <h1 className="text-5xl font-bold mb-4">Platform Sales & Procurement</h1>
+          <p className="text-xl mb-8">Loading...</p>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white mx-auto"></div>
+        </div>
+      </div>
+    )
+  }
 
   return null
 }
 
 function App() {
-  const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [mounted, setMounted] = useState(false)
 
   useEffect(() => {
-    // Check if user is logged in from localStorage
-    const savedUser = localStorage.getItem('pspm_user')
-    if (savedUser) {
-      try {
-        JSON.parse(savedUser)
-        setIsAuthenticated(true)
-      } catch (e) {
-        localStorage.removeItem('pspm_user')
-      }
-    }
     setMounted(true)
-
-    // Listen for storage changes (when login happens in another tab or window)
-    const handleStorageChange = () => {
-      const user = localStorage.getItem('pspm_user')
-      setIsAuthenticated(!!user)
-    }
-
-    window.addEventListener('storage', handleStorageChange)
-    return () => window.removeEventListener('storage', handleStorageChange)
   }, [])
 
   if (!mounted) {
@@ -110,65 +156,244 @@ function App() {
     )
   }
 
-  // Debug: Log auth state
-  console.log('isAuthenticated:', isAuthenticated, 'user:', localStorage.getItem('pspm_user'))
-
   return (
     <SettingsProvider>
       <WorkloadThemeProvider>
         <Router>
           <RouteWrapper />
+          <AuthGuard />
           <Routes>
+            {/* Public Routes */}
             <Route path="/login" element={<LoginPage />} />
+            <Route path="/access-denied" element={<AccessDeniedPage />} />
+
+            {/* Protected Routes */}
             <Route
               path="/*"
               element={
-                isAuthenticated ? (
-                  <Layout>
-                    <Routes>
-                      <Route path="/" element={<DashboardPage />} />
-                      <Route path="/settings" element={<Settings />} />
-                      <Route path="/ai-email" element={<AIEmailAssistant />} />
-                      <Route path="/warehouse-management" element={<WarehouseManagementPage />} />
-                      <Route path="/send-goods" element={<SendGoodsPage />} />
-                      {/* Dedicated Procurement & Sales Pages */}
-                      <Route path="/b2b-orders" element={<B2BOrdersPage />} />
-                      <Route path="/order-tracking" element={<OrderTrackingPage />} />
-                      <Route path="/vendor-management" element={<VendorManagementPage />} />
-                      <Route path="/sales-quotations" element={<SalesQuotationsPage />} />
-                      <Route path="/procurement-requests" element={<ProcurementRequestsPage />} />
-                      {/* Module Routes */}
-                      <Route path="/marketplace/*" element={<MarketplaceModule />} />
-                      <Route path="/procurement/*" element={<ProcurementModule />} />
-                      <Route path="/sales-procurement/*" element={<SalesAndProcurementPage />} />
-                      <Route path="/inventory/*" element={<InventoryModule />} />
-                      <Route path="/warehouse/*" element={<WarehouseModule />} />
-                      <Route path="/logistics/*" element={<LogisticsModule />} />
-                      <Route path="/hr/*" element={<HRModule />} />
-                      <Route path="/accounting/*" element={<AccountingModule />} />
-                      <Route path="/advanced-accounting/*" element={<AdvancedAccountingModule />} />
-                      <Route path="/analytics/*" element={<AnalyticsModule />} />
-                      <Route path="/company-files/*" element={<CompanyFilesModule />} />
-                      <Route path="/communication/*" element={<CommunicationModule />} />
-                      <Route path="/fleet-tracking/*" element={<FleetTrackingModule />} />
-                      <Route path="/inquiry/*" element={<InquiryModule />} />
-                      <Route path="/documents/*" element={<DocumentManagementModule />} />
-                      {/* New Integrated Modules Routes */}
-                      <Route path="/quality-control/*" element={<QualityControlModule />} />
-                      <Route path="/customer-management/*" element={<CustomerManagementModule />} />
-                      <Route path="/returns-complaints/*" element={<ReturnsComplaintsModule />} />
-                      <Route path="/budget-finance/*" element={<BudgetFinanceModule />} />
-                      <Route path="/inventory-adjustments/*" element={<InventoryAdjustmentsModule />} />
-                      <Route path="/branch-management/*" element={<BranchManagementModule />} />
-                      <Route path="/supplier-orders/*" element={<SupplierOrdersModule />} />
-                      <Route path="/asset-management/*" element={<AssetManagementModule />} />
-                      <Route path="/reporting-dashboards/*" element={<ReportingDashboardsModule />} />
-                      <Route path="*" element={<Navigate to="/" replace />} />
-                    </Routes>
-                  </Layout>
-                ) : (
-                  <LoginPage />
-                )
+                <Layout>
+                  <Routes>
+                    {/* Dashboard & Profile */}
+                    <Route path="/" element={<DashboardPage />} />
+                    <Route path="/profile" element={<UserProfilePage />} />
+                    <Route path="/settings" element={<Settings />} />
+
+                    {/* Communication & AI */}
+                    <Route path="/ai-email" element={<AIEmailAssistant />} />
+
+                    {/* Legacy Pages */}
+                    <Route path="/warehouse-management" element={<WarehouseManagementPage />} />
+                    <Route path="/inventory-management" element={<InventoryManagementPage />} />
+                    <Route path="/send-goods" element={<SendGoodsPage />} />
+                    <Route path="/branch-stock-view" element={<BranchStockViewPage />} />
+
+                    {/* Dedicated Pages */}
+                    <Route path="/b2b-orders" element={<B2BOrdersPage />} />
+                    <Route path="/order-tracking" element={<OrderTrackingPage />} />
+                    <Route path="/vendor-management" element={<VendorManagementPage />} />
+                    <Route path="/sales-quotations" element={<SalesQuotationsPage />} />
+                    <Route path="/procurement-requests" element={<ProcurementRequestsPage />} />
+
+                    {/* Module Routes with RBAC */}
+                    <Route
+                      path="/marketplace/*"
+                      element={
+                        <ModuleRoute module="marketplace">
+                          <MarketplaceModule />
+                        </ModuleRoute>
+                      }
+                    />
+                    <Route
+                      path="/procurement/*"
+                      element={
+                        <ModuleRoute module="procurement">
+                          <ProcurementModule />
+                        </ModuleRoute>
+                      }
+                    />
+                    <Route
+                      path="/sales-procurement/*"
+                      element={
+                        <ModuleRoute module="sales">
+                          <SalesAndProcurementPage />
+                        </ModuleRoute>
+                      }
+                    />
+                    <Route
+                      path="/inventory/*"
+                      element={
+                        <ModuleRoute module="inventory">
+                          <InventoryModule />
+                        </ModuleRoute>
+                      }
+                    />
+                    <Route
+                      path="/warehouse/*"
+                      element={
+                        <ModuleRoute module="warehouse">
+                          <WarehouseModule />
+                        </ModuleRoute>
+                      }
+                    />
+                    <Route
+                      path="/logistics/*"
+                      element={
+                        <ModuleRoute module="logistics">
+                          <LogisticsModule />
+                        </ModuleRoute>
+                      }
+                    />
+                    <Route
+                      path="/hr/*"
+                      element={
+                        <ModuleRoute module="hr">
+                          <HRModule />
+                        </ModuleRoute>
+                      }
+                    />
+                    <Route
+                      path="/accounting/*"
+                      element={
+                        <ModuleRoute module="accounting">
+                          <AccountingModule />
+                        </ModuleRoute>
+                      }
+                    />
+                    <Route
+                      path="/advanced-accounting/*"
+                      element={
+                        <ModuleRoute module="accounting">
+                          <AdvancedAccountingModule />
+                        </ModuleRoute>
+                      }
+                    />
+                    <Route
+                      path="/analytics/*"
+                      element={
+                        <ModuleRoute module="analytics">
+                          <AnalyticsModule />
+                        </ModuleRoute>
+                      }
+                    />
+                    <Route
+                      path="/company-files/*"
+                      element={
+                        <ModuleRoute module="dashboard">
+                          <CompanyFilesModule />
+                        </ModuleRoute>
+                      }
+                    />
+                    <Route
+                      path="/communication/*"
+                      element={
+                        <ModuleRoute module="communication">
+                          <CommunicationModule />
+                        </ModuleRoute>
+                      }
+                    />
+                    <Route
+                      path="/fleet-tracking/*"
+                      element={
+                        <ModuleRoute module="fleet">
+                          <FleetTrackingModule />
+                        </ModuleRoute>
+                      }
+                    />
+                    <Route
+                      path="/inquiry/*"
+                      element={
+                        <ModuleRoute module="dashboard">
+                          <InquiryModule />
+                        </ModuleRoute>
+                      }
+                    />
+                    <Route
+                      path="/documents/*"
+                      element={
+                        <ModuleRoute module="dashboard">
+                          <DocumentManagementModule />
+                        </ModuleRoute>
+                      }
+                    />
+
+                    {/* Integrated Modules with RBAC */}
+                    <Route
+                      path="/quality-control/*"
+                      element={
+                        <ModuleRoute module="warehouse">
+                          <QualityControlModule />
+                        </ModuleRoute>
+                      }
+                    />
+                    <Route
+                      path="/customer-management/*"
+                      element={
+                        <ModuleRoute module="marketplace">
+                          <CustomerManagementModule />
+                        </ModuleRoute>
+                      }
+                    />
+                    <Route
+                      path="/returns-complaints/*"
+                      element={
+                        <ModuleRoute module="orders">
+                          <ReturnsComplaintsModule />
+                        </ModuleRoute>
+                      }
+                    />
+                    <Route
+                      path="/budget-finance/*"
+                      element={
+                        <ModuleRoute module="accounting">
+                          <BudgetFinanceModule />
+                        </ModuleRoute>
+                      }
+                    />
+                    <Route
+                      path="/inventory-adjustments/*"
+                      element={
+                        <ModuleRoute module="inventory">
+                          <InventoryAdjustmentsModule />
+                        </ModuleRoute>
+                      }
+                    />
+                    <Route
+                      path="/branch-management/*"
+                      element={
+                        <ModuleRoute module="warehouse">
+                          <BranchManagementModule />
+                        </ModuleRoute>
+                      }
+                    />
+                    <Route
+                      path="/supplier-orders/*"
+                      element={
+                        <ModuleRoute module="procurement">
+                          <SupplierOrdersModule />
+                        </ModuleRoute>
+                      }
+                    />
+                    <Route
+                      path="/asset-management/*"
+                      element={
+                        <ModuleRoute module="warehouse">
+                          <AssetManagementModule />
+                        </ModuleRoute>
+                      }
+                    />
+                    <Route
+                      path="/reporting-dashboards/*"
+                      element={
+                        <ModuleRoute module="analytics">
+                          <ReportingDashboardsModule />
+                        </ModuleRoute>
+                      }
+                    />
+
+                    {/* 404 Fallback */}
+                    <Route path="*" element={<Navigate to="/" replace />} />
+                  </Routes>
+                </Layout>
               }
             />
           </Routes>

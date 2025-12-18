@@ -5,8 +5,17 @@ import { SavedVendor } from './saved-vendors-store';
 export const SavedVendorsComponent: React.FC = () => {
   const [activeView, setActiveView] = useState<'list' | 'add'>('list');
   const [newVendor, setNewVendor] = useState<Partial<SavedVendor>>({});
+  const [searchTerm, setSearchTerm] = useState('');
+  const [contactingVendor, setContactingVendor] = useState<string | null>(null);
 
   const { vendors, addVendor, removeVendor } = useSavedVendorsStore();
+
+  // Filter vendors by search term
+  const filteredVendors = vendors.filter(v =>
+    v.vendorName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    v.contactEmail.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    v.category.toLowerCase().includes(searchTerm.toLowerCase())
+  );
 
   const handleAddVendor = () => {
     if (newVendor.vendorName && newVendor.vendorId) {
@@ -37,29 +46,40 @@ export const SavedVendorsComponent: React.FC = () => {
       </div>
 
       <div className="p-6">
-        <div className="mb-6 flex justify-between items-center">
-          <div className="flex gap-2">
-            <button
-              onClick={() => setActiveView('list')}
-              className={`px-4 py-2 rounded-lg font-semibold ${
-                activeView === 'list'
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-gray-200 text-gray-800 hover:bg-gray-300'
-              }`}
-            >
-              My Vendors ({vendors.length})
-            </button>
-            <button
-              onClick={() => setActiveView('add')}
-              className={`px-4 py-2 rounded-lg font-semibold ${
-                activeView === 'add'
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-gray-200 text-gray-800 hover:bg-gray-300'
-              }`}
-            >
-              + Add Vendor
-            </button>
+        <div className="mb-6 space-y-4">
+          <div className="flex justify-between items-center">
+            <div className="flex gap-2">
+              <button
+                onClick={() => setActiveView('list')}
+                className={`px-4 py-2 rounded-lg font-semibold ${
+                  activeView === 'list'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-200 text-gray-800 hover:bg-gray-300'
+                }`}
+              >
+                My Vendors ({vendors.length})
+              </button>
+              <button
+                onClick={() => setActiveView('add')}
+                className={`px-4 py-2 rounded-lg font-semibold ${
+                  activeView === 'add'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-200 text-gray-800 hover:bg-gray-300'
+                }`}
+              >
+                + Add Vendor
+              </button>
+            </div>
           </div>
+          {activeView === 'list' && vendors.length > 0 && (
+            <input
+              type="text"
+              placeholder="🔍 Search vendors by name, email, or category..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-white text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          )}
         </div>
 
         {activeView === 'add' && (
@@ -145,7 +165,7 @@ export const SavedVendorsComponent: React.FC = () => {
 
         {activeView === 'list' && (
           <div>
-            {vendors.length === 0 ? (
+            {filteredVendors.length === 0 && vendors.length === 0 ? (
               <div className="text-center py-12 bg-gray-50 rounded-lg">
                 <p className="text-gray-600 mb-4">No saved vendors yet</p>
                 <button
@@ -155,9 +175,19 @@ export const SavedVendorsComponent: React.FC = () => {
                   + Add Your First Vendor
                 </button>
               </div>
+            ) : filteredVendors.length === 0 ? (
+              <div className="text-center py-12 bg-gray-50 rounded-lg">
+                <p className="text-gray-600 mb-4">📭 No vendors match your search</p>
+                <button
+                  onClick={() => setSearchTerm('')}
+                  className="text-blue-600 hover:underline font-semibold"
+                >
+                  Clear search
+                </button>
+              </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {vendors.map((vendor) => (
+                {filteredVendors.map((vendor) => (
                   <div key={vendor.id} className="border border-gray-200 rounded-lg p-4 hover:shadow-lg transition">
                     <div className="flex justify-between items-start mb-3">
                       <div>
@@ -172,14 +202,24 @@ export const SavedVendorsComponent: React.FC = () => {
                       <p className="text-xs">Transactions: {vendor.totalTransactions}</p>
                     </div>
                     <div className="flex gap-2">
-                      <button className="flex-1 text-blue-600 hover:text-blue-800 font-semibold text-sm">
-                        Contact
+                      <button
+                        onClick={() => {
+                          setContactingVendor(vendor.vendorId);
+                          setTimeout(() => {
+                            window.location.href = `mailto:${vendor.contactEmail}`;
+                            setContactingVendor(null);
+                          }, 300);
+                        }}
+                        disabled={contactingVendor === vendor.vendorId}
+                        className="flex-1 px-3 py-1 bg-blue-100 text-blue-700 hover:bg-blue-200 rounded font-semibold text-sm transition-colors disabled:opacity-50"
+                      >
+                        {contactingVendor === vendor.vendorId ? 'Sending...' : '📧 Contact'}
                       </button>
                       <button
                         onClick={() => removeVendor(vendor.vendorId)}
-                        className="flex-1 text-red-600 hover:text-red-800 font-semibold text-sm"
+                        className="flex-1 px-3 py-1 bg-red-100 text-red-700 hover:bg-red-200 rounded font-semibold text-sm transition-colors"
                       >
-                        Remove
+                        🗑️ Remove
                       </button>
                     </div>
                   </div>

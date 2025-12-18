@@ -372,10 +372,10 @@ export const uploadProductsToFirestore = async (
       );
     }
 
-    // Batch upload with Firestore
-    // For warehouse, use root-level collection; for products, use tenant namespace
+    // Batch upload with Firestore - TENANT SCOPED ONLY
+    // Always use tenant namespace for data isolation
     const productsRef = targetCollection === 'warehouse_inventory'
-      ? collection(db, 'warehouse_inventory')
+      ? collection(db, 'tenants', tenantId, 'warehouse_inventory')
       : collection(db, 'tenants', tenantId, 'products');
 
     // FIRST PASS: Get all existing SKUs and alternate SKUs to avoid duplicates

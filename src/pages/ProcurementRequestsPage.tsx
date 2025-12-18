@@ -41,94 +41,9 @@ const ProcurementRequestsPage: React.FC = () => {
       setLoading(true);
       setError(null);
 
-      // Mock data - in production this would come from the backend
-      const mockRequests: ProcurementRequest[] = [
-        {
-          id: 'req-1',
-          requestNumber: 'PR-2025-001',
-          description: 'Office supplies and equipment for new department',
-          items: [
-            { name: 'Office Chairs (Ergonomic)', quantity: 10, estimatedBudget: 5000, priority: 'high' },
-            { name: 'Desks (Electric Height Adjustable)', quantity: 10, estimatedBudget: 8000, priority: 'high' },
-            { name: 'Computer Monitors', quantity: 20, estimatedBudget: 6000, priority: 'medium' },
-          ],
-          requesterName: 'John Smith',
-          department: 'Operations',
-          status: 'submitted',
-          totalBudget: 19000,
-          createdAt: new Date(Date.now() - 86400000),
-          dueDate: new Date(Date.now() + 604800000),
-          quotationResponses: 3,
-        },
-        {
-          id: 'req-2',
-          requestNumber: 'PR-2025-002',
-          description: 'Manufacturing equipment replacement',
-          items: [
-            { name: 'CNC Lathe Machine', quantity: 1, estimatedBudget: 45000, priority: 'urgent' },
-            { name: 'Precision Cutting Tools Set', quantity: 5, estimatedBudget: 3500, priority: 'urgent' },
-          ],
-          requesterName: 'Jane Doe',
-          department: 'Manufacturing',
-          status: 'approved',
-          totalBudget: 48500,
-          createdAt: new Date(Date.now() - 604800000),
-          dueDate: new Date(Date.now() + 1209600000),
-          quotationResponses: 5,
-        },
-        {
-          id: 'req-3',
-          requestNumber: 'PR-2025-003',
-          description: 'IT Infrastructure and software licenses',
-          items: [
-            { name: 'Enterprise Server License (Annual)', quantity: 2, estimatedBudget: 8000, priority: 'high' },
-            { name: 'Network Switches (48-port)', quantity: 4, estimatedBudget: 6400, priority: 'medium' },
-            { name: 'UPS System 10kVA', quantity: 2, estimatedBudget: 4000, priority: 'medium' },
-          ],
-          requesterName: 'Michael Johnson',
-          department: 'IT',
-          status: 'draft',
-          totalBudget: 18400,
-          createdAt: new Date(),
-          dueDate: new Date(Date.now() + 1209600000),
-          quotationResponses: 0,
-        },
-        {
-          id: 'req-4',
-          requestNumber: 'PR-2025-004',
-          description: 'Fleet maintenance and parts',
-          items: [
-            { name: 'Truck Tire Set (14 pieces)', quantity: 3, estimatedBudget: 2100, priority: 'high' },
-            { name: 'Oil Change Service (10 vehicles)', quantity: 1, estimatedBudget: 500, priority: 'medium' },
-            { name: 'Brake Pads Replacement', quantity: 5, estimatedBudget: 1500, priority: 'medium' },
-          ],
-          requesterName: 'Robert Williams',
-          department: 'Logistics',
-          status: 'approved',
-          totalBudget: 4100,
-          createdAt: new Date(Date.now() - 1209600000),
-          dueDate: new Date(Date.now() - 172800000),
-          quotationResponses: 2,
-        },
-        {
-          id: 'req-5',
-          requestNumber: 'PR-2025-005',
-          description: 'Marketing and branding materials',
-          items: [
-            { name: 'Corporate Branded Merchandise', quantity: 500, estimatedBudget: 2500, priority: 'low' },
-            { name: 'Signage and Promotional Materials', quantity: 20, estimatedBudget: 1200, priority: 'low' },
-          ],
-          requesterName: 'Sarah Anderson',
-          department: 'Marketing',
-          status: 'completed',
-          totalBudget: 3700,
-          createdAt: new Date(Date.now() - 1814400000),
-          dueDate: new Date(Date.now() - 604800000),
-          quotationResponses: 4,
-        },
-      ];
-
-      setRequests(mockRequests);
+      // Load requests from backend/database
+      // TODO: Connect to actual backend API or Firestore collection
+      setRequests([]);
     } catch (err) {
       console.error('Error loading requests:', err);
       setError('Failed to load procurement requests');

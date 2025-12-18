@@ -67,7 +67,7 @@ export default function Filters({ onFilterChange, categories = [] }: FiltersProp
     filters.rating > 0 ||
     filters.inStock;
 
-  const mockCategories = [
+  const mockCategories = categories.length > 0 ? categories : [
     'Electronics',
     'Machinery',
     'Raw Materials',

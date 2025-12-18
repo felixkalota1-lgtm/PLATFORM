@@ -37,10 +37,10 @@ export const BulkUploadWithAI: React.FC = () => {
 
       const suggestions = [
         '✓ Format validated: Product names are consistent',
-        '⚠️ 15 rows have missing descriptions - using AI to generate',
+        'Alert: 15 rows have missing descriptions - using AI to generate',
         '✓ Prices validated: All numeric values correct',
         '✓ SKU format is correct',
-        '⚠️ 3 image URLs are invalid - will attempt to download alternatives',
+        'Alert: 3 image URLs are invalid - will attempt to download alternatives',
       ];
 
       setAiSuggestions(suggestions);

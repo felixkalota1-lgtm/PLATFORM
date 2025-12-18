@@ -26,7 +26,7 @@ export default function InventoryAnalytics() {
         const data = snapshot.docs.map((doc) => ({
           name: doc.data().name,
           stock: doc.data().stock || 0,
-          sold: Math.floor((doc.data().stock || 0) * 0.5), // Mock: assume 50% sold
+          sold: doc.data().sold || 0, // Use actual sales data if available
           price: doc.data().price || 0,
         }))
 

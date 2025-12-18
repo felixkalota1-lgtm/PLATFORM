@@ -44,11 +44,11 @@ const AccountsTab: React.FC<AccountsTabProps> = ({ accounts }) => {
   };
 
   const typeEmojis: { [key: string]: string } = {
-    asset: '📦',
-    liability: '💳',
-    equity: '💼',
-    revenue: '📈',
-    expense: '📉',
+    asset: '[Asset]',
+    liability: '[Liability]',
+    equity: '[Equity]',
+    revenue: '[Revenue]',
+    expense: '[Expense]',
   };
 
   return (

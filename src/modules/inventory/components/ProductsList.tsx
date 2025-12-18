@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react'
-import { collection, query, where, onSnapshot, addDoc, setDoc, deleteDoc, doc } from 'firebase/firestore'
+import { collection, query, where, onSnapshot, addDoc, setDoc, deleteDoc, doc, getDocs } from 'firebase/firestore'
 import { db } from '../../../services/firebase'
 import { useAuth } from '../../../hooks/useAuth'
-import { Eye, Edit2, Trash2, Package, FileText, Grid3x3, List, X, ShoppingCart, Download } from 'lucide-react'
+import { Eye, Edit2, Trash2, Package, FileText, Grid3x3, List, X, ShoppingCart, Download, Globe, CheckCircle } from 'lucide-react'
 import CreateSaleQuoteModal from '../../sales/components/CreateSaleQuoteModal'
 import ProductEditorModal from '../../../components/ProductEditorModal'
 import { downloadProductsExcel } from '../../../services/excelExportService'
+import { publishProductsToMarketplace } from '../../../utils/marketplacePublisher'
 
 interface Product {
   id: string
@@ -16,6 +17,7 @@ interface Product {
   stock: number
   sku: string
   imageUrl?: string
+  postedToMarketplace?: boolean
 }
 
 export const ProductsList = () => {
@@ -37,6 +39,35 @@ export const ProductsList = () => {
   const [showEditor, setShowEditor] = useState(false)
   const [savingProduct, setSavingProduct] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
+  const [selectedProductsForMarketplace, setSelectedProductsForMarketplace] = useState<Set<string>>(new Set())
+  const [publishingToMarketplace, setPublishingToMarketplace] = useState(false)
+  const [showPublishConfirm, setShowPublishConfirm] = useState(false)
+  const [publishMessage, setPublishMessage] = useState('')
+  const [postedProductIds, setPostedProductIds] = useState<Set<string>>(new Set())
+
+  // Check which products have been posted to marketplace
+  useEffect(() => {
+    if (!user?.uid && !user?.tenantId) return
+
+    const checkPostedProducts = async () => {
+      try {
+        const q = query(collection(db, 'marketplaceProducts'), where('vendorId', '==', user?.uid))
+        const snapshot = await getDocs(q)
+        const posted = new Set<string>()
+        snapshot.forEach((doc) => {
+          const data = doc.data()
+          if (data.sku) {
+            posted.add(data.sku)
+          }
+        })
+        setPostedProductIds(posted)
+      } catch (error) {
+        console.error('Error checking posted products:', error)
+      }
+    }
+
+    checkPostedProducts()
+  }, [user?.uid, user?.tenantId])
 
   useEffect(() => {
     if (!user || !user.tenantId) {
@@ -44,10 +75,10 @@ export const ProductsList = () => {
       return
     }
 
-    console.log('🔄 Setting up real-time listener for warehouse inventory:', user.tenantId);
-    const q = query(collection(db, 'warehouse_inventory'), where('active', '==', true))
+    console.log('🔄 Setting up real-time listener for tenant-specific inventory:', user.tenantId);
+    const q = query(collection(db, 'tenants', user.tenantId, 'products'), where('active', '==', true))
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      console.log('📦 Warehouse inventory snapshot received:', snapshot.docs.length, 'items');
+      console.log('📦 Tenant inventory snapshot received:', snapshot.docs.length, 'items');
       const productList: Product[] = []
       snapshot.forEach((doc) => {
         console.log('📄 Product:', doc.data());
@@ -93,11 +124,12 @@ export const ProductsList = () => {
   }
 
   const handleSaveProduct = async (updatedProduct: any) => {
-    if (!editingProduct) return
+    if (!editingProduct || !user?.tenantId) return
     
     setSavingProduct(true)
     try {
-      const productRef = doc(db, 'warehouse_inventory', editingProduct.id)
+      // Save to tenant's products collection ONLY - TENANT SCOPED
+      const productRef = doc(db, 'tenants', user.tenantId, 'products', editingProduct.id)
       await setDoc(productRef, {
         ...updatedProduct,
         updatedAt: new Date(),
@@ -118,9 +150,10 @@ export const ProductsList = () => {
   }
 
   const handleDeleteProduct = async (productId: string) => {
+    if (!user?.tenantId) return
     try {
-      const product = products.find(p => p.id === productId)
-      const productRef = doc(db, 'warehouse_inventory', productId)
+      // Delete from tenant's products collection ONLY - TENANT SCOPED
+      const productRef = doc(db, 'tenants', user.tenantId, 'products', productId)
       await deleteDoc(productRef)
       console.log('✅ Product deleted:', productId)
       console.log('🗑️ Syncing to Excel: This deletion will be reflected in Excel if file-watcher is running')
@@ -131,74 +164,99 @@ export const ProductsList = () => {
     }
   }
 
+  const toggleProductSelection = (productId: string) => {
+    const newSelection = new Set(selectedProductsForMarketplace)
+    if (newSelection.has(productId)) {
+      newSelection.delete(productId)
+    } else {
+      newSelection.add(productId)
+    }
+    setSelectedProductsForMarketplace(newSelection)
+  }
+
+  const selectAllFilteredProducts = () => {
+    if (selectedProductsForMarketplace.size === filteredProducts.length) {
+      setSelectedProductsForMarketplace(new Set())
+    } else {
+      setSelectedProductsForMarketplace(new Set(filteredProducts.map(p => p.id)))
+    }
+  }
+
+  const handlePublishToMarketplace = async () => {
+    if (selectedProductsForMarketplace.size === 0) {
+      alert('Please select products to publish')
+      return
+    }
+
+    setShowPublishConfirm(true)
+  }
+
+  const confirmPublishToMarketplace = async () => {
+    setPublishingToMarketplace(true)
+    setPublishMessage('Publishing products to marketplace...')
+
+    try {
+      const productsToPublish = products.filter(p => selectedProductsForMarketplace.has(p.id))
+
+      if (!user?.uid || !user?.tenantId) {
+        console.error('User not authenticated or missing tenant:', { uid: user?.uid, tenantId: user?.tenantId })
+        setPublishMessage('❌ Error: User information not available. Please log in again.')
+        setPublishingToMarketplace(false)
+        return
+      }
+
+      if (productsToPublish.length === 0) {
+        setPublishMessage('❌ No products selected to publish')
+        setPublishingToMarketplace(false)
+        return
+      }
+
+      console.log('Publishing products:', productsToPublish.length, 'products')
+      console.log('Vendor ID:', user.uid, 'Company ID:', user.tenantId)
+
+      const result = await publishProductsToMarketplace(
+        productsToPublish.map(p => ({
+          id: p.id,
+          name: p.name,
+          description: p.description,
+          sku: p.sku,
+          price: p.price,
+          quantity: p.stock,
+          category: p.category,
+        })),
+        user.uid,
+        user.tenantId,
+        user.displayName || 'My Company'
+      )
+
+      console.log('Publish result:', result)
+
+      if (result.successful === 0 && result.failed > 0) {
+        setPublishMessage(`❌ Failed to publish products. Please check console for details.`)
+      } else {
+        setPublishMessage(
+          `✅ Successfully published ${result.successful} product(s) to marketplace${result.failed > 0 ? ` (${result.failed} failed)` : ''}`
+        )
+      }
+      
+      setSelectedProductsForMarketplace(new Set())
+
+      setTimeout(() => {
+        setShowPublishConfirm(false)
+        setPublishMessage('')
+      }, 2000)
+    } catch (error) {
+      console.error('Error publishing to marketplace:', error)
+      setPublishMessage(`❌ Error publishing products: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    } finally {
+      setPublishingToMarketplace(false)
+    }
+  }
+
   const quotationTotal = Object.entries(quotationItems).reduce((sum, [productId, qty]) => {
     const product = products.find((p) => p.id === productId)
     return sum + (product?.price || 0) * qty
   }, 0)
-
-  const sampleProducts = [
-    {
-      name: 'LED Desk Lamp',
-      description: 'Bright LED lamp with color control',
-      price: 89.99,
-      sku: 'LAMP-001',
-      category: 'Office',
-      stock: 45,
-    },
-    {
-      name: 'Wireless Mouse',
-      description: 'Ergonomic wireless mouse 2.4GHz',
-      price: 29.99,
-      sku: 'MOUSE-001',
-      category: 'Electronics',
-      stock: 120,
-    },
-    {
-      name: 'Mechanical Keyboard',
-      description: 'RGB mechanical keyboard Cherry MX',
-      price: 149.99,
-      sku: 'KEY-001',
-      category: 'Electronics',
-      stock: 60,
-    },
-    {
-      name: 'USB-C Hub',
-      description: '7-in-1 USB hub with HDMI output',
-      price: 49.99,
-      sku: 'HUB-001',
-      category: 'Accessories',
-      stock: 85,
-    },
-    {
-      name: 'Monitor Stand',
-      description: 'Adjustable stand with storage drawer',
-      price: 39.99,
-      sku: 'STAND-001',
-      category: 'Office',
-      stock: 40,
-    },
-  ]
-
-  const seedSampleProducts = async () => {
-    if (!user?.tenantId) return
-    try {
-      const productsRef = collection(db, 'tenants', user.tenantId, 'products')
-      for (const product of sampleProducts) {
-        await addDoc(productsRef, {
-          ...product,
-          tenantId: user.tenantId,
-          createdAt: new Date(),
-          active: true,
-        })
-      }
-      alert('Sample products added successfully!')
-    } catch (error) {
-      console.error('Error adding sample products:', error)
-      alert('Error adding sample products')
-    }
-  }
-
-
 
   if (loading) {
     return <div className="text-center py-8">Loading inventory...</div>
@@ -226,6 +284,34 @@ export const ProductsList = () => {
       <div className="flex gap-6">
         {/* Products Section */}
         <div className="flex-1 space-y-4">
+          {/* Selection and Marketplace Publish Controls */}
+          {selectedProductsForMarketplace.size > 0 && (
+            <div className="bg-blue-50 dark:bg-blue-900 border border-blue-200 dark:border-blue-700 rounded-lg p-4 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <CheckCircle size={20} className="text-blue-600 dark:text-blue-400" />
+                <span className="font-medium text-blue-900 dark:text-blue-200">
+                  {selectedProductsForMarketplace.size} product(s) selected for marketplace
+                </span>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={handlePublishToMarketplace}
+                  disabled={publishingToMarketplace}
+                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+                >
+                  <Globe size={16} />
+                  {publishingToMarketplace ? 'Publishing...' : 'Add to Marketplace'}
+                </button>
+                <button
+                  onClick={() => setSelectedProductsForMarketplace(new Set())}
+                  className="px-4 py-2 bg-gray-300 dark:bg-gray-700 text-gray-800 dark:text-white rounded-lg hover:bg-gray-400 dark:hover:bg-gray-600"
+                >
+                  Clear Selection
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Search and Filter Controls */}
           <div className="flex gap-4 items-end">
             <div className="flex-1">
@@ -253,14 +339,6 @@ export const ProductsList = () => {
                 ))}
               </select>
             </div>
-            {products.length === 0 && (
-              <button
-                onClick={seedSampleProducts}
-                className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 font-medium"
-              >
-                Load Sample Data
-              </button>
-            )}
             <div className="flex gap-2">
               <button
                 onClick={() => setViewMode('table')}
@@ -284,6 +362,18 @@ export const ProductsList = () => {
               >
                 <Grid3x3 size={20} />
               </button>
+              {filteredProducts.length > 0 && (
+                <button
+                  onClick={selectAllFilteredProducts}
+                  className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                    selectedProductsForMarketplace.size === filteredProducts.length
+                      ? 'bg-purple-600 text-white'
+                      : 'bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-white hover:bg-purple-200 dark:hover:bg-purple-800'
+                  }`}
+                >
+                  {selectedProductsForMarketplace.size === filteredProducts.length ? 'Deselect All' : 'Select All'}
+                </button>
+              )}
             </div>
           </div>
 
@@ -293,6 +383,15 @@ export const ProductsList = () => {
               <table className="w-full border-collapse">
                 <thead className="bg-gray-100 dark:bg-gray-800">
                   <tr>
+                    <th className="border p-3 text-left w-12">
+                      <input
+                        type="checkbox"
+                        checked={selectedProductsForMarketplace.size === filteredProducts.length && filteredProducts.length > 0}
+                        onChange={selectAllFilteredProducts}
+                        className="w-4 h-4 cursor-pointer"
+                        title="Select all visible products"
+                      />
+                    </th>
                     <th className="border p-3 text-left">Image</th>
                     <th className="border p-3 text-left">Name</th>
                     <th className="border p-3 text-left">SKU</th>
@@ -304,7 +403,23 @@ export const ProductsList = () => {
                 </thead>
                 <tbody>
                   {filteredProducts.map((product) => (
-                    <tr key={product.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
+                    <tr
+                      key={product.id}
+                      className={`hover:bg-gray-50 dark:hover:bg-gray-700 ${
+                        selectedProductsForMarketplace.has(product.id)
+                          ? 'bg-purple-50 dark:bg-purple-900'
+                          : ''
+                      }`}
+                    >
+                      <td className="border p-3">
+                        <input
+                          type="checkbox"
+                          checked={selectedProductsForMarketplace.has(product.id)}
+                          onChange={() => toggleProductSelection(product.id)}
+                          className="w-4 h-4 cursor-pointer"
+                          title="Select for marketplace"
+                        />
+                      </td>
                       <td className="border p-3">
                         {product.imageUrl ? (
                           <img
@@ -319,7 +434,15 @@ export const ProductsList = () => {
                         )}
                       </td>
                       <td className="border p-3">
-                        <div className="font-medium">{product.name}</div>
+                        <div className="font-medium flex items-center gap-2">
+                          {product.name}
+                          {postedProductIds.has(product.sku) && (
+                            <span className="flex items-center gap-1 bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-200 px-2 py-1 rounded text-xs font-medium whitespace-nowrap">
+                              <Globe size={12} />
+                              Posted
+                            </span>
+                          )}
+                        </div>
                         <div className="text-sm text-gray-500 truncate">{product.description}</div>
                       </td>
                       <td className="border p-3">{product.sku}</td>
@@ -398,8 +521,24 @@ export const ProductsList = () => {
               {filteredProducts.map((product) => (
                 <div
                   key={product.id}
-                  className="border rounded-lg overflow-hidden dark:bg-gray-800 dark:border-gray-700 hover:shadow-lg transition"
+                  className={`border rounded-lg overflow-hidden dark:bg-gray-800 dark:border-gray-700 hover:shadow-lg transition cursor-pointer relative ${
+                    selectedProductsForMarketplace.has(product.id)
+                      ? 'border-purple-500 border-2 bg-purple-50 dark:bg-purple-900'
+                      : ''
+                  }`}
                 >
+                  {/* Selection Checkbox */}
+                  <div className="absolute top-2 left-2 z-10">
+                    <input
+                      type="checkbox"
+                      checked={selectedProductsForMarketplace.has(product.id)}
+                      onChange={() => toggleProductSelection(product.id)}
+                      className="w-5 h-5 cursor-pointer"
+                      title="Select for marketplace"
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                  </div>
+
                   <div className="relative">
                     {product.imageUrl ? (
                       <img src={product.imageUrl} alt={product.name} className="w-full h-48 object-cover" />
@@ -413,7 +552,15 @@ export const ProductsList = () => {
                     </div>
                   </div>
                   <div className="p-4 space-y-2">
-                    <h3 className="font-medium text-lg">{product.name}</h3>
+                    <div className="flex items-start justify-between">
+                      <h3 className="font-medium text-lg flex-1">{product.name}</h3>
+                      {postedProductIds.has(product.sku) && (
+                        <span className="flex items-center gap-1 bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-200 px-2 py-1 rounded text-xs font-medium whitespace-nowrap ml-2">
+                          <Globe size={12} />
+                          Posted
+                        </span>
+                      )}
+                    </div>
                     <p className="text-sm text-gray-600 dark:text-gray-400 line-clamp-2">{product.description}</p>
                     <div className="flex gap-2 text-sm">
                       <span className="bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 px-2 py-1 rounded">
@@ -657,6 +804,74 @@ export const ProductsList = () => {
         onSave={handleSaveProduct}
         isLoading={savingProduct}
       />
+
+      {/* Publish to Marketplace Confirmation */}
+      {showPublishConfirm && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-lg max-w-md w-full">
+            <div className="p-6 space-y-4">
+              <div className="flex items-center gap-3">
+                <Globe size={24} className="text-blue-600 dark:text-blue-400" />
+                <h3 className="text-xl font-bold">Add to Marketplace</h3>
+              </div>
+
+              {publishMessage ? (
+                <div className={`p-4 rounded-lg text-center font-medium ${
+                  publishMessage.includes('✅')
+                    ? 'bg-green-50 dark:bg-green-900 text-green-700 dark:text-green-200'
+                    : publishMessage.includes('❌')
+                    ? 'bg-red-50 dark:bg-red-900 text-red-700 dark:text-red-200'
+                    : 'bg-blue-50 dark:bg-blue-900 text-blue-700 dark:text-blue-200'
+                }`}>
+                  {publishMessage}
+                </div>
+              ) : (
+                <>
+                  <p className="text-gray-700 dark:text-gray-300">
+                    You are about to add <span className="font-bold">{selectedProductsForMarketplace.size}</span> product(s) to the marketplace. 
+                    Other companies will be able to see and purchase these items.
+                  </p>
+
+                  <div className="bg-blue-50 dark:bg-blue-900 p-4 rounded-lg">
+                    <p className="text-sm text-gray-700 dark:text-gray-300">
+                      <span className="font-medium">Products selected:</span>
+                      <ul className="mt-2 space-y-1 text-sm">
+                        {products
+                          .filter(p => selectedProductsForMarketplace.has(p.id))
+                          .slice(0, 3)
+                          .map(p => (
+                            <li key={p.id}>• {p.name} ({p.sku})</li>
+                          ))}
+                        {selectedProductsForMarketplace.size > 3 && (
+                          <li>• ... and {selectedProductsForMarketplace.size - 3} more</li>
+                        )}
+                      </ul>
+                    </p>
+                  </div>
+
+                  <div className="flex gap-3">
+                    <button
+                      onClick={() => setShowPublishConfirm(false)}
+                      disabled={publishingToMarketplace}
+                      className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 font-medium"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={confirmPublishToMarketplace}
+                      disabled={publishingToMarketplace}
+                      className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium flex items-center justify-center gap-2"
+                    >
+                      <Globe size={16} />
+                      {publishingToMarketplace ? 'Publishing...' : 'Publish to Marketplace'}
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Delete Confirmation Dialog */}
       {deleteConfirm && (

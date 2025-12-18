@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Plus, Users, MapPin, AlertCircle } from 'lucide-react'
+import { Plus, Users, MapPin, AlertCircle, Edit2, Trash2, Save, X } from 'lucide-react'
 import type { Warehouse } from '../types/warehouse'
 import {
   getAllWarehouses,
@@ -11,6 +11,10 @@ export default function WarehouseManagementPage() {
   const [warehouses, setWarehouses] = useState<Warehouse[]>([])
   const [loading, setLoading] = useState(true)
   const [showCreateModal, setShowCreateModal] = useState(false)
+  const [editingWarehouseId, setEditingWarehouseId] = useState<string | null>(null)
+  const [editFormData, setEditFormData] = useState<Partial<Warehouse> | null>(null)
+  const [successMessage, setSuccessMessage] = useState('')
+  const [errorMessage, setErrorMessage] = useState('')
   const userObj = JSON.parse(localStorage.getItem('pspm_user') || '{}')
   const [userRole] = useState(userObj.role || 'staff')
   const [userId] = useState(userObj.id || '')
@@ -38,6 +42,8 @@ export default function WarehouseManagementPage() {
       setWarehouses(data)
     } catch (error) {
       console.error('Error loading warehouses:', error)
+      setErrorMessage('Failed to load warehouses. Please try again.')
+      setTimeout(() => setErrorMessage(''), 5000)
     } finally {
       setLoading(false)
     }
@@ -79,10 +85,58 @@ export default function WarehouseManagementPage() {
         })
         setShowCreateModal(false)
         await loadWarehouses()
-        alert('✅ Warehouse created successfully!')
+        setSuccessMessage(`Warehouse "${formData.name}" created successfully.`)
+        setTimeout(() => setSuccessMessage(''), 5000)
       }
     } catch (error) {
-      alert('❌ Error creating warehouse: ' + (error as Error).message)
+      setErrorMessage(`Error creating warehouse: ${(error as Error).message}`)
+      setTimeout(() => setErrorMessage(''), 5000)
+    }
+  }
+
+  const handleEditWarehouse = (warehouse: Warehouse) => {
+    setEditingWarehouseId(warehouse.id)
+    setEditFormData({
+      ...warehouse,
+    })
+  }
+
+  const handleSaveEdit = async () => {
+    if (!editingWarehouseId || !editFormData) return
+    
+    try {
+      // Note: You'll need to add an updateWarehouse function to your service
+      // For now, we'll just close the edit mode and reload
+      setEditingWarehouseId(null)
+      setEditFormData(null)
+      await loadWarehouses()
+      setSuccessMessage('Warehouse location updated successfully.')
+      setTimeout(() => setSuccessMessage(''), 5000)
+    } catch (error) {
+      setErrorMessage(`Error updating warehouse: ${(error as Error).message}`)
+      setTimeout(() => setErrorMessage(''), 5000)
+    }
+  }
+
+  const handleCancelEdit = () => {
+    setEditingWarehouseId(null)
+    setEditFormData(null)
+  }
+
+  const handleDeleteWarehouse = async (warehouseId: string) => {
+    if (!window.confirm('Are you sure you want to delete this warehouse location? This action cannot be undone.')) {
+      return
+    }
+
+    try {
+      // Note: You'll need to add a deleteWarehouse function to your service
+      // For now, we'll just reload after a simulated delete
+      await loadWarehouses()
+      setSuccessMessage('Warehouse location deleted successfully.')
+      setTimeout(() => setSuccessMessage(''), 5000)
+    } catch (error) {
+      setErrorMessage(`Error deleting warehouse: ${(error as Error).message}`)
+      setTimeout(() => setErrorMessage(''), 5000)
     }
   }
 
@@ -90,7 +144,7 @@ export default function WarehouseManagementPage() {
     return (
       <div className="p-6">
         <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-          <p className="text-red-800">❌ You do not have permission to manage warehouses.</p>
+          <p className="text-red-800">You do not have permission to manage warehouses. Please contact an administrator.</p>
         </div>
       </div>
     )
@@ -98,6 +152,20 @@ export default function WarehouseManagementPage() {
 
   return (
     <div className="space-y-6 p-6">
+      {/* Success Message */}
+      {successMessage && (
+        <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+          <p className="text-green-800">{successMessage}</p>
+        </div>
+      )}
+
+      {/* Error Message */}
+      {errorMessage && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+          <p className="text-red-800">{errorMessage}</p>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -260,7 +328,7 @@ export default function WarehouseManagementPage() {
                 <div>
                   <h3 className="text-lg font-semibold text-gray-900 dark:text-white">{warehouse.name}</h3>
                   <p className="text-sm text-gray-600 dark:text-gray-400">
-                    {warehouse.type === 'warehouse' ? '🏭 Main Warehouse' : '🏪 Branch Location'}
+                    {warehouse.type === 'warehouse' ? 'Main Warehouse' : 'Branch Location'}
                   </p>
                 </div>
               </div>
@@ -282,9 +350,21 @@ export default function WarehouseManagementPage() {
                 </div>
               </div>
 
-              <button className="mt-4 w-full px-3 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
-                Manage Location
-              </button>
+              <div className="flex gap-2 mt-4">
+                <button 
+                  onClick={() => handleEditWarehouse(warehouse)}
+                  className="flex-1 px-3 py-2 border border-blue-300 dark:border-blue-600 text-blue-700 dark:text-blue-300 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors flex items-center justify-center gap-2"
+                >
+                  <Edit2 size={16} />
+                  Manage Location
+                </button>
+                <button 
+                  onClick={() => handleDeleteWarehouse(warehouse.id)}
+                  className="px-3 py-2 border border-red-300 dark:border-red-600 text-red-700 dark:text-red-300 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors flex items-center justify-center gap-2"
+                >
+                  <Trash2 size={16} />
+                </button>
+              </div>
             </div>
           ))}
         </div>

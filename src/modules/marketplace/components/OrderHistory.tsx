@@ -57,59 +57,19 @@ interface OrderHistoryProps {
 export default function OrderHistory({ orders = [] }: OrderHistoryProps) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
-  // Mock data if no orders provided
-  const mockOrders: Order[] = [
-    {
-      id: '1',
-      orderId: 'ORD-2024-001',
-      items: [
-        { productId: '1', productName: 'Professional Desk Lamp', quantity: 1, price: 89.99 },
-        { productId: '2', productName: 'USB Cable', quantity: 2, price: 9.99 },
-      ],
-      totalAmount: 109.97,
-      status: 'delivered',
-      createdAt: Date.now() - 30 * 24 * 60 * 60 * 1000,
-      deliveredAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
-      trackingNumber: 'TRK-2024-001',
-    },
-    {
-      id: '2',
-      orderId: 'ORD-2024-002',
-      items: [
-        { productId: '3', productName: 'Ergonomic Office Chair', quantity: 1, price: 299.99 },
-      ],
-      totalAmount: 299.99,
-      status: 'shipped',
-      createdAt: Date.now() - 5 * 24 * 60 * 60 * 1000,
-      trackingNumber: 'TRK-2024-002',
-    },
-    {
-      id: '3',
-      orderId: 'ORD-2024-003',
-      items: [
-        { productId: '4', productName: 'Wireless Keyboard', quantity: 1, price: 79.99 },
-        { productId: '5', productName: 'Mouse Pad', quantity: 1, price: 14.99 },
-      ],
-      totalAmount: 94.98,
-      status: 'confirmed',
-      createdAt: Date.now() - 2 * 24 * 60 * 60 * 1000,
-    },
-  ];
-
-  const displayOrders = orders.length > 0 ? orders : mockOrders;
-
-  if (displayOrders.length === 0) {
+  if (orders.length === 0) {
     return (
       <div className="text-center py-12">
         <Package size={48} className="mx-auto text-gray-400 mb-4" />
-        <p className="text-gray-600 dark:text-gray-400">No orders yet</p>
+        <p className="text-gray-600 dark:text-gray-400 mb-2">No orders have been placed yet.</p>
+        <p className="text-sm text-gray-500 dark:text-gray-500">Order history will appear here once transactions are completed.</p>
       </div>
     );
   }
 
   return (
     <div className="space-y-4">
-      {displayOrders.map((order) => {
+      {orders.map((order) => {
         const config = statusConfig[order.status];
         const StatusIcon = config.icon;
         const isExpanded = expandedId === order.id;

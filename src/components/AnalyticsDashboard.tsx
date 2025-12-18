@@ -56,9 +56,9 @@ export default function AnalyticsDashboard() {
     }
 
     try {
+      // TENANT SCOPED - Load only this tenant's data
       const q = query(
-        collection(db, 'warehouse_inventory'),
-        where('source', '==', 'inventory'),
+        collection(db, 'tenants', user.tenantId, 'products'),
         where('active', '==', true)
       )
 

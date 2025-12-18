@@ -25,7 +25,7 @@ export const DocumentManagementModule: React.FC = () => {
           {pendingNotifications.length > 0 && (
             <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
               <p className="text-yellow-800 font-semibold">
-                ⚠️ {pendingNotifications.length} document renewal reminders
+                Note: {pendingNotifications.length} document renewal reminder(s)
               </p>
             </div>
           )}
