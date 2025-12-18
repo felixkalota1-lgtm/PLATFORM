@@ -30,13 +30,14 @@ interface Product {
 
 export default function AOProductPage() {
   const { user } = useAuth()
-  const tenantId = user?.tenantId || 'default'
+  const tenantId = user?.tenantId
   const [allProducts, setAllProducts] = useState<Product[]>([])
   const [displayedProducts, setDisplayedProducts] = useState<Product[]>([])
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedCompany, setSelectedCompany] = useState<string>('all')
   const [companies, setCompanies] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
+  const [authError, setAuthError] = useState<string | null>(null)
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
   const [editingProduct, setEditingProduct] = useState<Product | null>(null)
   const [isEditMode, setIsEditMode] = useState(false)
@@ -94,8 +95,8 @@ export default function AOProductPage() {
   useEffect(() => {
     const loadPostedProducts = async () => {
       try {
-        if (!user?.uid) {
-          console.log('No user UID available for marketplace check')
+        if (!user?.uid || !tenantId) {
+          console.log('Skipping marketplace check - user not authenticated or no tenant')
           return
         }
 
@@ -302,6 +303,11 @@ export default function AOProductPage() {
       const imageUrl = `https://picsum.photos/400/400?random=${Math.random()}`
       
       // Update product with new image - TENANT SCOPED
+      if (!tenantId) {
+        console.error('Cannot update product - tenant ID not available')
+        return
+      }
+      
       const db = getFirestore()
       const warehouseRef = collection(db, 'tenants', tenantId, 'warehouse_inventory')
       const q = query(warehouseRef, where('sku', '==', product.sku))
@@ -333,9 +339,22 @@ export default function AOProductPage() {
     const loadProducts = async () => {
       try {
         setLoading(true)
+        setAuthError(null)
         
-        if (!tenantId || tenantId === 'default') {
-          console.warn('No tenant ID available - user may not be properly authenticated')
+        if (!user?.uid) {
+          const msg = 'You must be logged in to view warehouse products.'
+          console.error(msg)
+          setAuthError(msg)
+          setAllProducts([])
+          setDisplayedProducts([])
+          setLoading(false)
+          return
+        }
+        
+        if (!tenantId) {
+          const msg = 'Your account does not have a company/tenant assigned. Please contact your administrator.'
+          console.error(msg)
+          setAuthError(msg)
           setAllProducts([])
           setDisplayedProducts([])
           setLoading(false)
@@ -449,6 +468,17 @@ export default function AOProductPage() {
 
   return (
     <div className="space-y-6 p-6">
+      {/* Auth Error Alert */}
+      {authError && (
+        <div className="bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-700 rounded-lg p-4 flex items-start gap-3">
+          <AlertCircleIcon size={20} className="text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
+          <div>
+            <h3 className="font-semibold text-red-800 dark:text-red-200">Authentication Required</h3>
+            <p className="text-sm text-red-700 dark:text-red-300 mt-1">{authError}</p>
+          </div>
+        </div>
+      )}
+      
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -685,7 +715,8 @@ export default function AOProductPage() {
               {!publishMessage && (
                 <button
                   onClick={handlePublishToMarketplace}
-                  disabled={publishingToMarketplace || productsToPublish.length === 0}
+                  disabled={publishingToMarketplace || productsToPublish.length === 0 || !!authError || !tenantId}
+                  title={!tenantId ? 'Tenant not configured' : authError ? 'Authentication required' : ''}
                   className="px-6 py-2 bg-gradient-to-r from-green-500 to-emerald-500 text-white rounded-lg hover:from-green-600 hover:to-emerald-600 transition-colors font-semibold disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                 >
                   {publishingToMarketplace ? (
@@ -934,6 +965,11 @@ export default function AOProductPage() {
                   onSubmit={async (e) => {
                     e.preventDefault()
                     try {
+                      if (!tenantId) {
+                        alert('Cannot update product - tenant not configured. Please log in again.')
+                        return
+                      }
+
                       const db = getFirestore()
                       const updatedProduct = {
                         ...editingProduct,
