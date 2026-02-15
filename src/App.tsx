@@ -135,7 +135,74 @@ export default function App() {
   const [confirmDelete, setConfirmDelete] = useState<{ show: boolean; count: number }>({ show: false, count: 0 })
   const [singleProductImage, setSingleProductImage] = useState<string>('')
   const [uploadProgress, setUploadProgress] = useState<{ current: number; total: number; status: string } | null>(null)
+  const [stockThreshold, setStockThreshold] = useState<number>(10)
+  const [sortBy, setSortBy] = useState<'name' | 'price' | 'qty' | 'partNumber' | 'currency' | 'default'>('default')
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc')
+  const [partNumberFormat, setPartNumberFormat] = useState<'default' | 'dash' | 'space' | 'slash'>('default')
+  const [showFormatSelector, setShowFormatSelector] = useState<string | null>(null)
   const itemsPerPage = 50
+
+  // Format number with commas (thousands separator)
+  const formatNumber = (num: number): string => {
+    return num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  }
+
+  // Format part number with selected format
+  const formatPartNumber = (partNum: string, format: string): string => {
+    const clean = partNum.replace(/[^\d]/g, '')
+    if (format === 'default' || format === 'default') return partNum
+    if (format === 'dash') return clean.replace(/(\d{4})/g, '$1-').slice(0, -1)
+    if (format === 'space') return clean.replace(/(\d{4})/g, '$1 ').trim()
+    if (format === 'slash') return clean.replace(/(\d{4})/g, '$1/').slice(0, -1)
+    return partNum
+  }
+
+  // Sort products based on sortBy state with direction
+  const sortProducts = (products: Product[]): Product[] => {
+    const sorted = [...products]
+    let result
+    
+    switch (sortBy) {
+      case 'name':
+        result = sorted.sort((a, b) => a.name.localeCompare(b.name))
+        break
+      case 'price':
+        result = sorted.sort((a, b) => a.price - b.price)
+        break
+      case 'qty':
+        result = sorted.sort((a, b) => a.qty - b.qty)
+        break
+      case 'partNumber':
+        result = sorted.sort((a, b) => a.partNumber.localeCompare(b.partNumber))
+        break
+      case 'currency':
+        result = sorted.sort((a, b) => (a.currency || 'USD').localeCompare(b.currency || 'USD'))
+        break
+      default:
+        return sorted
+    }
+    
+    // Apply sort direction
+    return sortDirection === 'desc' ? result.reverse() : result
+  }
+
+  // Calculate inventory summary by currency
+  const calculateInventorySummary = () => {
+    const currencyTotals: { [key: string]: { total: number; qty: number } } = {}
+    let totalQty = 0
+
+    filteredProducts.forEach((product) => {
+      const curr = product.currency || 'USD'
+      if (!currencyTotals[curr]) {
+        currencyTotals[curr] = { total: 0, qty: 0 }
+      }
+      currencyTotals[curr].total += product.price * product.qty
+      currencyTotals[curr].qty += product.qty
+      totalQty += product.qty
+    })
+
+    return { currencyTotals, totalQty }
+  }
 
   // Generate smart pagination numbers: 1, 2, 3, ..., current-1, current, current+1, ..., last
   const generatePageNumbers = (currentPage: number, totalPages: number) => {
@@ -237,10 +304,11 @@ export default function App() {
     if (savedUser) {
       setCurrentUser(savedUser)
       setIsLoggedIn(true)
-      // Load user's products
+      // Load user's products and set default to 'products' tab
       loadUserDataOnLogin(savedUser).then(data => {
         setProducts(data.products)
-        setActiveSubmenu(data.activeTab)
+        // Always default to 'products' tab on page reload
+        setActiveSubmenu('products')
       })
     }
   }, [])
@@ -250,6 +318,40 @@ export default function App() {
       saveUserActiveTab(currentUser, activeSubmenu)
     }
   }, [activeSubmenu, isLoggedIn, currentUser])
+
+  // Check cached user first (0 reads - optimization)
+  const getCachedUserData = (emailOrUsername: string): { username: string; email: string } | null => {
+    try {
+      const cachedData = localStorage.getItem(`pspm_user_cache_${emailOrUsername}`)
+      if (cachedData) {
+        const data = JSON.parse(cachedData)
+        // Cache is valid for 30 days
+        const cacheAge = Date.now() - data.timestamp
+        if (cacheAge < 30 * 24 * 60 * 60 * 1000) {
+          return { username: data.username, email: data.email }
+        }
+      }
+    } catch (error) {
+      console.error('Error reading cache:', error)
+    }
+    return null
+  }
+
+  // Save user to cache after successful login (for future zero-read logins)
+  const cacheUserData = (username: string, email: string) => {
+    try {
+      localStorage.setItem(
+        `pspm_user_cache_${username}`,
+        JSON.stringify({ username, email, timestamp: Date.now() })
+      )
+      localStorage.setItem(
+        `pspm_user_cache_${email}`,
+        JSON.stringify({ username, email, timestamp: Date.now() })
+      )
+    } catch (error) {
+      console.error('Error saving cache:', error)
+    }
+  }
 
   // Check if username or email exists (1 optimized read for signup)
   const checkUserExists = async (username: string, email: string): Promise<{ exists: boolean; by: string }> => {
@@ -400,6 +502,8 @@ export default function App() {
       setActiveSubmenu('products')
       setCurrentUser(signupForm.username)
       localStorage.setItem('pspm_current_user', signupForm.username)
+      // Cache user for future logins (0 reads next time)
+      cacheUserData(signupForm.username, signupForm.email)
       setIsLoggedIn(true)
       setSignupForm({ username: '', email: '', password: '', confirmPassword: '' })
       setAuthError('')
@@ -425,15 +529,22 @@ export default function App() {
 
     setIsLoading(true)
     try {
-      // Find user by email or username (1 read)
-      const user = await findUserByEmailOrUsername(loginForm.emailOrUsername)
+      // Check cache first (0 reads - optimization)
+      let user = getCachedUserData(loginForm.emailOrUsername)
+      
+      // If not in cache, query Firestore (1-2 reads)
       if (!user) {
-        setAuthError('Invalid email/username or password')
-        setIsLoading(false)
-        return
+        user = await findUserByEmailOrUsername(loginForm.emailOrUsername)
+        if (!user) {
+          setAuthError('Invalid email/username or password')
+          setIsLoading(false)
+          return
+        }
+        // Cache the user for future logins (0 reads next time)
+        cacheUserData(user.username, user.email)
       }
 
-      // Single batch load (2 queries total - products + settings = minimal reads)
+      // Single batch load (products + settings from IndexedDB)
       const { products: userProducts, activeTab: userActiveTab } = await loadUserDataOnLogin(user.username)
       
       setProducts(userProducts)
@@ -451,10 +562,17 @@ export default function App() {
     }
   }
 
-  // Filter products by search query
-  const filteredProducts = products.filter(product =>
-    product.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    product.partNumber.toLowerCase().includes(searchQuery.toLowerCase())
+  // Filter products by search query, apply threshold logic, and sort
+  const filteredProducts = sortProducts(
+    products
+      .map(product => ({
+        ...product,
+        stock: product.qty <= stockThreshold ? 'Low Stock' : product.qty === 0 ? 'Out of Stock' : 'In Stock'
+      }))
+      .filter(product =>
+        product.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        product.partNumber.toLowerCase().includes(searchQuery.toLowerCase())
+      )
   )
 
   // Paginate products
@@ -1130,6 +1248,100 @@ export default function App() {
                   }}
                 />
               </div>
+
+              {/* Inventory Summary & Sort Controls */}
+              {products.length > 0 && (
+                <div style={{ marginBottom: '28px', display: 'flex', gap: '28px', justifyContent: 'space-between' }}>
+                  {/* Stock Quantity - Left Side */}
+                  <div style={{ display: 'flex' }}>
+                    <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px 16px', minWidth: '180px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center' }}>
+                      <div style={{ fontSize: '11px', color: '#64748b', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.3px', marginBottom: '4px' }}>Total Stock Quantity</div>
+                      <div style={{ fontSize: '24px', fontWeight: '800', color: '#1a365d' }}>{calculateInventorySummary().totalQty.toLocaleString()}</div>
+                    </div>
+                  </div>
+
+                  {/* Currency Valuations & Sort Controls - Right Side */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', alignItems: 'flex-end' }}>
+                    {/* Currency Valuations */}
+                    <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                      {Object.entries(calculateInventorySummary().currencyTotals).map(([currency, data]) => {
+                        const currencyData = CURRENCY_OPTIONS.find(c => c.code === currency)
+                        return (
+                          <div key={currency} style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px 16px', minWidth: '180px' }}>
+                            <div style={{ fontSize: '11px', color: '#64748b', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.3px', marginBottom: '4px' }}>Total Valuation ({currency})</div>
+                            <div style={{ fontSize: '20px', fontWeight: '800', color: '#1a365d' }}>{currencyData?.symbol}{formatNumber(data.total)}</div>
+                          </div>
+                        )
+                      })}
+                    </div>
+
+                    {/* Sort Controls */}
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                      <div style={{ fontSize: '11px', color: '#64748b', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.3px' }}>Sort By:</div>
+                      {['default', 'name', 'price', 'qty', 'partNumber', 'currency'].map(option => (
+                        <button
+                          key={option}
+                          onClick={() => {
+                            if (sortBy === option) {
+                              setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc')
+                            } else {
+                              setSortBy(option as any)
+                              setSortDirection('asc')
+                            }
+                          }}
+                          style={{
+                            padding: '8px 14px',
+                            background: sortBy === option ? '#5b7c99' : '#f0f4f8',
+                            color: sortBy === option ? '#ffffff' : '#64748b',
+                            border: 'none',
+                            borderRadius: '6px',
+                            fontSize: '12px',
+                            fontWeight: sortBy === option ? '700' : '600',
+                            cursor: 'pointer',
+                            transition: 'all 0.2s ease',
+                            textTransform: 'capitalize',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px'
+                          }}
+                          onMouseEnter={(e) => {
+                            if (sortBy !== option) {
+                              e.currentTarget.style.background = '#e2e8f0'
+                            }
+                          }}
+                          onMouseLeave={(e) => {
+                            if (sortBy !== option) {
+                              e.currentTarget.style.background = '#f0f4f8'
+                            }
+                          }}
+                        >
+                          {option}
+                          {sortBy === option && (
+                            <span style={{ fontSize: '14px', fontWeight: 'bold' }}>
+                              {sortDirection === 'asc' ? '↑' : '↓'}
+                            </span>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Stock Threshold Setting */}
+              {products.length > 0 && (
+                <div style={{ marginBottom: '28px', display: 'flex', gap: '16px', alignItems: 'center', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '16px 20px' }}>
+                  <label style={{ fontSize: '12px', color: '#64748b', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.3px', margin: 0 }}>Low Stock Threshold:</label>
+                  <input
+                    type="number"
+                    value={stockThreshold}
+                    onChange={(e) => setStockThreshold(parseInt(e.target.value) || 10)}
+                    style={{ width: '80px', padding: '8px 12px', border: '1px solid #d0dce6', borderRadius: '6px', fontSize: '13px', color: '#1a365d', fontWeight: '600' }}
+                    min="0"
+                  />
+                  <span style={{ fontSize: '12px', color: '#64748b' }}>Products with qty at or below this level will show as "Low Stock"</span>
+                </div>
+              )}
               
               {products.length === 0 ? (
                 <div style={{ padding: '48px 32px', textAlign: 'center', background: '#f8fafc', borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 1px 2px rgba(0, 0, 0, 0.04)' }}>
@@ -1163,13 +1375,13 @@ export default function App() {
                               style={{ cursor: 'pointer' }}
                             />
                           </th>
-                          <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#64748b', borderRight: '1px solid #e2e8f0' }}>Image</th>
-                          <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#64748b', borderRight: '1px solid #e2e8f0' }}>Product Name</th>
-                          <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#64748b', borderRight: '1px solid #e2e8f0' }}>Part Number</th>
+                          <th style={{ padding: '12px 16px', textAlign: 'center', fontSize: '12px', fontWeight: '600', color: '#64748b', borderRight: '1px solid #e2e8f0' }}>Image</th>
+                          <th style={{ padding: '12px 16px', textAlign: 'center', fontSize: '12px', fontWeight: '600', color: '#64748b', borderRight: '1px solid #e2e8f0' }}>Product Name</th>
+                          <th style={{ padding: '12px 16px', textAlign: 'center', fontSize: '12px', fontWeight: '600', color: '#64748b', borderRight: '1px solid #e2e8f0' }}>Part Number</th>
                           <th style={{ padding: '12px 16px', textAlign: 'center', fontSize: '12px', fontWeight: '600', color: '#64748b', borderRight: '1px solid #e2e8f0' }}>Price</th>
                           <th style={{ padding: '12px 16px', textAlign: 'center', fontSize: '12px', fontWeight: '600', color: '#64748b', borderRight: '1px solid #e2e8f0' }}>Currency</th>
                           <th style={{ padding: '12px 16px', textAlign: 'center', fontSize: '12px', fontWeight: '600', color: '#64748b', borderRight: '1px solid #e2e8f0' }}>Qty</th>
-                          <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#64748b', borderRight: '1px solid #e2e8f0' }}>Stock</th>
+                          <th style={{ padding: '12px 16px', textAlign: 'center', fontSize: '12px', fontWeight: '600', color: '#64748b', borderRight: '1px solid #e2e8f0' }}>Stock</th>
                           <th style={{ padding: '12px 16px', textAlign: 'center', fontSize: '12px', fontWeight: '600', color: '#64748b' }}>Actions</th>
                         </tr>
                       </thead>
@@ -1220,7 +1432,7 @@ export default function App() {
                                 </div>
                               )}
                             </td>
-                            <td style={{ padding: '12px 16px', fontSize: '13px', color: '#1a365d', fontWeight: '500', borderRight: '1px solid #e2e8f0' }}>
+                            <td style={{ padding: '12px 16px', fontSize: '13px', color: '#1a365d', fontWeight: '500', borderRight: '1px solid #e2e8f0', textAlign: 'center' }}>
                               {editingProductId === product.id ? (
                                 <input
                                   type="text"
@@ -1232,16 +1444,28 @@ export default function App() {
                                 product.name
                               )}
                             </td>
-                            <td style={{ padding: '12px 16px', fontSize: '13px', color: '#64748b', borderRight: '1px solid #e2e8f0' }}>
+                            <td style={{ padding: '12px 16px', fontSize: '13px', color: '#64748b', borderRight: '1px solid #e2e8f0', textAlign: 'center' }}>
                               {editingProductId === product.id ? (
-                                <input
-                                  type="text"
-                                  value={editingData.partNumber || product.partNumber}
-                                  onChange={(e) => setEditingData({ ...editingData, partNumber: e.target.value })}
-                                  style={{ width: '100%', padding: '6px', border: '1px solid #5b7c99', borderRadius: '4px', fontSize: '13px' }}
-                                />
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                  <input
+                                    type="text"
+                                    value={editingData.partNumber || product.partNumber}
+                                    onChange={(e) => setEditingData({ ...editingData, partNumber: e.target.value })}
+                                    style={{ width: '100%', padding: '6px', border: '1px solid #5b7c99', borderRadius: '4px', fontSize: '13px' }}
+                                  />
+                                  <select
+                                    value={partNumberFormat}
+                                    onChange={(e) => setPartNumberFormat(e.target.value as any)}
+                                    style={{ width: '100%', padding: '6px', border: '1px solid #d0dce6', borderRadius: '4px', fontSize: '12px', color: '#64748b', cursor: 'pointer' }}
+                                  >
+                                    <option value="default">Format: 1234432112</option>
+                                    <option value="dash">Format: 1234-4321-12</option>
+                                    <option value="space">Format: 1234 4321 12</option>
+                                    <option value="slash">Format: 1234/4321/12</option>
+                                  </select>
+                                </div>
                               ) : (
-                                product.partNumber
+                                formatPartNumber(product.partNumber, partNumberFormat)
                               )}
                             </td>
                             <td style={{ padding: '12px 16px', textAlign: 'center', fontSize: '13px', color: '#1a365d', fontWeight: '500', borderRight: '1px solid #e2e8f0' }}>
@@ -1250,13 +1474,13 @@ export default function App() {
                                   type="number"
                                   value={editingData.price || product.price}
                                   onChange={(e) => setEditingData({ ...editingData, price: parseFloat(e.target.value) })}
-                                  style={{ width: '80px', padding: '6px', border: '1px solid #5b7c99', borderRadius: '4px', fontSize: '13px' }}
+                                  style={{ width: '100px', padding: '6px', border: '1px solid #5b7c99', borderRadius: '4px', fontSize: '13px' }}
                                 />
                               ) : (
                                 (() => {
                                   const currencyData = CURRENCY_OPTIONS.find(c => c.code === (product.currency || 'USD'))
                                   const symbol = currencyData?.symbol || '$'
-                                  return `${symbol}${product.price.toFixed(2)}`
+                                  return `${symbol}${formatNumber(product.price)}`
                                 })()
                               )}
                             </td>
@@ -1283,13 +1507,13 @@ export default function App() {
                                   type="number"
                                   value={editingData.qty ?? product.qty}
                                   onChange={(e) => setEditingData({ ...editingData, qty: parseInt(e.target.value) })}
-                                  style={{ width: '60px', padding: '6px', border: '1px solid #5b7c99', borderRadius: '4px', fontSize: '13px' }}
+                                  style={{ width: '80px', padding: '6px', border: '1px solid #5b7c99', borderRadius: '4px', fontSize: '13px' }}
                                 />
                               ) : (
-                                product.qty
+                                product.qty.toLocaleString()
                               )}
                             </td>
-                            <td style={{ padding: '12px 16px', fontSize: '13px', borderRight: '1px solid #e2e8f0' }}>
+                            <td style={{ padding: '12px 16px', fontSize: '13px', borderRight: '1px solid #e2e8f0', textAlign: 'center' }}>
                               <span style={{ background: product.stock === 'In Stock' ? '#dcfce7' : product.stock === 'Low Stock' ? '#fef3c7' : '#fee2e2', color: product.stock === 'In Stock' ? '#16a34a' : product.stock === 'Low Stock' ? '#d97706' : '#dc2626', padding: '4px 8px', borderRadius: '4px', fontSize: '12px', fontWeight: '500' }}>
                                 {product.stock}
                               </span>
