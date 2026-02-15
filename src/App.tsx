@@ -4,6 +4,8 @@ import { collection, query, where, getDocs, setDoc, doc, deleteDoc } from 'fireb
 import * as XLSX from 'xlsx'
 import bcryptjs from 'bcryptjs'
 import CryptoJS from 'crypto-js'
+import Quotations from './pages/Quotations'
+import Inquiries from './pages/Inquiries'
 
 interface Product {
   id: string
@@ -1299,6 +1301,64 @@ export default function App() {
           >
             Upload Portal
           </button>
+
+          <button
+            onClick={() => setActiveSubmenu('quotations')}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              borderBottom: activeSubmenu === 'quotations' ? '3px solid #5b7c99' : '2px solid transparent',
+              padding: '18px 22px',
+              cursor: 'pointer',
+              color: activeSubmenu === 'quotations' ? '#5b7c99' : '#64748b',
+              fontWeight: activeSubmenu === 'quotations' ? '700' : '600',
+              fontSize: '13px',
+              transition: 'all 0.25s ease',
+              textTransform: 'uppercase',
+              letterSpacing: '0.3px'
+            }}
+            onMouseEnter={(e) => {
+              if (activeSubmenu !== 'quotations') {
+                e.currentTarget.style.color = '#5b7c99'
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (activeSubmenu !== 'quotations') {
+                e.currentTarget.style.color = '#64748b'
+              }
+            }}
+          >
+            Quotations
+          </button>
+
+          <button
+            onClick={() => setActiveSubmenu('inquiries')}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              borderBottom: activeSubmenu === 'inquiries' ? '3px solid #5b7c99' : '2px solid transparent',
+              padding: '18px 22px',
+              cursor: 'pointer',
+              color: activeSubmenu === 'inquiries' ? '#5b7c99' : '#64748b',
+              fontWeight: activeSubmenu === 'inquiries' ? '700' : '600',
+              fontSize: '13px',
+              transition: 'all 0.25s ease',
+              textTransform: 'uppercase',
+              letterSpacing: '0.3px'
+            }}
+            onMouseEnter={(e) => {
+              if (activeSubmenu !== 'inquiries') {
+                e.currentTarget.style.color = '#5b7c99'
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (activeSubmenu !== 'inquiries') {
+                e.currentTarget.style.color = '#64748b'
+              }
+            }}
+          >
+            Inquiries
+          </button>
         </div>
 
         {/* Content Area */}
@@ -1711,6 +1771,14 @@ export default function App() {
                 </div>
               )}
             </div>
+          )}
+
+          {activeSubmenu === 'quotations' && (
+            <Quotations />
+          )}
+
+          {activeSubmenu === 'inquiries' && (
+            <Inquiries />
           )}
 
           {activeSubmenu === 'upload' && (
