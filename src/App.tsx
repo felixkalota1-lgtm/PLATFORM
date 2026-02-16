@@ -267,14 +267,25 @@ export default function App() {
   > | null>(null);
   const [quotations, setQuotations] = useState<Product[]>([]);
   const [inquiries, setInquiries] = useState<Product[]>([]);
-  const [orders, setOrders] = useState<Order[]>([]);
-  const [hasLoadedOrders, setHasLoadedOrders] = useState(false);
+  const [incomingOrders, setIncomingOrders] = useState<Order[]>([]);
+  const [outgoingOrders, setOutgoingOrders] = useState<Order[]>([]);
+  const [hasLoadedIncomingOrders, setHasLoadedIncomingOrders] =
+    useState(false);
+  const [hasLoadedOutgoingOrders, setHasLoadedOutgoingOrders] =
+    useState(false);
+  const [activeOrdersView, setActiveOrdersView] = useState<
+    "incoming" | "outgoing"
+  >("incoming");
   const [showPlaceOrderDialog, setShowPlaceOrderDialog] = useState(false);
   const [selectedOrderItem, setSelectedOrderItem] = useState<Product | null>(
     null,
   );
   const [orderQuantity, setOrderQuantity] = useState(1);
   const [orderNotes, setOrderNotes] = useState("");
+  const [showRetractConfirm, setShowRetractConfirm] = useState(false);
+  const [retractingOrderId, setRetractingOrderId] = useState<string | null>(
+    null,
+  );
   const [showQuantityEditor, setShowQuantityEditor] = useState<{
     show: boolean;
     mode: "quotation" | "inquiry";
@@ -1255,7 +1266,7 @@ export default function App() {
   const placeOrder = async (
     marketplaceItem: Product,
     quantity: number,
-    buyerNotes?: string
+    buyerNotes?: string,
   ) => {
     try {
       if (!db || !currentUser) {
@@ -1295,6 +1306,11 @@ export default function App() {
       // Save to Firestore
       await setDoc(doc(db, "orders", orderId), newOrder);
 
+      // Add to outgoing orders locally for immediate feedback
+      if (activeOrdersView === "outgoing") {
+        setOutgoingOrders((prev) => [...prev, newOrder]);
+      }
+
       setUploadMessage({
         type: "success",
         text: `Order placed successfully! Order ID: ${orderId}`,
@@ -1309,8 +1325,8 @@ export default function App() {
     }
   };
 
-  // Load orders where user is the seller
-  const loadUserOrders = async () => {
+  // Load incoming orders (where user is the seller)
+  const loadIncomingOrders = async () => {
     try {
       if (!db || !currentUser) return;
 
@@ -1318,20 +1334,35 @@ export default function App() {
       const q = query(ordersRef, where("seller", "==", currentUser));
       const snapshot = await getDocs(q);
 
-      const loadedOrders = snapshot.docs.map((doc) =>
-        doc.data() as Order
-      );
-      setOrders(loadedOrders);
-      setHasLoadedOrders(true);
+      const loadedOrders = snapshot.docs.map((doc) => doc.data() as Order);
+      setIncomingOrders(loadedOrders);
+      setHasLoadedIncomingOrders(true);
     } catch (error) {
-      console.error("Error loading orders:", error);
+      console.error("Error loading incoming orders:", error);
     }
   };
 
-  // Update order status
+  // Load outgoing orders (where user is the buyer)
+  const loadOutgoingOrders = async () => {
+    try {
+      if (!db || !currentUser) return;
+
+      const ordersRef = collection(db, "orders");
+      const q = query(ordersRef, where("buyer", "==", currentUser));
+      const snapshot = await getDocs(q);
+
+      const loadedOrders = snapshot.docs.map((doc) => doc.data() as Order);
+      setOutgoingOrders(loadedOrders);
+      setHasLoadedOutgoingOrders(true);
+    } catch (error) {
+      console.error("Error loading outgoing orders:", error);
+    }
+  };
+
+  // Update order status (for sellers on incoming orders)
   const updateOrderStatus = async (
     orderId: string,
-    newStatus: Order["status"]
+    newStatus: Order["status"],
   ) => {
     try {
       if (!db) return;
@@ -1342,16 +1373,16 @@ export default function App() {
           status: newStatus,
           updatedAt: Date.now(),
         } as Partial<Order>,
-        { merge: true }
+        { merge: true },
       );
 
       // Update local state
-      setOrders((prev) =>
+      setIncomingOrders((prev) =>
         prev.map((order) =>
           order.id === orderId
             ? { ...order, status: newStatus, updatedAt: Date.now() }
-            : order
-        )
+            : order,
+        ),
       );
 
       setUploadMessage({
@@ -1365,6 +1396,36 @@ export default function App() {
         type: "error",
         text: "Error updating order status",
       });
+    }
+  };
+
+  // Retract outgoing order (buyer cancels order)
+  const retractOrder = async (orderId: string) => {
+    try {
+      if (!db) return;
+
+      // Delete from Firestore
+      await deleteDoc(doc(db, "orders", orderId));
+
+      // Remove from local state
+      setOutgoingOrders((prev) =>
+        prev.filter((order) => order.id !== orderId)
+      );
+
+      setUploadMessage({
+        type: "success",
+        text: "Order retracted successfully",
+      });
+      setTimeout(() => setUploadMessage(null), 3000);
+    } catch (error) {
+      console.error("Error retracting order:", error);
+      setUploadMessage({
+        type: "error",
+        text: "Error retracting order",
+      });
+    } finally {
+      setShowRetractConfirm(false);
+      setRetractingOrderId(null);
     }
   };
 
@@ -3003,8 +3064,8 @@ export default function App() {
 
             <button
               onClick={() => {
-                if (!hasLoadedOrders) {
-                  loadUserOrders();
+                if (!hasLoadedIncomingOrders) {
+                  loadIncomingOrders();
                 }
                 setActiveWarehouseTab("orders");
               }}
@@ -3017,8 +3078,7 @@ export default function App() {
                     : "2px solid transparent",
                 padding: "18px 22px",
                 cursor: "pointer",
-                color:
-                  activeWarehouseTab === "orders" ? "#5b7c99" : "#64748b",
+                color: activeWarehouseTab === "orders" ? "#5b7c99" : "#64748b",
                 fontWeight: activeWarehouseTab === "orders" ? "700" : "600",
                 fontSize: "13px",
                 transition: "all 0.25s ease",
@@ -3710,13 +3770,32 @@ export default function App() {
                         marginBottom: "24px",
                       }}
                     >
-                      <p style={{ margin: "0 0 8px 0", fontWeight: "600", color: "#1a365d" }}>
+                      <p
+                        style={{
+                          margin: "0 0 8px 0",
+                          fontWeight: "600",
+                          color: "#1a365d",
+                        }}
+                      >
                         {selectedOrderItem.name}
                       </p>
-                      <p style={{ margin: "0", fontSize: "14px", color: "#64748b" }}>
+                      <p
+                        style={{
+                          margin: "0",
+                          fontSize: "14px",
+                          color: "#64748b",
+                        }}
+                      >
                         Part: {selectedOrderItem.partNumber}
                       </p>
-                      <p style={{ margin: "8px 0 0 0", fontSize: "14px", color: "#5b7c99", fontWeight: "600" }}>
+                      <p
+                        style={{
+                          margin: "8px 0 0 0",
+                          fontSize: "14px",
+                          color: "#5b7c99",
+                          fontWeight: "600",
+                        }}
+                      >
                         Price: {selectedOrderItem.currency || "USD"}{" "}
                         {formatNumber(selectedOrderItem.price || 0)} per unit
                       </p>
@@ -3799,7 +3878,13 @@ export default function App() {
                         marginBottom: "24px",
                       }}
                     >
-                      <p style={{ margin: "0", fontSize: "13px", color: "#64748b" }}>
+                      <p
+                        style={{
+                          margin: "0",
+                          fontSize: "13px",
+                          color: "#64748b",
+                        }}
+                      >
                         Total: {selectedOrderItem.currency || "USD"}{" "}
                         {formatNumber(
                           (selectedOrderItem.price || 0) * orderQuantity,
@@ -3860,6 +3945,115 @@ export default function App() {
                         }}
                       >
                         Place Order
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Retract Order Confirmation Dialog */}
+              {showRetractConfirm && retractingOrderId && (
+                <div
+                  style={{
+                    position: "fixed",
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    background: "rgba(0, 0, 0, 0.5)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    zIndex: 1001,
+                  }}
+                  onClick={() => {
+                    setShowRetractConfirm(false);
+                    setRetractingOrderId(null);
+                  }}
+                >
+                  <div
+                    style={{
+                      background: "#ffffff",
+                      borderRadius: "12px",
+                      padding: "32px",
+                      maxWidth: "400px",
+                      width: "90%",
+                      boxShadow: "0 20px 60px rgba(0, 0, 0, 0.15)",
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <h2
+                      style={{
+                        margin: "0 0 16px 0",
+                        fontSize: "18px",
+                        fontWeight: "800",
+                        color: "#1a365d",
+                      }}
+                    >
+                      Are you sure?
+                    </h2>
+
+                    <p
+                      style={{
+                        margin: "0 0 24px 0",
+                        fontSize: "14px",
+                        color: "#64748b",
+                        lineHeight: "1.6",
+                      }}
+                    >
+                      This will permanently retract your order. The seller will
+                      not receive this order. This action cannot be undone.
+                    </p>
+
+                    <div style={{ display: "flex", gap: "12px" }}>
+                      <button
+                        onClick={() => {
+                          setShowRetractConfirm(false);
+                          setRetractingOrderId(null);
+                        }}
+                        style={{
+                          flex: 1,
+                          padding: "12px",
+                          background: "#e2e8f0",
+                          color: "#1a365d",
+                          border: "none",
+                          borderRadius: "6px",
+                          cursor: "pointer",
+                          fontWeight: "600",
+                          fontSize: "14px",
+                          transition: "all 0.25s ease",
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.background = "#cbd5e1";
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background = "#e2e8f0";
+                        }}
+                      >
+                        Keep Order
+                      </button>
+                      <button
+                        onClick={() => retractOrder(retractingOrderId)}
+                        style={{
+                          flex: 1,
+                          padding: "12px",
+                          background: "#dc2626",
+                          color: "white",
+                          border: "none",
+                          borderRadius: "6px",
+                          cursor: "pointer",
+                          fontWeight: "600",
+                          fontSize: "14px",
+                          transition: "all 0.25s ease",
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.background = "#b91c1c";
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background = "#dc2626";
+                        }}
+                      >
+                        Retract Order
                       </button>
                     </div>
                   </div>
@@ -5638,243 +5832,595 @@ export default function App() {
               {activeWarehouseTab === "orders" && (
                 <div>
                   <div style={{ marginBottom: "28px" }}>
-                    <h2
+                    <div
                       style={{
-                        margin: "0 0 18px 0",
-                        fontSize: "22px",
-                        fontWeight: "800",
-                        color: "#5b7c99",
-                        letterSpacing: "-0.3px",
-                        textTransform: "uppercase",
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        marginBottom: "18px",
                       }}
                     >
-                      Incoming Orders ({orders.length})
-                    </h2>
+                      <h2
+                        style={{
+                          margin: "0",
+                          fontSize: "22px",
+                          fontWeight: "800",
+                          color: "#5b7c99",
+                          letterSpacing: "-0.3px",
+                          textTransform: "uppercase",
+                        }}
+                      >
+                        {activeOrdersView === "incoming"
+                          ? `Incoming Orders (${incomingOrders.length})`
+                          : `Outgoing Orders (${outgoingOrders.length})`}
+                      </h2>
+                      {activeOrdersView === "outgoing" && (
+                        <button
+                          onClick={() => {
+                            if (!hasLoadedOutgoingOrders) {
+                              loadOutgoingOrders();
+                            } else {
+                              loadOutgoingOrders();
+                            }
+                          }}
+                          style={{
+                            padding: "10px 16px",
+                            background: "#5b7c99",
+                            color: "white",
+                            border: "none",
+                            borderRadius: "6px",
+                            cursor: "pointer",
+                            fontSize: "12px",
+                            fontWeight: "600",
+                            transition: "all 0.25s ease",
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.background = "#4a6fa5";
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.background = "#5b7c99";
+                          }}
+                        >
+                          🔄 Refresh Status
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Orders View Selector Dropdown */}
+                    <select
+                      value={activeOrdersView}
+                      onChange={(e) => {
+                        const view = e.target.value as "incoming" | "outgoing";
+                        setActiveOrdersView(view);
+                        if (
+                          view === "incoming" &&
+                          !hasLoadedIncomingOrders
+                        ) {
+                          loadIncomingOrders();
+                        } else if (
+                          view === "outgoing" &&
+                          !hasLoadedOutgoingOrders
+                        ) {
+                          loadOutgoingOrders();
+                        }
+                      }}
+                      style={{
+                        padding: "12px 16px",
+                        borderRadius: "6px",
+                        border: "1px solid #d0dce6",
+                        background: "#ffffff",
+                        color: "#1a365d",
+                        cursor: "pointer",
+                        fontSize: "14px",
+                        fontWeight: "600",
+                        boxShadow: "0 2px 4px rgba(0, 0, 0, 0.04)",
+                      }}
+                    >
+                      <option value="incoming">📥 Incoming Orders</option>
+                      <option value="outgoing">📤 Outgoing Orders</option>
+                    </select>
                   </div>
 
-                  {orders.length === 0 ? (
-                    <div
-                      style={{
-                        background: "#f8fafc",
-                        border: "2px dashed #cbd5e1",
-                        borderRadius: "8px",
-                        padding: "48px 32px",
-                        textAlign: "center",
-                      }}
-                    >
-                      <p
-                        style={{
-                          fontSize: "16px",
-                          color: "#64748b",
-                          margin: "0",
-                        }}
-                      >
-                        No orders yet. When buyers purchase your items from the marketplace, they will appear here.
-                      </p>
-                    </div>
-                  ) : (
-                    <div
-                      style={{
-                        overflowX: "auto",
-                        borderRadius: "8px",
-                        boxShadow: "0 2px 8px rgba(0, 0, 0, 0.08)",
-                      }}
-                    >
-                      <table
-                        style={{
-                          width: "100%",
-                          borderCollapse: "collapse",
-                          background: "#ffffff",
-                        }}
-                      >
-                        <thead>
-                          <tr
+                  {/* Incoming Orders Table */}
+                  {activeOrdersView === "incoming" && (
+                    <>
+                      {incomingOrders.length === 0 ? (
+                        <div
+                          style={{
+                            background: "#f8fafc",
+                            border: "2px dashed #cbd5e1",
+                            borderRadius: "8px",
+                            padding: "48px 32px",
+                            textAlign: "center",
+                          }}
+                        >
+                          <p
                             style={{
-                              background: "#f1f5f9",
-                              borderBottom: "2px solid #e2e8f0",
+                              fontSize: "16px",
+                              color: "#64748b",
+                              margin: "0",
                             }}
                           >
-                            <th
-                              style={{
-                                padding: "16px",
-                                textAlign: "left",
-                                fontWeight: "700",
-                                color: "#5b7c99",
-                                fontSize: "13px",
-                                textTransform: "uppercase",
-                                letterSpacing: "0.3px",
-                              }}
-                            >
-                              Item Name
-                            </th>
-                            <th
-                              style={{
-                                padding: "16px",
-                                textAlign: "left",
-                                fontWeight: "700",
-                                color: "#5b7c99",
-                                fontSize: "13px",
-                                textTransform: "uppercase",
-                                letterSpacing: "0.3px",
-                              }}
-                            >
-                              Buyer
-                            </th>
-                            <th
-                              style={{
-                                padding: "16px",
-                                textAlign: "left",
-                                fontWeight: "700",
-                                color: "#5b7c99",
-                                fontSize: "13px",
-                                textTransform: "uppercase",
-                                letterSpacing: "0.3px",
-                              }}
-                            >
-                              Qty
-                            </th>
-                            <th
-                              style={{
-                                padding: "16px",
-                                textAlign: "left",
-                                fontWeight: "700",
-                                color: "#5b7c99",
-                                fontSize: "13px",
-                                textTransform: "uppercase",
-                                letterSpacing: "0.3px",
-                              }}
-                            >
-                              Total Price
-                            </th>
-                            <th
-                              style={{
-                                padding: "16px",
-                                textAlign: "left",
-                                fontWeight: "700",
-                                color: "#5b7c99",
-                                fontSize: "13px",
-                                textTransform: "uppercase",
-                                letterSpacing: "0.3px",
-                              }}
-                            >
-                              Status
-                            </th>
-                            <th
-                              style={{
-                                padding: "16px",
-                                textAlign: "center",
-                                fontWeight: "700",
-                                color: "#5b7c99",
-                                fontSize: "13px",
-                                textTransform: "uppercase",
-                                letterSpacing: "0.3px",
-                              }}
-                            >
-                              Actions
-                            </th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {orders.map((order, index) => (
-                            <tr
-                              key={order.id}
-                              style={{
-                                borderBottom: "1px solid #e2e8f0",
-                                background:
-                                  index % 2 === 0 ? "#ffffff" : "#f8fafc",
-                              }}
-                            >
-                              <td style={{ padding: "16px", color: "#1a365d", fontWeight: "600" }}>
-                                {order.itemName}
-                              </td>
-                              <td style={{ padding: "16px", color: "#64748b" }}>
-                                {order.buyer}
-                              </td>
-                              <td style={{ padding: "16px", color: "#64748b" }}>
-                                {order.quantity} units
-                              </td>
-                              <td
+                            No incoming orders yet. When buyers purchase your
+                            items from the marketplace, they will appear here.
+                          </p>
+                        </div>
+                      ) : (
+                        <div
+                          style={{
+                            overflowX: "auto",
+                            borderRadius: "8px",
+                            boxShadow: "0 2px 8px rgba(0, 0, 0, 0.08)",
+                          }}
+                        >
+                          <table
+                            style={{
+                              width: "100%",
+                              borderCollapse: "collapse",
+                              background: "#ffffff",
+                            }}
+                          >
+                            <thead>
+                              <tr
                                 style={{
-                                  padding: "16px",
-                                  color: "#1a365d",
-                                  fontWeight: "600",
+                                  background: "#f1f5f9",
+                                  borderBottom: "2px solid #e2e8f0",
                                 }}
                               >
-                                {order.itemCurrency}{" "}
-                                {formatNumber(order.totalPrice)}
-                              </td>
-                              <td style={{ padding: "16px" }}>
-                                <span
+                                <th
                                   style={{
-                                    padding: "6px 12px",
-                                    borderRadius: "6px",
-                                    fontSize: "12px",
+                                    padding: "16px",
+                                    textAlign: "left",
                                     fontWeight: "700",
+                                    color: "#5b7c99",
+                                    fontSize: "13px",
                                     textTransform: "uppercase",
-                                    color:
-                                      order.status === "pending"
-                                        ? "#b45309"
-                                        : order.status === "accepted"
-                                          ? "#0369a1"
-                                          : order.status === "shipped"
-                                            ? "#7c3aed"
-                                            : order.status === "delivered"
-                                              ? "#16a34a"
-                                              : "#dc2626",
-                                    background:
-                                      order.status === "pending"
-                                        ? "#fef3c7"
-                                        : order.status === "accepted"
-                                          ? "#cffafe"
-                                          : order.status === "shipped"
-                                            ? "#ede9fe"
-                                            : order.status === "delivered"
-                                              ? "#dcfce7"
-                                              : "#fee2e2",
+                                    letterSpacing: "0.3px",
                                   }}
                                 >
-                                  {order.status}
-                                </span>
-                              </td>
-                              <td
+                                  Item Name
+                                </th>
+                                <th
+                                  style={{
+                                    padding: "16px",
+                                    textAlign: "left",
+                                    fontWeight: "700",
+                                    color: "#5b7c99",
+                                    fontSize: "13px",
+                                    textTransform: "uppercase",
+                                    letterSpacing: "0.3px",
+                                  }}
+                                >
+                                  Buyer
+                                </th>
+                                <th
+                                  style={{
+                                    padding: "16px",
+                                    textAlign: "left",
+                                    fontWeight: "700",
+                                    color: "#5b7c99",
+                                    fontSize: "13px",
+                                    textTransform: "uppercase",
+                                    letterSpacing: "0.3px",
+                                  }}
+                                >
+                                  Qty
+                                </th>
+                                <th
+                                  style={{
+                                    padding: "16px",
+                                    textAlign: "left",
+                                    fontWeight: "700",
+                                    color: "#5b7c99",
+                                    fontSize: "13px",
+                                    textTransform: "uppercase",
+                                    letterSpacing: "0.3px",
+                                  }}
+                                >
+                                  Total Price
+                                </th>
+                                <th
+                                  style={{
+                                    padding: "16px",
+                                    textAlign: "left",
+                                    fontWeight: "700",
+                                    color: "#5b7c99",
+                                    fontSize: "13px",
+                                    textTransform: "uppercase",
+                                    letterSpacing: "0.3px",
+                                  }}
+                                >
+                                  Status
+                                </th>
+                                <th
+                                  style={{
+                                    padding: "16px",
+                                    textAlign: "center",
+                                    fontWeight: "700",
+                                    color: "#5b7c99",
+                                    fontSize: "13px",
+                                    textTransform: "uppercase",
+                                    letterSpacing: "0.3px",
+                                  }}
+                                >
+                                  Actions
+                                </th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {incomingOrders.map((order, index) => (
+                                <tr
+                                  key={order.id}
+                                  style={{
+                                    borderBottom: "1px solid #e2e8f0",
+                                    background:
+                                      index % 2 === 0
+                                        ? "#ffffff"
+                                        : "#f8fafc",
+                                  }}
+                                >
+                                  <td
+                                    style={{
+                                      padding: "16px",
+                                      color: "#1a365d",
+                                      fontWeight: "600",
+                                    }}
+                                  >
+                                    {order.itemName}
+                                  </td>
+                                  <td
+                                    style={{
+                                      padding: "16px",
+                                      color: "#64748b",
+                                    }}
+                                  >
+                                    {order.buyer}
+                                  </td>
+                                  <td
+                                    style={{
+                                      padding: "16px",
+                                      color: "#64748b",
+                                    }}
+                                  >
+                                    {order.quantity} units
+                                  </td>
+                                  <td
+                                    style={{
+                                      padding: "16px",
+                                      color: "#1a365d",
+                                      fontWeight: "600",
+                                    }}
+                                  >
+                                    {order.itemCurrency}{" "}
+                                    {formatNumber(order.totalPrice)}
+                                  </td>
+                                  <td style={{ padding: "16px" }}>
+                                    <span
+                                      style={{
+                                        padding: "6px 12px",
+                                        borderRadius: "6px",
+                                        fontSize: "12px",
+                                        fontWeight: "700",
+                                        textTransform: "uppercase",
+                                        color:
+                                          order.status === "pending"
+                                            ? "#b45309"
+                                            : order.status === "accepted"
+                                              ? "#0369a1"
+                                              : order.status === "shipped"
+                                                ? "#7c3aed"
+                                                : order.status === "delivered"
+                                                  ? "#16a34a"
+                                                  : "#dc2626",
+                                        background:
+                                          order.status === "pending"
+                                            ? "#fef3c7"
+                                            : order.status === "accepted"
+                                              ? "#cffafe"
+                                              : order.status === "shipped"
+                                                ? "#ede9fe"
+                                                : order.status === "delivered"
+                                                  ? "#dcfce7"
+                                                  : "#fee2e2",
+                                      }}
+                                    >
+                                      {order.status}
+                                    </span>
+                                  </td>
+                                  <td
+                                    style={{
+                                      padding: "16px",
+                                      textAlign: "center",
+                                    }}
+                                  >
+                                    <select
+                                      value={order.status}
+                                      onChange={(e) =>
+                                        updateOrderStatus(
+                                          order.id,
+                                          e.target.value as Order["status"],
+                                        )
+                                      }
+                                      style={{
+                                        padding: "8px 12px",
+                                        borderRadius: "6px",
+                                        border: "1px solid #cbd5e1",
+                                        background: "#ffffff",
+                                        color: "#1a365d",
+                                        cursor: "pointer",
+                                        fontSize: "12px",
+                                        fontWeight: "600",
+                                      }}
+                                    >
+                                      <option value="pending">Pending</option>
+                                      <option value="accepted">
+                                        Accepted
+                                      </option>
+                                      <option value="shipped">Shipped</option>
+                                      <option value="delivered">
+                                        Delivered
+                                      </option>
+                                      <option value="cancelled">
+                                        Cancelled
+                                      </option>
+                                    </select>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </>
+                  )}
+
+                  {/* Outgoing Orders Table */}
+                  {activeOrdersView === "outgoing" && (
+                    <>
+                      {outgoingOrders.length === 0 ? (
+                        <div
+                          style={{
+                            background: "#f8fafc",
+                            border: "2px dashed #cbd5e1",
+                            borderRadius: "8px",
+                            padding: "48px 32px",
+                            textAlign: "center",
+                          }}
+                        >
+                          <p
+                            style={{
+                              fontSize: "16px",
+                              color: "#64748b",
+                              margin: "0",
+                            }}
+                          >
+                            You haven't placed any orders yet. Browse the
+                            marketplace and place an order to see it here.
+                          </p>
+                        </div>
+                      ) : (
+                        <div
+                          style={{
+                            overflowX: "auto",
+                            borderRadius: "8px",
+                            boxShadow: "0 2px 8px rgba(0, 0, 0, 0.08)",
+                          }}
+                        >
+                          <table
+                            style={{
+                              width: "100%",
+                              borderCollapse: "collapse",
+                              background: "#ffffff",
+                            }}
+                          >
+                            <thead>
+                              <tr
                                 style={{
-                                  padding: "16px",
-                                  textAlign: "center",
+                                  background: "#f1f5f9",
+                                  borderBottom: "2px solid #e2e8f0",
                                 }}
                               >
-                                <select
-                                  value={order.status}
-                                  onChange={(e) =>
-                                    updateOrderStatus(
-                                      order.id,
-                                      e.target.value as Order["status"],
-                                    )
-                                  }
+                                <th
                                   style={{
-                                    padding: "8px 12px",
-                                    borderRadius: "6px",
-                                    border: "1px solid #cbd5e1",
-                                    background: "#ffffff",
-                                    color: "#1a365d",
-                                    cursor: "pointer",
-                                    fontSize: "12px",
-                                    fontWeight: "600",
+                                    padding: "16px",
+                                    textAlign: "left",
+                                    fontWeight: "700",
+                                    color: "#5b7c99",
+                                    fontSize: "13px",
+                                    textTransform: "uppercase",
+                                    letterSpacing: "0.3px",
                                   }}
                                 >
-                                  <option value="pending">Pending</option>
-                                  <option value="accepted">Accepted</option>
-                                  <option value="shipped">Shipped</option>
-                                  <option value="delivered">
-                                    Delivered
-                                  </option>
-                                  <option value="cancelled">Cancelled</option>
-                                </select>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
+                                  Item Name
+                                </th>
+                                <th
+                                  style={{
+                                    padding: "16px",
+                                    textAlign: "left",
+                                    fontWeight: "700",
+                                    color: "#5b7c99",
+                                    fontSize: "13px",
+                                    textTransform: "uppercase",
+                                    letterSpacing: "0.3px",
+                                  }}
+                                >
+                                  Seller
+                                </th>
+                                <th
+                                  style={{
+                                    padding: "16px",
+                                    textAlign: "left",
+                                    fontWeight: "700",
+                                    color: "#5b7c99",
+                                    fontSize: "13px",
+                                    textTransform: "uppercase",
+                                    letterSpacing: "0.3px",
+                                  }}
+                                >
+                                  Qty
+                                </th>
+                                <th
+                                  style={{
+                                    padding: "16px",
+                                    textAlign: "left",
+                                    fontWeight: "700",
+                                    color: "#5b7c99",
+                                    fontSize: "13px",
+                                    textTransform: "uppercase",
+                                    letterSpacing: "0.3px",
+                                  }}
+                                >
+                                  Total Price
+                                </th>
+                                <th
+                                  style={{
+                                    padding: "16px",
+                                    textAlign: "left",
+                                    fontWeight: "700",
+                                    color: "#5b7c99",
+                                    fontSize: "13px",
+                                    textTransform: "uppercase",
+                                    letterSpacing: "0.3px",
+                                  }}
+                                >
+                                  Status
+                                </th>
+                                <th
+                                  style={{
+                                    padding: "16px",
+                                    textAlign: "center",
+                                    fontWeight: "700",
+                                    color: "#5b7c99",
+                                    fontSize: "13px",
+                                    textTransform: "uppercase",
+                                    letterSpacing: "0.3px",
+                                  }}
+                                >
+                                  Actions
+                                </th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {outgoingOrders.map((order, index) => (
+                                <tr
+                                  key={order.id}
+                                  style={{
+                                    borderBottom: "1px solid #e2e8f0",
+                                    background:
+                                      index % 2 === 0
+                                        ? "#ffffff"
+                                        : "#f8fafc",
+                                  }}
+                                >
+                                  <td
+                                    style={{
+                                      padding: "16px",
+                                      color: "#1a365d",
+                                      fontWeight: "600",
+                                    }}
+                                  >
+                                    {order.itemName}
+                                  </td>
+                                  <td
+                                    style={{
+                                      padding: "16px",
+                                      color: "#64748b",
+                                    }}
+                                  >
+                                    {order.seller}
+                                  </td>
+                                  <td
+                                    style={{
+                                      padding: "16px",
+                                      color: "#64748b",
+                                    }}
+                                  >
+                                    {order.quantity} units
+                                  </td>
+                                  <td
+                                    style={{
+                                      padding: "16px",
+                                      color: "#1a365d",
+                                      fontWeight: "600",
+                                    }}
+                                  >
+                                    {order.itemCurrency}{" "}
+                                    {formatNumber(order.totalPrice)}
+                                  </td>
+                                  <td style={{ padding: "16px" }}>
+                                    <span
+                                      style={{
+                                        padding: "6px 12px",
+                                        borderRadius: "6px",
+                                        fontSize: "12px",
+                                        fontWeight: "700",
+                                        textTransform: "uppercase",
+                                        color:
+                                          order.status === "pending"
+                                            ? "#b45309"
+                                            : order.status === "accepted"
+                                              ? "#0369a1"
+                                              : order.status === "shipped"
+                                                ? "#7c3aed"
+                                                : order.status === "delivered"
+                                                  ? "#16a34a"
+                                                  : "#dc2626",
+                                        background:
+                                          order.status === "pending"
+                                            ? "#fef3c7"
+                                            : order.status === "accepted"
+                                              ? "#cffafe"
+                                              : order.status === "shipped"
+                                                ? "#ede9fe"
+                                                : order.status === "delivered"
+                                                  ? "#dcfce7"
+                                                  : "#fee2e2",
+                                      }}
+                                    >
+                                      {order.status}
+                                    </span>
+                                  </td>
+                                  <td
+                                    style={{
+                                      padding: "16px",
+                                      textAlign: "center",
+                                    }}
+                                  >
+                                    <button
+                                      onClick={() => {
+                                        setRetractingOrderId(order.id);
+                                        setShowRetractConfirm(true);
+                                      }}
+                                      style={{
+                                        padding: "8px 12px",
+                                        background: "#dc2626",
+                                        color: "white",
+                                        border: "none",
+                                        borderRadius: "6px",
+                                        cursor: "pointer",
+                                        fontSize: "12px",
+                                        fontWeight: "600",
+                                        transition: "all 0.25s ease",
+                                      }}
+                                      onMouseEnter={(e) => {
+                                        e.currentTarget.style.background =
+                                          "#b91c1c";
+                                      }}
+                                      onMouseLeave={(e) => {
+                                        e.currentTarget.style.background =
+                                          "#dc2626";
+                                      }}
+                                    >
+                                      Retract
+                                    </button>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
               )}
