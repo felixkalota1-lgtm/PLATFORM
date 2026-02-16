@@ -114,6 +114,11 @@ const initIndexedDB = async (): Promise<IDBDatabase> => {
         templateStore.createIndex("username", "username", { unique: false });
         templateStore.createIndex("type", "type", { unique: false });
       }
+      if (!db.objectStoreNames.contains("cart")) {
+        const cartStore = db.createObjectStore("cart", { keyPath: "id" });
+        cartStore.createIndex("username", "username", { unique: false });
+        cartStore.createIndex("seller", "seller", { unique: false });
+      }
     };
   });
 };
@@ -181,6 +186,95 @@ const deleteProductFromIndexedDB = async (productId: string): Promise<void> => {
     });
   } catch (error) {
     console.error("Error deleting from IndexedDB:", error);
+  }
+};
+
+// Cart utility functions
+const saveCartToIndexedDB = async (
+  username: string,
+  cartItems: Array<{
+    productId: string;
+    seller: string;
+    name: string;
+    price: number;
+    currency: string;
+    quantity: number;
+    image?: string;
+  }>,
+): Promise<void> => {
+  try {
+    const database = await initIndexedDB();
+    const transaction = database.transaction(["cart"], "readwrite");
+    const store = transaction.objectStore("cart");
+
+    // Clear existing cart for this user
+    const index = store.index("username");
+    const range = IDBKeyRange.only(username);
+    const deleteRequest = index.getAll(range);
+
+    return new Promise((resolve, reject) => {
+      deleteRequest.onsuccess = () => {
+        const items = deleteRequest.result;
+        items.forEach((item) => store.delete(item.id));
+
+        // Add new cart items
+        cartItems.forEach((item, idx) => {
+          store.add({
+            id: `${username}_cart_${Date.now()}_${idx}`,
+            username,
+            ...item,
+          });
+        });
+      };
+
+      transaction.onerror = () => reject(transaction.error);
+      transaction.oncomplete = () => resolve();
+    });
+  } catch (error) {
+    console.error("Error saving cart to IndexedDB:", error);
+  }
+};
+
+const loadCartFromIndexedDB = async (
+  username: string,
+): Promise<
+  Array<{
+    productId: string;
+    seller: string;
+    name: string;
+    price: number;
+    currency: string;
+    quantity: number;
+    image?: string;
+  }>
+> => {
+  try {
+    const database = await initIndexedDB();
+    const transaction = database.transaction(["cart"], "readonly");
+    const store = transaction.objectStore("cart");
+    const index = store.index("username");
+    const range = IDBKeyRange.only(username);
+
+    return new Promise((resolve, reject) => {
+      const request = index.getAll(range);
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => {
+        const allItems = request.result;
+        const cartItems = allItems.map((item) => ({
+          productId: item.productId,
+          seller: item.seller,
+          name: item.name,
+          price: item.price,
+          currency: item.currency,
+          quantity: item.quantity,
+          image: item.image,
+        }));
+        resolve(cartItems);
+      };
+    });
+  } catch (error) {
+    console.error("Error loading cart from IndexedDB:", error);
+    return [];
   }
 };
 
@@ -269,13 +363,24 @@ export default function App() {
   const [inquiries, setInquiries] = useState<Product[]>([]);
   const [incomingOrders, setIncomingOrders] = useState<Order[]>([]);
   const [outgoingOrders, setOutgoingOrders] = useState<Order[]>([]);
-  const [hasLoadedIncomingOrders, setHasLoadedIncomingOrders] =
-    useState(false);
-  const [hasLoadedOutgoingOrders, setHasLoadedOutgoingOrders] =
-    useState(false);
+  const [hasLoadedIncomingOrders, setHasLoadedIncomingOrders] = useState(false);
+  const [hasLoadedOutgoingOrders, setHasLoadedOutgoingOrders] = useState(false);
   const [activeOrdersView, setActiveOrdersView] = useState<
     "incoming" | "outgoing"
   >("incoming");
+  const [showCartModal, setShowCartModal] = useState(false);
+  const [cart, setCart] = useState<
+    Array<{
+      productId: string;
+      seller: string;
+      name: string;
+      price: number;
+      currency: string;
+      quantity: number;
+      image?: string;
+    }>
+  >([]);
+  const [hasLoadedCart, setHasLoadedCart] = useState(false);
   const [showPlaceOrderDialog, setShowPlaceOrderDialog] = useState(false);
   const [selectedOrderItem, setSelectedOrderItem] = useState<Product | null>(
     null,
@@ -654,6 +759,13 @@ export default function App() {
         console.log(
           `Page restore: Loaded ${data.products.length} products, ${data.quotationHistory.length} quotations, ${data.inquiryHistory.length} inquiries`,
         );
+      });
+
+      // Load cart from IndexedDB
+      loadCartFromIndexedDB(savedUser).then((cartItems) => {
+        setCart(cartItems);
+        setHasLoadedCart(true);
+        console.log(`Page restore: Loaded ${cartItems.length} cart items`);
       });
     }
   }, []);
@@ -1400,16 +1512,33 @@ export default function App() {
   };
 
   // Retract outgoing order (buyer cancels order)
-  const retractOrder = async (orderId: string) => {
+  const retractOrder = async (orderId: string | null) => {
     try {
-      if (!db) return;
+      if (!db || !orderId) {
+        console.error("Cannot retract order: missing db or orderId", {
+          db: !!db,
+          orderId,
+        });
+        setUploadMessage({
+          type: "error",
+          text: "Error: Order ID not found",
+        });
+        return;
+      }
+
+      console.log(`Retracting order: ${orderId}`);
 
       // Delete from Firestore
       await deleteDoc(doc(db, "orders", orderId));
+      console.log(`Order ${orderId} deleted from Firestore`);
 
       // Remove from local state
-      setOutgoingOrders((prev) =>
-        prev.filter((order) => order.id !== orderId)
+      const updatedOrders = outgoingOrders.filter(
+        (order) => order.id !== orderId
+      );
+      setOutgoingOrders(updatedOrders);
+      console.log(
+        `Order removed from local state. Remaining orders: ${updatedOrders.length}`
       );
 
       setUploadMessage({
@@ -1421,11 +1550,121 @@ export default function App() {
       console.error("Error retracting order:", error);
       setUploadMessage({
         type: "error",
-        text: "Error retracting order",
+        text: `Error retracting order: ${
+          error instanceof Error ? error.message : "Unknown error"
+        }`,
       });
     } finally {
       setShowRetractConfirm(false);
       setRetractingOrderId(null);
+    }
+  };
+
+  // Checkout cart - creates separate orders for each seller
+  const checkoutCart = async () => {
+    try {
+      if (!db || cart.length === 0) {
+        setUploadMessage({
+          type: "error",
+          text: "Cart is empty",
+        });
+        return;
+      }
+
+      console.log(`Starting checkout with ${cart.length} items`);
+
+      // Group cart items by seller
+      const ordersBySeller: Record<
+        string,
+        Array<{
+          productId: string;
+          name: string;
+          price: number;
+          currency: string;
+          quantity: number;
+        }>
+      > = {};
+
+      cart.forEach((item) => {
+        if (!ordersBySeller[item.seller]) {
+          ordersBySeller[item.seller] = [];
+        }
+        ordersBySeller[item.seller].push({
+          productId: item.productId,
+          name: item.name,
+          price: item.price,
+          currency: item.currency,
+          quantity: item.quantity,
+        });
+      });
+
+      // Create separate order for each seller
+      let successCount = 0;
+      const sellerEmails: Record<string, string> = {};
+
+      for (const [seller, items] of Object.entries(ordersBySeller)) {
+        try {
+          const totalPrice = items.reduce(
+            (sum, item) => sum + item.price * item.quantity,
+            0,
+          );
+
+          const orderId = `order_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+          const orderData = {
+            id: orderId,
+            buyer: currentUser,
+            seller: seller,
+            items: items,
+            totalPrice: totalPrice,
+            status: "pending",
+            currency: items[0]?.currency || "USD",
+            createdAt: new Date().toISOString(),
+            timestamp: Date.now(),
+          };
+
+          console.log(`Creating order for seller ${seller}:`, orderData);
+
+          // Save to Firestore
+          await setDoc(doc(db, "orders", orderId), orderData);
+          successCount++;
+          sellerEmails[seller] = seller; // Store seller for potential notification
+        } catch (sellerError) {
+          console.error(`Error creating order for seller ${seller}:`, sellerError);
+        }
+      }
+
+      if (successCount > 0) {
+        // Clear cart
+        setCart([]);
+        setHasLoadedCart(false);
+        await saveCartToIndexedDB(currentUser, []);
+
+        setUploadMessage({
+          type: "success",
+          text: `Orders placed successfully to ${successCount} seller(s)!`,
+        });
+        setTimeout(() => setUploadMessage(null), 3000);
+
+        // Close cart modal
+        setShowCartModal(false);
+
+        // Reload outgoing orders to show new orders
+        if (hasLoadedOutgoingOrders) {
+          loadOutgoingOrders();
+        }
+      } else {
+        setUploadMessage({
+          type: "error",
+          text: "Failed to create orders",
+        });
+      }
+    } catch (error) {
+      console.error("Error during checkout:", error);
+      setUploadMessage({
+        type: "error",
+        text: `Checkout error: ${error instanceof Error ? error.message : "Unknown error"}`,
+      });
     }
   };
 
@@ -1849,7 +2088,12 @@ export default function App() {
       setLoginForm({ emailOrUsername: "", password: "" });
       setAuthError("");
 
-      // Optimization #4: Reset inactivity timer on successful login
+      // Load cart from IndexedDB on login
+      loadCartFromIndexedDB(user.username).then((cartItems) => {
+        setCart(cartItems);
+        setHasLoadedCart(true);
+        console.log(`Login: Loaded ${cartItems.length} cart items`);
+      });      // Optimization #4: Reset inactivity timer on successful login
       resetInactivityTimer();
     } catch (error) {
       setAuthError("Error logging in. Please try again.");
@@ -3388,36 +3632,114 @@ export default function App() {
                                     {(item.seller as any) || "Unknown"}
                                   </strong>
                                 </p>
-                                <button
-                                  onClick={() => {
-                                    setSelectedOrderItem(item);
-                                    setOrderQuantity(1);
-                                    setOrderNotes("");
-                                    setShowPlaceOrderDialog(true);
-                                  }}
+                                <div
                                   style={{
-                                    width: "100%",
-                                    padding: "8px 12px",
-                                    background: "#16a34a",
-                                    color: "white",
-                                    border: "none",
-                                    borderRadius: "6px",
-                                    cursor: "pointer",
-                                    fontSize: "12px",
-                                    fontWeight: "600",
-                                    transition: "all 0.25s ease",
-                                  }}
-                                  onMouseEnter={(e) => {
-                                    e.currentTarget.style.background =
-                                      "#14931d";
-                                  }}
-                                  onMouseLeave={(e) => {
-                                    e.currentTarget.style.background =
-                                      "#16a34a";
+                                    display: "flex",
+                                    gap: "8px",
                                   }}
                                 >
-                                  Place Order
-                                </button>
+                                  <button
+                                    onClick={() => {
+                                      // Add to Cart
+                                      const newCartItem = {
+                                        productId: item.id,
+                                        seller: (item.seller as string) || "Unknown",
+                                        name: item.name,
+                                        price: item.price || 0,
+                                        currency: item.currency || "USD",
+                                        quantity: 1,
+                                        image: item.image,
+                                      };
+
+                                      // Check if already in cart
+                                      const existingIndex = cart.findIndex(
+                                        (cartItem) =>
+                                          cartItem.productId === item.id &&
+                                          cartItem.seller === newCartItem.seller,
+                                      );
+
+                                      let updatedCart;
+                                      if (existingIndex >= 0) {
+                                        // Item already in cart, increase quantity
+                                        updatedCart = cart.map((cartItem, idx) =>
+                                          idx === existingIndex
+                                            ? {
+                                                ...cartItem,
+                                                quantity: cartItem.quantity + 1,
+                                              }
+                                            : cartItem,
+                                        );
+                                      } else {
+                                        // New item, add to cart
+                                        updatedCart = [...cart, newCartItem];
+                                      }
+
+                                      setCart(updatedCart);
+                                      saveCartToIndexedDB(currentUser, updatedCart);
+
+                                      setUploadMessage({
+                                        type: "success",
+                                        text: "Added to cart!",
+                                      });
+                                      setTimeout(
+                                        () => setUploadMessage(null),
+                                        2000,
+                                      );
+                                    }}
+                                    style={{
+                                      flex: 1,
+                                      padding: "8px 12px",
+                                      background: "#0284c7",
+                                      color: "white",
+                                      border: "none",
+                                      borderRadius: "6px",
+                                      cursor: "pointer",
+                                      fontSize: "12px",
+                                      fontWeight: "600",
+                                      transition: "all 0.25s ease",
+                                    }}
+                                    onMouseEnter={(e) => {
+                                      e.currentTarget.style.background =
+                                        "#0369a1";
+                                    }}
+                                    onMouseLeave={(e) => {
+                                      e.currentTarget.style.background =
+                                        "#0284c7";
+                                    }}
+                                  >
+                                    🛒 Add to Cart
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      setSelectedOrderItem(item);
+                                      setOrderQuantity(1);
+                                      setOrderNotes("");
+                                      setShowPlaceOrderDialog(true);
+                                    }}
+                                    style={{
+                                      flex: 1,
+                                      padding: "8px 12px",
+                                      background: "#16a34a",
+                                      color: "white",
+                                      border: "none",
+                                      borderRadius: "6px",
+                                      cursor: "pointer",
+                                      fontSize: "12px",
+                                      fontWeight: "600",
+                                      transition: "all 0.25s ease",
+                                    }}
+                                    onMouseEnter={(e) => {
+                                      e.currentTarget.style.background =
+                                        "#14931d";
+                                    }}
+                                    onMouseLeave={(e) => {
+                                      e.currentTarget.style.background =
+                                        "#16a34a";
+                                    }}
+                                  >
+                                    Order
+                                  </button>
+                                </div>
                               </div>
                             </div>
                           ))}
@@ -4033,7 +4355,19 @@ export default function App() {
                         Keep Order
                       </button>
                       <button
-                        onClick={() => retractOrder(retractingOrderId)}
+                        onClick={() => {
+                          if (retractingOrderId) {
+                            retractOrder(retractingOrderId);
+                          } else {
+                            console.error(
+                              "Retract button clicked but retractingOrderId is null"
+                            );
+                            setUploadMessage({
+                              type: "error",
+                              text: "Error: Order ID not found",
+                            });
+                          }
+                        }}
                         style={{
                           flex: 1,
                           padding: "12px",
@@ -5886,39 +6220,106 @@ export default function App() {
                       )}
                     </div>
 
-                    {/* Orders View Selector Dropdown */}
-                    <select
-                      value={activeOrdersView}
-                      onChange={(e) => {
-                        const view = e.target.value as "incoming" | "outgoing";
-                        setActiveOrdersView(view);
-                        if (
-                          view === "incoming" &&
-                          !hasLoadedIncomingOrders
-                        ) {
-                          loadIncomingOrders();
-                        } else if (
-                          view === "outgoing" &&
-                          !hasLoadedOutgoingOrders
-                        ) {
-                          loadOutgoingOrders();
-                        }
-                      }}
+                    {/* Orders View Selector - Side by Side Buttons */}
+                    <div
                       style={{
-                        padding: "12px 16px",
-                        borderRadius: "6px",
-                        border: "1px solid #d0dce6",
-                        background: "#ffffff",
-                        color: "#1a365d",
-                        cursor: "pointer",
-                        fontSize: "14px",
-                        fontWeight: "600",
-                        boxShadow: "0 2px 4px rgba(0, 0, 0, 0.04)",
+                        display: "flex",
+                        gap: "8px",
                       }}
                     >
-                      <option value="incoming">📥 Incoming Orders</option>
-                      <option value="outgoing">📤 Outgoing Orders</option>
-                    </select>
+                      <button
+                        onClick={() => {
+                          setActiveOrdersView("incoming");
+                          if (!hasLoadedIncomingOrders) {
+                            loadIncomingOrders();
+                          }
+                        }}
+                        style={{
+                          padding: "10px 16px",
+                          borderRadius: "6px",
+                          border:
+                            activeOrdersView === "incoming"
+                              ? "2px solid #0284c7"
+                              : "1px solid #d0dce6",
+                          background:
+                            activeOrdersView === "incoming"
+                              ? "#0284c7"
+                              : "#ffffff",
+                          color:
+                            activeOrdersView === "incoming"
+                              ? "white"
+                              : "#1a365d",
+                          cursor: "pointer",
+                          fontSize: "14px",
+                          fontWeight: "600",
+                          transition: "all 0.25s ease",
+                          boxShadow:
+                            activeOrdersView === "incoming"
+                              ? "0 4px 8px rgba(2, 132, 199, 0.2)"
+                              : "0 2px 4px rgba(0, 0, 0, 0.04)",
+                        }}
+                        onMouseEnter={(e) => {
+                          if (activeOrdersView !== "incoming") {
+                            e.currentTarget.style.background = "#f0f9ff";
+                            e.currentTarget.style.borderColor = "#0284c7";
+                          }
+                        }}
+                        onMouseLeave={(e) => {
+                          if (activeOrdersView !== "incoming") {
+                            e.currentTarget.style.background = "#ffffff";
+                            e.currentTarget.style.borderColor = "#d0dce6";
+                          }
+                        }}
+                      >
+                        📥 Incoming Orders
+                      </button>
+                      <button
+                        onClick={() => {
+                          setActiveOrdersView("outgoing");
+                          if (!hasLoadedOutgoingOrders) {
+                            loadOutgoingOrders();
+                          }
+                        }}
+                        style={{
+                          padding: "10px 16px",
+                          borderRadius: "6px",
+                          border:
+                            activeOrdersView === "outgoing"
+                              ? "2px solid #0284c7"
+                              : "1px solid #d0dce6",
+                          background:
+                            activeOrdersView === "outgoing"
+                              ? "#0284c7"
+                              : "#ffffff",
+                          color:
+                            activeOrdersView === "outgoing"
+                              ? "white"
+                              : "#1a365d",
+                          cursor: "pointer",
+                          fontSize: "14px",
+                          fontWeight: "600",
+                          transition: "all 0.25s ease",
+                          boxShadow:
+                            activeOrdersView === "outgoing"
+                              ? "0 4px 8px rgba(2, 132, 199, 0.2)"
+                              : "0 2px 4px rgba(0, 0, 0, 0.04)",
+                        }}
+                        onMouseEnter={(e) => {
+                          if (activeOrdersView !== "outgoing") {
+                            e.currentTarget.style.background = "#f0f9ff";
+                            e.currentTarget.style.borderColor = "#0284c7";
+                          }
+                        }}
+                        onMouseLeave={(e) => {
+                          if (activeOrdersView !== "outgoing") {
+                            e.currentTarget.style.background = "#ffffff";
+                            e.currentTarget.style.borderColor = "#d0dce6";
+                          }
+                        }}
+                      >
+                        📤 Outgoing Orders
+                      </button>
+                    </div>
                   </div>
 
                   {/* Incoming Orders Table */}
@@ -6054,9 +6455,7 @@ export default function App() {
                                   style={{
                                     borderBottom: "1px solid #e2e8f0",
                                     background:
-                                      index % 2 === 0
-                                        ? "#ffffff"
-                                        : "#f8fafc",
+                                      index % 2 === 0 ? "#ffffff" : "#f8fafc",
                                   }}
                                 >
                                   <td
@@ -6153,9 +6552,7 @@ export default function App() {
                                       }}
                                     >
                                       <option value="pending">Pending</option>
-                                      <option value="accepted">
-                                        Accepted
-                                      </option>
+                                      <option value="accepted">Accepted</option>
                                       <option value="shipped">Shipped</option>
                                       <option value="delivered">
                                         Delivered
@@ -6307,9 +6704,7 @@ export default function App() {
                                   style={{
                                     borderBottom: "1px solid #e2e8f0",
                                     background:
-                                      index % 2 === 0
-                                        ? "#ffffff"
-                                        : "#f8fafc",
+                                      index % 2 === 0 ? "#ffffff" : "#f8fafc",
                                   }}
                                 >
                                   <td
@@ -7319,6 +7714,547 @@ export default function App() {
             </div>
           ) : null}
         </div>
+
+        {/* Floating Cart Button */}
+        {isLoggedIn && activeSubmenu !== "allDocuments" && (
+          <button
+            onClick={() => setShowCartModal(true)}
+            style={{
+              position: "fixed",
+              top: "20px",
+              right: "20px",
+              width: "60px",
+              height: "60px",
+              borderRadius: "50%",
+              background: "#0284c7",
+              color: "white",
+              border: "none",
+              cursor: "pointer",
+              boxShadow: "0 4px 12px rgba(2, 132, 199, 0.3)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: "24px",
+              fontWeight: "700",
+              transition: "all 0.25s ease",
+              zIndex: 999,
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = "#0369a1";
+              e.currentTarget.style.boxShadow =
+                "0 8px 20px rgba(2, 132, 199, 0.4)";
+              e.currentTarget.style.transform = "scale(1.1)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = "#0284c7";
+              e.currentTarget.style.boxShadow =
+                "0 4px 12px rgba(2, 132, 199, 0.3)";
+              e.currentTarget.style.transform = "scale(1)";
+            }}
+            title={`Cart (${cart.length} items)`}
+          >
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: "2px",
+              }}
+            >
+              <span style={{ fontSize: "24px" }}>🛒</span>
+              {cart.length > 0 && (
+                <span
+                  style={{
+                    fontSize: "12px",
+                    fontWeight: "700",
+                    backgroundColor: "#ff6b6b",
+                    color: "white",
+                    borderRadius: "50%",
+                    width: "24px",
+                    height: "24px",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    position: "absolute",
+                    top: "-8px",
+                    right: "-8px",
+                    boxShadow: "0 2px 4px rgba(0, 0, 0, 0.2)",
+                  }}
+                >
+                  {cart.length}
+                </span>
+              )}
+            </div>
+          </button>
+        )}
+
+        {/* Cart Modal */}
+        {showCartModal && (
+          <div
+            style={{
+              position: "fixed",
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              background: "rgba(0, 0, 0, 0.5)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              zIndex: 1000,
+            }}
+            onClick={() => setShowCartModal(false)}
+          >
+            <div
+              style={{
+                background: "#ffffff",
+                borderRadius: "12px",
+                padding: "32px",
+                maxWidth: "600px",
+                width: "90%",
+                maxHeight: "80vh",
+                overflow: "auto",
+                boxShadow: "0 20px 60px rgba(0, 0, 0, 0.15)",
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  marginBottom: "24px",
+                }}
+              >
+                <h2
+                  style={{
+                    margin: "0",
+                    fontSize: "22px",
+                    fontWeight: "800",
+                    color: "#1a365d",
+                  }}
+                >
+                  🛒 Shopping Cart
+                </h2>
+                <button
+                  onClick={() => setShowCartModal(false)}
+                  style={{
+                    background: "none",
+                    border: "none",
+                    fontSize: "24px",
+                    cursor: "pointer",
+                    color: "#64748b",
+                    padding: "0",
+                    width: "32px",
+                    height: "32px",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  ×
+                </button>
+              </div>
+
+              {cart.length === 0 ? (
+                <div
+                  style={{
+                    textAlign: "center",
+                    padding: "48px 24px",
+                    background: "#f8fafc",
+                    borderRadius: "8px",
+                    border: "1px solid #d0dce6",
+                  }}
+                >
+                  <p
+                    style={{
+                      margin: "0 0 8px 0",
+                      fontSize: "18px",
+                      fontWeight: "600",
+                      color: "#64748b",
+                    }}
+                  >
+                    Your cart is empty
+                  </p>
+                  <p
+                    style={{
+                      margin: "0",
+                      fontSize: "13px",
+                      color: "#94a3b8",
+                    }}
+                  >
+                    Browse the marketplace to add items
+                  </p>
+                </div>
+              ) : (
+                <div>
+                  {/* Cart Items Table */}
+                  <div
+                    style={{
+                      background: "#ffffff",
+                      border: "1px solid #e2e8f0",
+                      borderRadius: "10px",
+                      overflow: "hidden",
+                      marginBottom: "24px",
+                    }}
+                  >
+                    <table
+                      style={{
+                        width: "100%",
+                        borderCollapse: "collapse",
+                      }}
+                    >
+                      <thead>
+                        <tr
+                          style={{
+                            background: "#f8fafc",
+                            borderBottom: "2px solid #e2e8f0",
+                          }}
+                        >
+                          <th
+                            style={{
+                              padding: "12px 16px",
+                              textAlign: "left",
+                              fontSize: "12px",
+                              fontWeight: "700",
+                              color: "#475569",
+                              letterSpacing: "0.3px",
+                            }}
+                          >
+                            Product
+                          </th>
+                          <th
+                            style={{
+                              padding: "12px 16px",
+                              textAlign: "center",
+                              fontSize: "12px",
+                              fontWeight: "700",
+                              color: "#475569",
+                              letterSpacing: "0.3px",
+                            }}
+                          >
+                            Qty
+                          </th>
+                          <th
+                            style={{
+                              padding: "12px 16px",
+                              textAlign: "center",
+                              fontSize: "12px",
+                              fontWeight: "700",
+                              color: "#475569",
+                              letterSpacing: "0.3px",
+                            }}
+                          >
+                            Price
+                          </th>
+                          <th
+                            style={{
+                              padding: "12px 16px",
+                              textAlign: "center",
+                              fontSize: "12px",
+                              fontWeight: "700",
+                              color: "#475569",
+                              letterSpacing: "0.3px",
+                            }}
+                          >
+                            Total
+                          </th>
+                          <th
+                            style={{
+                              padding: "12px 16px",
+                              textAlign: "center",
+                              fontSize: "12px",
+                              fontWeight: "700",
+                              color: "#475569",
+                              letterSpacing: "0.3px",
+                            }}
+                          >
+                            Action
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {cart.map((item, index) => (
+                          <tr
+                            key={`${item.productId}_${item.seller}_${index}`}
+                            style={{
+                              borderBottom:
+                                index < cart.length - 1
+                                  ? "1px solid #f1f5f9"
+                                  : "none",
+                              background:
+                                index % 2 === 0 ? "#ffffff" : "#f9fafb",
+                            }}
+                          >
+                            <td
+                              style={{
+                                padding: "12px 16px",
+                                fontSize: "13px",
+                                color: "#1a365d",
+                                fontWeight: "500",
+                              }}
+                            >
+                              <div>
+                                <p
+                                  style={{
+                                    margin: "0 0 4px 0",
+                                    fontWeight: "600",
+                                  }}
+                                >
+                                  {item.name}
+                                </p>
+                                <p
+                                  style={{
+                                    margin: "0",
+                                    fontSize: "11px",
+                                    color: "#64748b",
+                                  }}
+                                >
+                                  {item.seller}
+                                </p>
+                              </div>
+                            </td>
+                            <td
+                              style={{
+                                padding: "12px 16px",
+                                textAlign: "center",
+                                fontSize: "13px",
+                                color: "#1a365d",
+                                fontWeight: "500",
+                              }}
+                            >
+                              <input
+                                type="number"
+                                min="1"
+                                value={item.quantity}
+                                onChange={(e) => {
+                                  const newQty = Math.max(
+                                    1,
+                                    parseInt(e.target.value) || 1,
+                                  );
+                                  const updatedCart = cart.map((cartItem) =>
+                                    cartItem.productId === item.productId &&
+                                    cartItem.seller === item.seller
+                                      ? {
+                                          ...cartItem,
+                                          quantity: newQty,
+                                        }
+                                      : cartItem,
+                                  );
+                                  setCart(updatedCart);
+                                  saveCartToIndexedDB(currentUser, updatedCart);
+                                }}
+                                style={{
+                                  width: "60px",
+                                  padding: "6px",
+                                  border: "1px solid #d0dce6",
+                                  borderRadius: "4px",
+                                  fontSize: "13px",
+                                  textAlign: "center",
+                                }}
+                              />
+                            </td>
+                            <td
+                              style={{
+                                padding: "12px 16px",
+                                textAlign: "center",
+                                fontSize: "13px",
+                                color: "#1a365d",
+                                fontWeight: "500",
+                              }}
+                            >
+                              {item.currency} {formatNumber(item.price)}
+                            </td>
+                            <td
+                              style={{
+                                padding: "12px 16px",
+                                textAlign: "center",
+                                fontSize: "13px",
+                                color: "#1a365d",
+                                fontWeight: "600",
+                              }}
+                            >
+                              {item.currency}{" "}
+                              {formatNumber(item.price * item.quantity)}
+                            </td>
+                            <td
+                              style={{
+                                padding: "12px 16px",
+                                textAlign: "center",
+                              }}
+                            >
+                              <button
+                                onClick={() => {
+                                  const updatedCart = cart.filter(
+                                    (cartItem, idx) =>
+                                      !(
+                                        cartItem.productId === item.productId &&
+                                        cartItem.seller === item.seller &&
+                                        idx === index
+                                      ),
+                                  );
+                                  setCart(updatedCart);
+                                  saveCartToIndexedDB(currentUser, updatedCart);
+                                }}
+                                style={{
+                                  padding: "6px 10px",
+                                  background: "#dc2626",
+                                  color: "white",
+                                  border: "none",
+                                  borderRadius: "4px",
+                                  cursor: "pointer",
+                                  fontSize: "12px",
+                                  fontWeight: "500",
+                                  transition: "all 0.25s ease",
+                                }}
+                                onMouseEnter={(e) => {
+                                  e.currentTarget.style.background = "#b91c1c";
+                                }}
+                                onMouseLeave={(e) => {
+                                  e.currentTarget.style.background = "#dc2626";
+                                }}
+                              >
+                                Remove
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Summary Section */}
+                  <div
+                    style={{
+                      background: "#f8fafc",
+                      border: "1px solid #e2e8f0",
+                      borderRadius: "8px",
+                      padding: "16px",
+                      marginBottom: "24px",
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "1fr 1fr",
+                        gap: "16px",
+                      }}
+                    >
+                      {Array.from(
+                        new Set(cart.map((item) => item.currency)),
+                      ).map((currency) => {
+                        const total = cart
+                          .filter((item) => item.currency === currency)
+                          .reduce((sum, item) => sum + item.price * item.quantity, 0);
+                        return (
+                          <div key={currency} style={{ textAlign: "center" }}>
+                            <p
+                              style={{
+                                margin: "0 0 6px 0",
+                                fontSize: "11px",
+                                color: "#64748b",
+                                fontWeight: "700",
+                                textTransform: "uppercase",
+                                letterSpacing: "0.2px",
+                              }}
+                            >
+                              Total ({currency})
+                            </p>
+                            <p
+                              style={{
+                                margin: "0",
+                                fontSize: "18px",
+                                fontWeight: "800",
+                                color: "#1a365d",
+                              }}
+                            >
+                              {currency} {formatNumber(total)}
+                            </p>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div
+                      style={{
+                        marginTop: "16px",
+                        paddingTop: "16px",
+                        borderTop: "1px solid #d0dce6",
+                        fontSize: "12px",
+                        color: "#64748b",
+                      }}
+                    >
+                      <p style={{ margin: "0 0 4px 0" }}>
+                        Total Items: <strong>{cart.length}</strong>
+                      </p>
+                      <p
+                        style={{
+                          margin: "0",
+                          fontSize: "11px",
+                          color: "#94a3b8",
+                        }}
+                      >
+                        Will be split into {new Set(cart.map((item) => item.seller)).size}{" "}
+                        order(s) by seller
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Action Buttons */}
+                  <div style={{ display: "flex", gap: "12px" }}>
+                    <button
+                      onClick={() => setShowCartModal(false)}
+                      style={{
+                        flex: 1,
+                        padding: "12px",
+                        background: "#e2e8f0",
+                        color: "#1a365d",
+                        border: "none",
+                        borderRadius: "6px",
+                        cursor: "pointer",
+                        fontWeight: "600",
+                        fontSize: "14px",
+                        transition: "all 0.25s ease",
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.background = "#cbd5e1";
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.background = "#e2e8f0";
+                      }}
+                    >
+                      Continue Shopping
+                    </button>
+                    <button
+                      onClick={checkoutCart}
+                      style={{
+                        flex: 1,
+                        padding: "12px",
+                        background: "#16a34a",
+                        color: "white",
+                        border: "none",
+                        borderRadius: "6px",
+                        cursor: "pointer",
+                        fontWeight: "600",
+                        fontSize: "14px",
+                        transition: "all 0.25s ease",
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.background = "#14931d";
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.background = "#16a34a";
+                      }}
+                    >
+                      Checkout ({new Set(cart.map((item) => item.seller)).size}{" "}
+                      order{new Set(cart.map((item) => item.seller)).size > 1 ? "s" : ""})
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </main>
     </div>
   );
