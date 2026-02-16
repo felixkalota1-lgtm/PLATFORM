@@ -4,8 +4,11 @@ import { collection, query, where, getDocs, setDoc, doc, deleteDoc } from 'fireb
 import * as XLSX from 'xlsx'
 import bcryptjs from 'bcryptjs'
 import CryptoJS from 'crypto-js'
+import jsPDF from 'jspdf'
 import Quotations from './pages/Quotations'
 import Inquiries from './pages/Inquiries'
+import Settings from './pages/Settings'
+import History from './pages/History'
 
 interface Product {
   id: string
@@ -16,6 +19,17 @@ interface Product {
   stock: string
   image?: string
   currency?: string
+}
+
+interface PDFTemplate {
+  id: string
+  name: string
+  type: 'quotation' | 'inquiry'
+  htmlContent: string
+  companyName: string
+  companyLogo?: string
+  createdAt: string
+  isDefault: boolean
 }
 
 const CURRENCY_OPTIONS = [
@@ -37,7 +51,7 @@ const STORE_NAME = 'products'
 
 const initIndexedDB = async (): Promise<IDBDatabase> => {
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, 1)
+    const request = indexedDB.open(DB_NAME, 3)
     
     request.onerror = () => reject(request.error)
     request.onsuccess = () => resolve(request.result)
@@ -49,6 +63,21 @@ const initIndexedDB = async (): Promise<IDBDatabase> => {
         store.createIndex('username', 'username', { unique: false })
         store.createIndex('name', 'name', { unique: false })
         store.createIndex('partNumber', 'partNumber', { unique: false })
+      }
+      if (!db.objectStoreNames.contains('quotations')) {
+        const quotationStore = db.createObjectStore('quotations', { keyPath: 'id' })
+        quotationStore.createIndex('username', 'username', { unique: false })
+        quotationStore.createIndex('number', 'number', { unique: false })
+      }
+      if (!db.objectStoreNames.contains('inquiries')) {
+        const inquiryStore = db.createObjectStore('inquiries', { keyPath: 'id' })
+        inquiryStore.createIndex('username', 'username', { unique: false })
+        inquiryStore.createIndex('number', 'number', { unique: false })
+      }
+      if (!db.objectStoreNames.contains('templates')) {
+        const templateStore = db.createObjectStore('templates', { keyPath: 'id' })
+        templateStore.createIndex('username', 'username', { unique: false })
+        templateStore.createIndex('type', 'type', { unique: false })
       }
     }
   })
@@ -81,9 +110,13 @@ const loadProductsFromIndexedDB = async (username: string): Promise<Product[]> =
     
     return new Promise((resolve, reject) => {
       const request = index.getAll(range)
-      request.onerror = () => reject(request.error)
+      request.onerror = () => {
+        console.error('IndexedDB getAll error:', request.error)
+        reject(request.error)
+      }
       request.onsuccess = () => {
         const products = request.result.map(({ username, ...product }) => product)
+        console.log(`Loaded ${products.length} products for user ${username}`)
         resolve(products)
       }
     })
@@ -145,6 +178,17 @@ export default function App() {
   const [partNumberFormat, setPartNumberFormat] = useState<'default' | 'dash' | 'space' | 'slash'>('default')
   const [showFormatSelector, setShowFormatSelector] = useState<string | null>(null)
   const [inactivityTimer, setInactivityTimer] = useState<ReturnType<typeof setTimeout> | null>(null)
+  const [quotations, setQuotations] = useState<Product[]>([])
+  const [inquiries, setInquiries] = useState<Product[]>([])
+  const [showQuantityEditor, setShowQuantityEditor] = useState<{ show: boolean; mode: 'quotation' | 'inquiry' }>({ show: false, mode: 'quotation' })
+  const [quantityEdits, setQuantityEdits] = useState<{ [key: string]: number }>({})
+  const [quotationMetadata, setQuotationMetadata] = useState<{ id: string; date: string; number: string }>({ id: '', date: new Date().toISOString().split('T')[0], number: 'QT-' + Date.now() })
+  const [inquiryMetadata, setInquiryMetadata] = useState<{ id: string; date: string; number: string }>({ id: '', date: new Date().toISOString().split('T')[0], number: 'INQ-' + Date.now() })
+  const [quotationTemplate, setQuotationTemplate] = useState<PDFTemplate | null>(null)
+  const [inquiryTemplate, setInquiryTemplate] = useState<PDFTemplate | null>(null)
+  const [quotationHistory, setQuotationHistory] = useState<any[]>([])
+  const [inquiryHistory, setInquiryHistory] = useState<any[]>([])
+  const [activeSubmenuTab, setActiveSubmenuTab] = useState<'current' | 'history'>('current')
   const itemsPerPage = 50
   const ENCRYPTION_KEY = 'pspm_secure_2026'
   const CACHE_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000
@@ -163,6 +207,112 @@ export default function App() {
     if (format === 'space') return clean.replace(/(\d{4})/g, '$1 ').trim()
     if (format === 'slash') return clean.replace(/(\d{4})/g, '$1/').slice(0, -1)
     return partNum
+  }
+
+  // Generate default PDF template
+  const getDefaultTemplate = (type: 'quotation' | 'inquiry'): PDFTemplate => {
+    const title = type === 'quotation' ? 'QUOTATION' : 'INQUIRY'
+    return {
+      id: `default-${type}`,
+      name: `Default ${type === 'quotation' ? 'Quotation' : 'Inquiry'} Template`,
+      type,
+      isDefault: true,
+      companyName: '[Company Name]',
+      htmlContent: `
+        <div style="font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px;">
+          <div style="border-bottom: 3px solid #5b7c99; padding-bottom: 20px; margin-bottom: 30px;">
+            <h1 style="margin: 0; color: #5b7c99; font-size: 32px; text-align: center;">${title}</h1>
+          </div>
+          <table style="width: 100%; margin-bottom: 30px; font-size: 12px;">
+            <tr>
+              <td style="width: 50%;"><strong>${type === 'quotation' ? 'Quotation' : 'Inquiry'} Number:</strong> {{NUMBER}}</td>
+              <td style="width: 50%; text-align: right;"><strong>Date:</strong> {{DATE}}</td>
+            </tr>
+            <tr>
+              <td colspan="2"><strong>Prepared by:</strong> {{USER}}</td>
+            </tr>
+          </table>
+          <table style="width: 100%; border-collapse: collapse; margin-bottom: 30px;">
+            <thead>
+              <tr style="background-color: #f0f4f8; border-bottom: 2px solid #5b7c99;">
+                <th style="padding: 12px; text-align: left; font-weight: bold; color: #1a365d;">Product Name</th>
+                <th style="padding: 12px; text-align: center; font-weight: bold; color: #1a365d;">Part Number</th>
+                <th style="padding: 12px; text-align: center; font-weight: bold; color: #1a365d;">Unit Price</th>
+                <th style="padding: 12px; text-align: center; font-weight: bold; color: #1a365d;">Quantity</th>
+                <th style="padding: 12px; text-align: right; font-weight: bold; color: #1a365d;">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {{TABLE_ROWS}}
+            </tbody>
+          </table>
+          <div style="background-color: #f0f4f8; padding: 20px; text-align: right; border-top: 2px solid #5b7c99; border-bottom: 2px solid #5b7c99; margin-bottom: 30px;">
+            <h3 style="margin: 0; color: #5b7c99;">TOTAL: {{TOTAL}}</h3>
+          </div>
+          <div style="text-align: center; color: #64748b; font-size: 11px; border-top: 1px solid #e2e8f0; padding-top: 20px;">
+            <p>Thank you for your business</p>
+          </div>
+        </div>
+      `,
+      createdAt: new Date().toISOString()
+    }
+  }
+
+  // Load or create default template
+  const loadTemplate = async (type: 'quotation' | 'inquiry') => {
+    try {
+      const database = await initIndexedDB()
+      const transaction = database.transaction(['templates'], 'readonly')
+      const store = transaction.objectStore('templates')
+      
+      return new Promise<PDFTemplate>((resolve) => {
+        const request = store.get(`default-${type}`)
+        request.onsuccess = () => {
+          if (request.result) {
+            if (type === 'quotation') setQuotationTemplate(request.result)
+            else setInquiryTemplate(request.result)
+            resolve(request.result)
+          } else {
+            const template = getDefaultTemplate(type)
+            // Save default template
+            const writeTransaction = database.transaction(['templates'], 'readwrite')
+            const writeStore = writeTransaction.objectStore('templates')
+            writeStore.put(template)
+            
+            if (type === 'quotation') setQuotationTemplate(template)
+            else setInquiryTemplate(template)
+            resolve(template)
+          }
+        }
+      })
+    } catch (error) {
+      console.error('Error loading template:', error)
+      const template = getDefaultTemplate(type)
+      if (type === 'quotation') setQuotationTemplate(template)
+      else setInquiryTemplate(template)
+      return template
+    }
+  }
+
+  // Save template to IndexedDB
+  const saveTemplate = async (template: PDFTemplate) => {
+    try {
+      const database = await initIndexedDB()
+      const transaction = database.transaction(['templates'], 'readwrite')
+      const store = transaction.objectStore('templates')
+      
+      return new Promise<void>((resolve, reject) => {
+        const request = store.put({...template, username: currentUser})
+        request.onerror = () => reject(request.error)
+        request.onsuccess = () => {
+          if (template.type === 'quotation') setQuotationTemplate(template)
+          else setInquiryTemplate(template)
+          resolve()
+        }
+      })
+    } catch (error) {
+      console.error('Error saving template:', error)
+    }
   }
 
   // Sort products based on sortBy state with direction
@@ -252,16 +402,28 @@ export default function App() {
     try {
       // Load products from IndexedDB
       const products = await loadProductsFromIndexedDB(username)
+      console.log(`Login: Loaded ${products?.length || 0} products for ${username}`)
+      
+      // Load quotation and inquiry history with username
+      const quotationHist = await loadQuotationHistory(username)
+      const inquiryHist = await loadInquiryHistory(username)
+      
+      console.log(`Login: Loaded ${quotationHist?.length || 0} quotations and ${inquiryHist?.length || 0} inquiries`)
+      
       const cachedTab = localStorage.getItem(`cache_tab_${username}`)
       return {
         products: products || [],
-        activeTab: cachedTab || 'products'
+        activeTab: cachedTab || 'products',
+        quotationHistory: quotationHist || [],
+        inquiryHistory: inquiryHist || []
       }
     } catch (error) {
       console.error('Error loading user data:', error)
       return {
         products: [],
-        activeTab: 'products'
+        activeTab: 'products',
+        quotationHistory: [],
+        inquiryHistory: []
       }
     }
   }
@@ -309,25 +471,46 @@ export default function App() {
   // Restore login session on page refresh
   useEffect(() => {
     const savedUser = localStorage.getItem('pspm_current_user')
+    const savedTab = localStorage.getItem(`cache_tab_${savedUser}`) || 'products'
     if (savedUser) {
+      // Set user and login state FIRST (before async operations)
       setCurrentUser(savedUser)
       setIsLoggedIn(true)
-      // Load user's products and set default to 'products' tab
+      
+      // Set active tab immediately from localStorage
+      setActiveSubmenu(savedTab)
+      
+      // Load user data and history (will also call setQuotationHistory and setInquiryHistory)
       loadUserDataOnLogin(savedUser).then(data => {
+        console.log(`Page restore: User ${savedUser}, Tab ${savedTab}`)
+        console.log(`SETTING STATE - data.quotationHistory:`, data.quotationHistory)
+        console.log(`SETTING STATE - data.inquiryHistory:`, data.inquiryHistory)
         setProducts(data.products)
-        // Always default to 'products' tab on page reload
-        setActiveSubmenu('products')
+        setQuotationHistory(data.quotationHistory)
+        setInquiryHistory(data.inquiryHistory)
+        console.log(`Page restore: Loaded ${data.products.length} products, ${data.quotationHistory.length} quotations, ${data.inquiryHistory.length} inquiries`)
       })
     }
   }, [])
 
-  // Optimization #2: Debounce tab writes (95% reduction)
-  // Optimization #4: Add activity listeners for session timeout
+  // Debug: Log when quotationHistory state changes
+  useEffect(() => {
+    console.log(`quotationHistory state changed:`, quotationHistory)
+  }, [quotationHistory])
+
+  // Debug: Log when inquiryHistory state changes
+  useEffect(() => {
+    console.log(`inquiryHistory state changed:`, inquiryHistory)
+  }, [inquiryHistory])
   useEffect(() => {
     if (isLoggedIn && currentUser) {
+      // Save to localStorage IMMEDIATELY for instant persistence on reload
+      localStorage.setItem(`cache_tab_${currentUser}`, activeSubmenu)
+      
+      // Still debounce Firestore write for optimization
       debounceTabWrite(() => {
         saveUserActiveTab(currentUser, activeSubmenu)
-      }, 2000) // Wait 2 seconds before saving
+      }, 2000) // Wait 2 seconds before saving to Firestore
     }
   }, [activeSubmenu, isLoggedIn, currentUser])
 
@@ -493,6 +676,415 @@ export default function App() {
     }
   }
 
+  // Save quotation to IndexedDB
+  const saveQuotationToIndexedDB = async (items: Product[], metadata?: any) => {
+    const dbInstance = await initIndexedDB()
+    const meta = metadata || quotationMetadata
+    const quotationData = {
+      id: meta.id || 'Q-' + Date.now(),
+      number: meta.number,
+      date: meta.date,
+      items: items,
+      createdAt: new Date().toISOString(),
+      username: currentUser
+    }
+    return new Promise((resolve, reject) => {
+      const transaction = dbInstance.transaction(['quotations'], 'readwrite')
+      const store = transaction.objectStore('quotations')
+      const request = store.add(quotationData)
+      request.onsuccess = () => resolve(quotationData.id)
+      request.onerror = () => reject(request.error)
+    })
+  }
+
+  // Save inquiry to IndexedDB
+  const saveInquiryToIndexedDB = async (items: Product[], metadata?: any) => {
+    const dbInstance = await initIndexedDB()
+    const meta = metadata || inquiryMetadata
+    const inquiryData = {
+      id: meta.id || 'I-' + Date.now(),
+      number: meta.number,
+      date: meta.date,
+      items: items,
+      createdAt: new Date().toISOString(),
+      username: currentUser
+    }
+    return new Promise((resolve, reject) => {
+      const transaction = dbInstance.transaction(['inquiries'], 'readwrite')
+      const store = transaction.objectStore('inquiries')
+      const request = store.add(inquiryData)
+      request.onsuccess = () => resolve(inquiryData.id)
+      request.onerror = () => reject(request.error)
+    })
+  }
+
+  // Generate PDF from template with items data
+  const generatePDFFromTemplate = async (items: Product[], template: PDFTemplate | null, type: 'quotation' | 'inquiry', metadata: any) => {
+    try {
+      const activeTemplate = template || getDefaultTemplate(type)
+      
+      // Build table rows HTML
+      const tableRows = items.map((item, index) => `
+        <tr style="border-bottom: 1px solid #e2e8f0; background-color: ${index % 2 === 0 ? '#ffffff' : '#f9fafb'};">
+          <td style="padding: 12px; text-align: left;">${item.name}</td>
+          <td style="padding: 12px; text-align: center;">${item.partNumber}</td>
+          <td style="padding: 12px; text-align: center;">${item.currency || 'USD'} ${item.price.toFixed(2)}</td>
+          <td style="padding: 12px; text-align: center;">${item.qty}</td>
+          <td style="padding: 12px; text-align: right;">${item.currency || 'USD'} ${(item.price * item.qty).toFixed(2)}</td>
+        </tr>
+      `).join('')
+      
+      const total = items.reduce((sum, item) => sum + (item.price * item.qty), 0)
+      const totalFormatted = `${items[0]?.currency || 'USD'} ${total.toFixed(2)}`
+      
+      // Replace template placeholders
+      let htmlContent = activeTemplate.htmlContent
+        .replace('{{NUMBER}}', metadata.number)
+        .replace('{{DATE}}', metadata.date)
+        .replace('{{USER}}', currentUser)
+        .replace('{{TABLE_ROWS}}', tableRows)
+        .replace('{{TOTAL}}', totalFormatted)
+        .replace('[Company Name]', activeTemplate.companyName)
+      
+      // Create a temporary container to render HTML
+      const element = document.createElement('div')
+      element.innerHTML = htmlContent
+      element.style.display = 'none'
+      document.body.appendChild(element)
+      
+      // Wait a bit for rendering
+      await new Promise(resolve => setTimeout(resolve, 500))
+      
+      const doc = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'a4'
+      })
+      
+      const width = doc.internal.pageSize.getWidth()
+      const height = doc.internal.pageSize.getHeight()
+      const margin = 10
+      
+      // Use HTML method to render
+      await doc.html(element, {
+        x: margin,
+        y: margin,
+        width: width - (margin * 2),
+        margin: [margin, margin, margin, margin],
+        autoPaging: 'text',
+        html2canvas: {scale: 2}
+      })
+      
+      // Clean up
+      document.body.removeChild(element)
+      
+      // Save to IndexedDB
+      if (type === 'quotation') {
+        await saveQuotationToIndexedDB(items, metadata)
+      } else {
+        await saveInquiryToIndexedDB(items, metadata)
+      }
+      
+      // Download PDF
+      const fileName = type === 'quotation' ? `Quotation_${metadata.number}.pdf` : `Inquiry_${metadata.number}.pdf`
+      doc.save(fileName)
+      console.log(`${type === 'quotation' ? 'Quotation' : 'Inquiry'} PDF generated successfully`)
+      
+      return doc.output('datauristring')
+    } catch (error) {
+      console.error(`Error generating ${type} PDF:`, error)
+      alert(`Error generating PDF: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    }
+  }
+
+  // Generate new quotation metadata
+  const generateQuotationMetadata = () => {
+    const newMetadata = {
+      id: 'Q-' + Date.now(),
+      date: new Date().toISOString().split('T')[0],
+      number: 'QT-' + Date.now()
+    }
+    setQuotationMetadata(newMetadata)
+    return newMetadata
+  }
+
+  // Generate new inquiry metadata
+  const generateInquiryMetadata = () => {
+    const newMetadata = {
+      id: 'I-' + Date.now(),
+      date: new Date().toISOString().split('T')[0],
+      number: 'INQ-' + Date.now()
+    }
+    setInquiryMetadata(newMetadata)
+    return newMetadata
+  }
+
+  // Load quotation history from IndexedDB
+  const loadQuotationHistory = async (username?: string): Promise<any[]> => {
+    try {
+      const user = username || currentUser
+      console.log(`loadQuotationHistory called with username="${username}", using user="${user}"`)
+      const dbInstance = await initIndexedDB()
+      return new Promise((resolve, reject) => {
+        const transaction = dbInstance.transaction(['quotations'], 'readonly')
+        const store = transaction.objectStore('quotations')
+        const index = store.index('username')
+        const request = index.getAll(user)
+        request.onsuccess = () => {
+          console.log(`IndexedDB query for quotations with user="${user}" returned ${request.result.length} results`)
+          const results = request.result.map(q => ({
+            id: q.id,
+            number: q.number,
+            date: q.date,
+            items: q.items,
+            createdAt: q.createdAt
+          }))
+          resolve(results.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()))
+        }
+        request.onerror = () => {
+          console.error(`IndexedDB query failed for quotations with user="${user}":`, request.error)
+          reject(request.error)
+        }
+      })
+    } catch (error) {
+      console.error('Error loading quotation history:', error)
+      return []
+    }
+  }
+
+  // Load inquiry history from IndexedDB
+  const loadInquiryHistory = async (username?: string): Promise<any[]> => {
+    try {
+      const user = username || currentUser
+      console.log(`loadInquiryHistory called with username="${username}", using user="${user}"`)
+      const dbInstance = await initIndexedDB()
+      return new Promise((resolve, reject) => {
+        const transaction = dbInstance.transaction(['inquiries'], 'readonly')
+        const store = transaction.objectStore('inquiries')
+        const index = store.index('username')
+        const request = index.getAll(user)
+        request.onsuccess = () => {
+          console.log(`IndexedDB query for inquiries with user="${user}" returned ${request.result.length} results`)
+          const results = request.result.map(i => ({
+            id: i.id,
+            number: i.number,
+            date: i.date,
+            items: i.items,
+            createdAt: i.createdAt
+          }))
+          resolve(results.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()))
+        }
+        request.onerror = () => {
+          console.error(`IndexedDB query failed for inquiries with user="${user}":`, request.error)
+          reject(request.error)
+        }
+      })
+    } catch (error) {
+      console.error('Error loading inquiry history:', error)
+      return []
+    }
+  }
+
+  // Generate PDF for quotation
+  const generateQuotationPDF = async (items: Product[]) => {
+    try {
+      if (!items || items.length === 0) {
+        console.warn('No items to generate quotation PDF')
+        alert('No quotation items to generate PDF from')
+        return
+      }
+
+      const doc = new jsPDF()
+      const pageHeight = doc.internal.pageSize.getHeight()
+      const pageWidth = doc.internal.pageSize.getWidth()
+      let yPosition = 15
+
+      // Header
+      doc.setFontSize(20)
+      doc.setTextColor(91, 124, 153)
+      doc.text('QUOTATION', pageWidth / 2, yPosition, { align: 'center' })
+      
+      yPosition += 10
+      doc.setFontSize(10)
+      doc.setTextColor(50, 50, 50)
+      doc.text(`Quotation Number: ${quotationMetadata.number}`, 15, yPosition)
+      yPosition += 6
+      doc.text(`Date: ${quotationMetadata.date}`, 15, yPosition)
+      yPosition += 6
+      doc.text(`Prepared by: ${currentUser}`, 15, yPosition)
+      yPosition += 12
+
+      // Table headers
+      const headers = ['Product Name', 'Part Number', 'Unit Price', 'Quantity', 'Total']
+      const columnWidths = [60, 40, 30, 25, 35]
+      const startX = 15
+
+      doc.setFillColor(240, 250, 255)
+      doc.setFontSize(10)
+      doc.setFont('helvetica', 'bold')
+      
+      let currentX = startX
+      headers.forEach((header, index) => {
+        doc.text(header, currentX, yPosition, { maxWidth: columnWidths[index] })
+        currentX += columnWidths[index]
+      })
+      
+      yPosition += 7
+      doc.setDrawColor(100)
+      doc.line(startX, yPosition, pageWidth - 15, yPosition)
+      yPosition += 7
+
+      // Table data
+      doc.setFont('helvetica', 'normal')
+      doc.setFontSize(9)
+      doc.setTextColor(0, 0, 0)
+
+      items.forEach((item) => {
+        if (yPosition > pageHeight - 20) {
+          doc.addPage()
+          yPosition = 15
+        }
+
+        const lineData = [
+          item.name,
+          item.partNumber,
+          `${item.currency || 'USD'} ${item.price.toFixed(2)}`,
+          item.qty.toString(),
+          `${item.currency || 'USD'} ${(item.price * item.qty).toFixed(2)}`
+        ]
+
+        currentX = startX
+        lineData.forEach((data, index) => {
+          doc.text(data, currentX, yPosition, { maxWidth: columnWidths[index] })
+          currentX += columnWidths[index]
+        })
+        yPosition += 6
+      })
+
+      yPosition += 5
+      doc.setDrawColor(100)
+      doc.line(startX, yPosition, pageWidth - 15, yPosition)
+      yPosition += 8
+
+      // Total
+      const total = items.reduce((sum, item) => sum + (item.price * item.qty), 0)
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(11)
+      doc.text(`TOTAL: ${items[0]?.currency || 'USD'} ${total.toFixed(2)}`, pageWidth - 15, yPosition, { align: 'right' })
+
+      doc.save(`Quotation_${quotationMetadata.number}.pdf`)
+      console.log('Quotation PDF generated successfully')
+    } catch (error) {
+      console.error('Error generating quotation PDF:', error)
+      alert('Error generating PDF: ' + (error instanceof Error ? error.message : 'Unknown error'))
+    }
+  }
+
+  // Generate PDF for inquiry
+  const generateInquiryPDF = async (items: Product[]) => {
+    try {
+      if (!items || items.length === 0) {
+        console.warn('No items to generate inquiry PDF')
+        alert('No inquiry items to generate PDF from')
+        return
+      }
+
+      const doc = new jsPDF()
+      const pageHeight = doc.internal.pageSize.getHeight()
+      const pageWidth = doc.internal.pageSize.getWidth()
+      let yPosition = 15
+
+      // Header
+      doc.setFontSize(20)
+      doc.setTextColor(91, 124, 153)
+      doc.text('INQUIRY', pageWidth / 2, yPosition, { align: 'center' })
+      
+      yPosition += 10
+      doc.setFontSize(10)
+      doc.setTextColor(50, 50, 50)
+      doc.text(`Inquiry Number: ${inquiryMetadata.number}`, 15, yPosition)
+      yPosition += 6
+      doc.text(`Date: ${inquiryMetadata.date}`, 15, yPosition)
+      yPosition += 6
+      doc.text(`Prepared by: ${currentUser}`, 15, yPosition)
+      yPosition += 12
+
+      // Table headers
+      const headers = ['Product Name', 'Part Number', 'Unit Price', 'Quantity', 'Total']
+      const columnWidths = [60, 40, 30, 25, 35]
+      const startX = 15
+
+      doc.setFillColor(240, 250, 255)
+      doc.setFontSize(10)
+      doc.setFont('helvetica', 'bold')
+      
+      let currentX = startX
+      headers.forEach((header, index) => {
+        doc.text(header, currentX, yPosition, { maxWidth: columnWidths[index] })
+        currentX += columnWidths[index]
+      })
+      
+      yPosition += 7
+      doc.setDrawColor(100)
+      doc.line(startX, yPosition, pageWidth - 15, yPosition)
+      yPosition += 7
+
+      // Table data
+      doc.setFont('helvetica', 'normal')
+      doc.setFontSize(9)
+      doc.setTextColor(0, 0, 0)
+
+      items.forEach((item) => {
+        if (yPosition > pageHeight - 20) {
+          doc.addPage()
+          yPosition = 15
+        }
+
+        const lineData = [
+          item.name,
+          item.partNumber,
+          `${item.currency || 'USD'} ${item.price.toFixed(2)}`,
+          item.qty.toString(),
+          `${item.currency || 'USD'} ${(item.price * item.qty).toFixed(2)}`
+        ]
+
+        currentX = startX
+        lineData.forEach((data, index) => {
+          doc.text(data, currentX, yPosition, { maxWidth: columnWidths[index] })
+          currentX += columnWidths[index]
+        })
+        yPosition += 6
+      })
+
+      yPosition += 5
+      doc.setDrawColor(100)
+      doc.line(startX, yPosition, pageWidth - 15, yPosition)
+      yPosition += 8
+
+      // Total
+      const total = items.reduce((sum, item) => sum + (item.price * item.qty), 0)
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(11)
+      doc.text(`TOTAL: ${items[0]?.currency || 'USD'} ${total.toFixed(2)}`, pageWidth - 15, yPosition, { align: 'right' })
+
+      doc.save(`Inquiry_${inquiryMetadata.number}.pdf`)
+      console.log('Inquiry PDF generated successfully')
+    } catch (error) {
+      console.error('Error generating inquiry PDF:', error)
+      alert('Error generating PDF: ' + (error instanceof Error ? error.message : 'Unknown error'))
+    }
+  }
+
+  // Generate email link for quotation/inquiry
+  const generateEmailLink = (type: 'quotation' | 'inquiry', items: Product[]) => {
+    const fileName = type === 'quotation' ? `Quotation_${quotationMetadata.number}` : `Inquiry_${inquiryMetadata.number}`
+    const subject = `${type === 'quotation' ? 'Quotation' : 'Inquiry'} - ${fileName}`
+    const total = items.reduce((sum, item) => sum + (item.price * item.qty), 0)
+    const itemsList = items.map(item => `${item.name} (${item.partNumber}): ${item.qty} @ ${item.currency || 'USD'} ${item.price.toFixed(2)}`).join('%0D%0A')
+    const body = `Dear,${''  }%0D%0A%0D%0A${type === 'quotation' ? 'Please find attached our quotation' : 'Please find attached our inquiry'}:%0D%0A%0D%0A${itemsList}%0D%0A%0D%0ATotal: ${items[0]?.currency || 'USD'} ${total.toFixed(2)}%0D%0A%0D%0ABest regards,%0D%0A${currentUser}`
+    return `mailto:?subject=${subject}&body=${body}`
+  }
+
   // Sign up handler
   const handleSignup = async () => {
     if (!signupForm.username || !signupForm.email || !signupForm.password || !signupForm.confirmPassword) {
@@ -617,11 +1209,13 @@ export default function App() {
         cacheUserData(user.username, user.email)
       }
 
-      // Single batch load (products + settings from IndexedDB)
-      const { products: userProducts, activeTab: userActiveTab } = await loadUserDataOnLogin(user.username)
+      // Single batch load (products + history from IndexedDB)
+      const { products: userProducts, activeTab: userActiveTab, quotationHistory: userQuotationHistory, inquiryHistory: userInquiryHistory } = await loadUserDataOnLogin(user.username)
       
       setProducts(userProducts)
       setActiveSubmenu(userActiveTab)
+      setQuotationHistory(userQuotationHistory)
+      setInquiryHistory(userInquiryHistory)
       setCurrentUser(user.username)
       localStorage.setItem('pspm_current_user', user.username)
       setIsLoggedIn(true)
@@ -1359,10 +1953,39 @@ export default function App() {
           >
             Inquiries
           </button>
+
+          <button
+            onClick={() => setActiveSubmenu('settings')}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              borderBottom: activeSubmenu === 'settings' ? '3px solid #5b7c99' : '2px solid transparent',
+              padding: '18px 22px',
+              cursor: 'pointer',
+              color: activeSubmenu === 'settings' ? '#5b7c99' : '#64748b',
+              fontWeight: activeSubmenu === 'settings' ? '700' : '600',
+              fontSize: '13px',
+              transition: 'all 0.25s ease',
+              textTransform: 'uppercase',
+              letterSpacing: '0.3px'
+            }}
+            onMouseEnter={(e) => {
+              if (activeSubmenu !== 'settings') {
+                e.currentTarget.style.color = '#5b7c99'
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (activeSubmenu !== 'settings') {
+                e.currentTarget.style.color = '#64748b'
+              }
+            }}
+          >
+            Settings
+          </button>
         </div>
 
         {/* Content Area */}
-        <div style={{ flex: 1, padding: '32px', overflow: 'auto' }}>
+        <div style={{ flex: 1, padding: '32px', overflow: 'auto', display: 'flex', flexDirection: 'column' }}>
           {activeSubmenu === 'products' && (
             <div>
               <div style={{ marginBottom: '28px' }}>
@@ -1756,13 +2379,148 @@ export default function App() {
                     </div>
                   )}
 
-                  {/* Bulk Delete Button */}
-                  {selectedProducts.size > 0 && !confirmDelete.show && (
-                    <div style={{ padding: '16px', background: '#fee2e2', borderTop: '1px solid #fca5a5', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderRadius: '8px' }}>
-                      <span style={{ color: '#dc2626', fontSize: '13px', fontWeight: '500' }}>{selectedProducts.size} product(s) selected</span>
+                  {/* Quantity Editor Modal */}
+                  {showQuantityEditor.show && selectedProducts.size > 0 && (
+                    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1001 }}>
+                      <div style={{ background: 'white', borderRadius: '12px', boxShadow: '0 12px 48px rgba(0,0,0,0.15)', maxWidth: '600px', width: '90%', maxHeight: '80vh', overflow: 'auto' }}>
+                        <div style={{ padding: '24px 32px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <h2 style={{ margin: 0, fontSize: '18px', fontWeight: '700', color: '#1a365d' }}>
+                            {showQuantityEditor.mode === 'quotation' ? 'Adjust Quotation Quantities' : 'Adjust Inquiry Quantities'}
+                          </h2>
+                          <button
+                            onClick={() => setShowQuantityEditor({ show: false, mode: 'quotation' })}
+                            style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: '#64748b', padding: '0', width: '24px', height: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                          >
+                            ×
+                          </button>
+                        </div>
+                        <div style={{ padding: '24px 32px' }}>
+                          {products.filter(p => selectedProducts.has(p.id)).map((product) => (
+                            <div key={product.id} style={{ marginBottom: '20px', padding: '16px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '12px' }}>
+                                <div>
+                                  <p style={{ margin: '0 0 4px 0', fontSize: '14px', fontWeight: '600', color: '#1a365d' }}>{product.name}</p>
+                                  <p style={{ margin: '0', fontSize: '12px', color: '#64748b' }}>Part: {product.partNumber}</p>
+                                  <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: '#64748b' }}>Price: {product.currency || 'USD'} {product.price.toFixed(2)}</p>
+                                </div>
+                                <div style={{ textAlign: 'right' }}>
+                                  <p style={{ margin: '0 0 8px 0', fontSize: '12px', color: '#64748b', fontWeight: '500' }}>Quantity</p>
+                                  <input
+                                    type="number"
+                                    min="1"
+                                    value={quantityEdits[product.id] || product.qty}
+                                    onChange={(e) => setQuantityEdits({ ...quantityEdits, [product.id]: parseInt(e.target.value) || 1 })}
+                                    style={{ width: '80px', padding: '8px 12px', border: '1px solid #d0dce6', borderRadius: '6px', fontSize: '14px', fontWeight: '600', textAlign: 'center' }}
+                                  />
+                                  <p style={{ margin: '8px 0 0 0', fontSize: '12px', color: '#5b7c99', fontWeight: '600' }}>Total: {product.currency || 'USD'} {(product.price * (quantityEdits[product.id] || product.qty)).toFixed(2)}</p>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                        <div style={{ padding: '16px 32px', borderTop: '1px solid #e2e8f0', display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+                          <button
+                            onClick={() => setShowQuantityEditor({ show: false, mode: 'quotation' })}
+                            style={{ padding: '10px 24px', background: '#e2e8f0', color: '#1a365d', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: '600' }}
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            onClick={async () => {
+                              const selectedItems = products.filter(p => selectedProducts.has(p.id)).map(p => ({
+                                ...p,
+                                qty: quantityEdits[p.id] || p.qty
+                              }))
+                              try {
+                                if (showQuantityEditor.mode === 'quotation') {
+                                  const newMeta = generateQuotationMetadata()
+                                  setQuotations(selectedItems)
+                                  await saveQuotationToIndexedDB(selectedItems, newMeta)
+                                  const newHistory = await loadQuotationHistory()
+                                  setQuotationHistory(newHistory)
+                                } else {
+                                  const newMeta = generateInquiryMetadata()
+                                  setInquiries(selectedItems)
+                                  await saveInquiryToIndexedDB(selectedItems, newMeta)
+                                  const newHistory = await loadInquiryHistory()
+                                  setInquiryHistory(newHistory)
+                                }
+                              } catch (error) {
+                                console.error('Error saving to IndexedDB:', error)
+                                alert('Error saving document: ' + (error instanceof Error ? error.message : 'Unknown error'))
+                              }
+                              setSelectedProducts(new Set())
+                              setShowQuantityEditor({ show: false, mode: 'quotation' })
+                              setActiveSubmenu(showQuantityEditor.mode === 'quotation' ? 'quotations' : 'inquiries')
+                            }}
+                            style={{ padding: '10px 24px', background: showQuantityEditor.mode === 'quotation' ? '#5b7c99' : '#64748b', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: '600' }}
+                          >
+                            Confirm & Add
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Floating Action Bar for Quotations & Inquiries */}
+                  {selectedProducts.size > 0 && !confirmDelete.show && !showQuantityEditor.show && (
+                    <div style={{ position: 'fixed', bottom: '32px', left: '50%', transform: 'translateX(-50%)', background: 'white', border: '1px solid #d0dce6', borderRadius: '12px', padding: '16px 24px', boxShadow: '0 8px 24px rgba(0, 0, 0, 0.12)', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '16px', zIndex: 1000 }}>
+                      <span style={{ fontSize: '13px', fontWeight: '600', color: '#5b7c99' }}>{selectedProducts.size} product(s) selected</span>
+                      <button
+                        onClick={() => {
+                          const selectedItems = products.filter(p => selectedProducts.has(p.id))
+                          const edits: { [key: string]: number } = {}
+                          selectedItems.forEach(item => {
+                            edits[item.id] = item.qty
+                          })
+                          setQuantityEdits(edits)
+                          setShowQuantityEditor({ show: true, mode: 'quotation' })
+                        }}
+                        style={{ padding: '10px 20px', background: '#5b7c99', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: '600', transition: 'all 0.25s ease' }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.background = '#4a6fa5'
+                          e.currentTarget.style.transform = 'translateY(-2px)'
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background = '#5b7c99'
+                          e.currentTarget.style.transform = 'translateY(0)'
+                        }}
+                      >
+                        Add to Quotation
+                      </button>
+                      <button
+                        onClick={() => {
+                          const selectedItems = products.filter(p => selectedProducts.has(p.id))
+                          const edits: { [key: string]: number } = {}
+                          selectedItems.forEach(item => {
+                            edits[item.id] = item.qty
+                          })
+                          setQuantityEdits(edits)
+                          setShowQuantityEditor({ show: true, mode: 'inquiry' })
+                        }}
+                        style={{ padding: '10px 20px', background: '#64748b', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: '600', transition: 'all 0.25s ease' }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.background = '#475569'
+                          e.currentTarget.style.transform = 'translateY(-2px)'
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background = '#64748b'
+                          e.currentTarget.style.transform = 'translateY(0)'
+                        }}
+                      >
+                        Add to Inquiry
+                      </button>
                       <button
                         onClick={() => handleDeleteProducts(Array.from(selectedProducts))}
-                        style={{ padding: '6px 16px', background: '#dc2626', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '13px', fontWeight: '500' }}
+                        style={{ padding: '10px 20px', background: '#dc2626', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: '600', transition: 'all 0.25s ease' }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.background = '#b91c1c'
+                          e.currentTarget.style.transform = 'translateY(-2px)'
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background = '#dc2626'
+                          e.currentTarget.style.transform = 'translateY(0)'
+                        }}
                       >
                         Delete Selected
                       </button>
@@ -1774,11 +2532,78 @@ export default function App() {
           )}
 
           {activeSubmenu === 'quotations' && (
-            <Quotations />
+            <Quotations 
+              items={quotations} 
+              history={quotationHistory}
+              onGeneratePDF={() => {
+                console.log('Generating quotation PDF...')
+                const newMeta = generateQuotationMetadata()
+                generateQuotationPDF(quotations).catch(err => console.error('PDF generation error:', err))
+              }}
+              onSendEmail={async () => {
+                console.log('Sending quotation via email...')
+                try {
+                  const newMeta = generateQuotationMetadata()
+                  // Save to history first
+                  await saveQuotationToIndexedDB(quotations, newMeta)
+                  const newHistory = await loadQuotationHistory(currentUser)
+                  setQuotationHistory(newHistory)
+                  // Generate PDF
+                  await generateQuotationPDF(quotations)
+                  // Then open email with content
+                  const link = generateEmailLink('quotation', quotations)
+                  console.log('Email link:', link)
+                  window.open(link)
+                  alert('Quotation saved to History!\n\nPDF generated and saved to your Downloads folder.\n\nTo attach it to your email:\n1. The PDF file is saved as: Quotation_' + newMeta.number + '.pdf\n2. In your email compose window, attach the file from Downloads\n3. Complete and send the email')
+                } catch (error) {
+                  console.error('Error:', error)
+                  alert('Error: ' + (error instanceof Error ? error.message : 'Unknown error'))
+                }
+              }}
+              onDeleteHistory={(id) => setQuotationHistory(quotationHistory.filter(q => q.id !== id))}
+            />
           )}
 
           {activeSubmenu === 'inquiries' && (
-            <Inquiries />
+            <Inquiries 
+              items={inquiries}
+              history={inquiryHistory}
+              onGeneratePDF={() => {
+                console.log('Generating inquiry PDF...')
+                const newMeta = generateInquiryMetadata()
+                generateInquiryPDF(inquiries).catch(err => console.error('PDF generation error:', err))
+              }}
+              onSendEmail={async () => {
+                console.log('Sending inquiry via email...')
+                try {
+                  const newMeta = generateInquiryMetadata()
+                  // Save to history first
+                  await saveInquiryToIndexedDB(inquiries, newMeta)
+                  const newHistory = await loadInquiryHistory(currentUser)
+                  setInquiryHistory(newHistory)
+                  // Generate PDF
+                  await generateInquiryPDF(inquiries)
+                  // Then open email with content
+                  const link = generateEmailLink('inquiry', inquiries)
+                  console.log('Email link:', link)
+                  window.open(link)
+                  alert('Inquiry saved to History!\n\nPDF generated and saved to your Downloads folder.\n\nTo attach it to your email:\n1. The PDF file is saved as: Inquiry_' + newMeta.number + '.pdf\n2. In your email compose window, attach the file from Downloads\n3. Complete and send the email')
+                } catch (error) {
+                  console.error('Error:', error)
+                  alert('Error: ' + (error instanceof Error ? error.message : 'Unknown error'))
+                }
+              }}
+              onDeleteHistory={(id) => setInquiryHistory(inquiryHistory.filter(i => i.id !== id))}
+            />
+          )}
+
+          {activeSubmenu === 'settings' && (
+            <Settings
+              quotationTemplate={quotationTemplate}
+              inquiryTemplate={inquiryTemplate}
+              onSaveTemplate={saveTemplate}
+              onLoadTemplate={loadTemplate}
+            />
           )}
 
           {activeSubmenu === 'upload' && (
