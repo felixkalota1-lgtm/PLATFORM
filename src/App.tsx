@@ -45,6 +45,22 @@ interface PDFTemplate {
   isDefault: boolean;
 }
 
+interface Order {
+  id: string;
+  marketplaceItemId: string;
+  itemName: string;
+  itemPrice: number;
+  itemCurrency: string;
+  quantity: number;
+  totalPrice: number;
+  buyer: string;
+  seller: string;
+  status: "pending" | "accepted" | "shipped" | "delivered" | "cancelled";
+  createdAt: number;
+  updatedAt: number;
+  buyerNotes?: string;
+}
+
 const CURRENCY_OPTIONS = [
   { code: "USD", symbol: "$", name: "US Dollar" },
   { code: "ZWK", symbol: "ZK", name: "Zambian Kwacha" },
@@ -189,7 +205,7 @@ export default function App() {
     "marketplace" | "warehouse" | "allDocuments"
   >("warehouse");
   const [activeWarehouseTab, setActiveWarehouseTab] = useState<
-    "products" | "upload" | "quotations" | "inquiries" | "settings"
+    "products" | "upload" | "quotations" | "inquiries" | "orders" | "settings"
   >("products");
   const [activeMarketplaceTab, setActiveMarketplaceTab] = useState<
     "all" | "myListings"
@@ -251,6 +267,14 @@ export default function App() {
   > | null>(null);
   const [quotations, setQuotations] = useState<Product[]>([]);
   const [inquiries, setInquiries] = useState<Product[]>([]);
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [hasLoadedOrders, setHasLoadedOrders] = useState(false);
+  const [showPlaceOrderDialog, setShowPlaceOrderDialog] = useState(false);
+  const [selectedOrderItem, setSelectedOrderItem] = useState<Product | null>(
+    null,
+  );
+  const [orderQuantity, setOrderQuantity] = useState(1);
+  const [orderNotes, setOrderNotes] = useState("");
   const [showQuantityEditor, setShowQuantityEditor] = useState<{
     show: boolean;
     mode: "quotation" | "inquiry";
@@ -1223,6 +1247,123 @@ export default function App() {
       setUploadMessage({
         type: "error",
         text: "Error removing items from marketplace",
+      });
+    }
+  };
+
+  // Place order for marketplace item (buyer initiates purchase)
+  const placeOrder = async (
+    marketplaceItem: Product,
+    quantity: number,
+    buyerNotes?: string
+  ) => {
+    try {
+      if (!db || !currentUser) {
+        setUploadMessage({
+          type: "error",
+          text: "Cannot place order - not logged in",
+        });
+        return;
+      }
+
+      if (quantity <= 0 || quantity > (marketplaceItem.qty || 0)) {
+        setUploadMessage({
+          type: "error",
+          text: "Invalid quantity selected",
+        });
+        return;
+      }
+
+      const orderId = `ORD-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      const now = Date.now();
+      const newOrder: Order = {
+        id: orderId,
+        marketplaceItemId: marketplaceItem.id,
+        itemName: marketplaceItem.name,
+        itemPrice: marketplaceItem.price || 0,
+        itemCurrency: marketplaceItem.currency || "USD",
+        quantity,
+        totalPrice: (marketplaceItem.price || 0) * quantity,
+        buyer: currentUser,
+        seller: (marketplaceItem.seller as string) || "Unknown",
+        status: "pending",
+        createdAt: now,
+        updatedAt: now,
+        buyerNotes,
+      };
+
+      // Save to Firestore
+      await setDoc(doc(db, "orders", orderId), newOrder);
+
+      setUploadMessage({
+        type: "success",
+        text: `Order placed successfully! Order ID: ${orderId}`,
+      });
+      setTimeout(() => setUploadMessage(null), 4000);
+    } catch (error) {
+      console.error("Error placing order:", error);
+      setUploadMessage({
+        type: "error",
+        text: "Error placing order",
+      });
+    }
+  };
+
+  // Load orders where user is the seller
+  const loadUserOrders = async () => {
+    try {
+      if (!db || !currentUser) return;
+
+      const ordersRef = collection(db, "orders");
+      const q = query(ordersRef, where("seller", "==", currentUser));
+      const snapshot = await getDocs(q);
+
+      const loadedOrders = snapshot.docs.map((doc) =>
+        doc.data() as Order
+      );
+      setOrders(loadedOrders);
+      setHasLoadedOrders(true);
+    } catch (error) {
+      console.error("Error loading orders:", error);
+    }
+  };
+
+  // Update order status
+  const updateOrderStatus = async (
+    orderId: string,
+    newStatus: Order["status"]
+  ) => {
+    try {
+      if (!db) return;
+
+      await setDoc(
+        doc(db, "orders", orderId),
+        {
+          status: newStatus,
+          updatedAt: Date.now(),
+        } as Partial<Order>,
+        { merge: true }
+      );
+
+      // Update local state
+      setOrders((prev) =>
+        prev.map((order) =>
+          order.id === orderId
+            ? { ...order, status: newStatus, updatedAt: Date.now() }
+            : order
+        )
+      );
+
+      setUploadMessage({
+        type: "success",
+        text: `Order status updated to ${newStatus}`,
+      });
+      setTimeout(() => setUploadMessage(null), 3000);
+    } catch (error) {
+      console.error("Error updating order:", error);
+      setUploadMessage({
+        type: "error",
+        text: "Error updating order status",
       });
     }
   };
@@ -2861,6 +3002,44 @@ export default function App() {
             </button>
 
             <button
+              onClick={() => {
+                if (!hasLoadedOrders) {
+                  loadUserOrders();
+                }
+                setActiveWarehouseTab("orders");
+              }}
+              style={{
+                background: "transparent",
+                border: "none",
+                borderBottom:
+                  activeWarehouseTab === "orders"
+                    ? "3px solid #5b7c99"
+                    : "2px solid transparent",
+                padding: "18px 22px",
+                cursor: "pointer",
+                color:
+                  activeWarehouseTab === "orders" ? "#5b7c99" : "#64748b",
+                fontWeight: activeWarehouseTab === "orders" ? "700" : "600",
+                fontSize: "13px",
+                transition: "all 0.25s ease",
+                textTransform: "uppercase",
+                letterSpacing: "0.3px",
+              }}
+              onMouseEnter={(e) => {
+                if (activeWarehouseTab !== "orders") {
+                  e.currentTarget.style.color = "#5b7c99";
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (activeWarehouseTab !== "orders") {
+                  e.currentTarget.style.color = "#64748b";
+                }
+              }}
+            >
+              Orders
+            </button>
+
+            <button
               onClick={() => setActiveWarehouseTab("settings")}
               style={{
                 background: "transparent",
@@ -3151,12 +3330,15 @@ export default function App() {
                                 </p>
                                 <button
                                   onClick={() => {
-                                    // Will implement: add to quotation/inquiry from marketplace
+                                    setSelectedOrderItem(item);
+                                    setOrderQuantity(1);
+                                    setOrderNotes("");
+                                    setShowPlaceOrderDialog(true);
                                   }}
                                   style={{
                                     width: "100%",
                                     padding: "8px 12px",
-                                    background: "#5b7c99",
+                                    background: "#16a34a",
                                     color: "white",
                                     border: "none",
                                     borderRadius: "6px",
@@ -3167,14 +3349,14 @@ export default function App() {
                                   }}
                                   onMouseEnter={(e) => {
                                     e.currentTarget.style.background =
-                                      "#4a6fa5";
+                                      "#14931d";
                                   }}
                                   onMouseLeave={(e) => {
                                     e.currentTarget.style.background =
-                                      "#5b7c99";
+                                      "#16a34a";
                                   }}
                                 >
-                                  View Details
+                                  Place Order
                                 </button>
                               </div>
                             </div>
@@ -3478,6 +3660,209 @@ export default function App() {
                         ))}
                     </div>
                   )}
+                </div>
+              )}
+
+              {/* Place Order Dialog */}
+              {showPlaceOrderDialog && selectedOrderItem && (
+                <div
+                  style={{
+                    position: "fixed",
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    background: "rgba(0, 0, 0, 0.5)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    zIndex: 1000,
+                  }}
+                  onClick={() => setShowPlaceOrderDialog(false)}
+                >
+                  <div
+                    style={{
+                      background: "#ffffff",
+                      borderRadius: "12px",
+                      padding: "32px",
+                      maxWidth: "500px",
+                      width: "90%",
+                      boxShadow: "0 20px 60px rgba(0, 0, 0, 0.15)",
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <h2
+                      style={{
+                        margin: "0 0 24px 0",
+                        fontSize: "20px",
+                        fontWeight: "800",
+                        color: "#1a365d",
+                      }}
+                    >
+                      Place Order
+                    </h2>
+
+                    <div
+                      style={{
+                        background: "#f8fafc",
+                        padding: "16px",
+                        borderRadius: "8px",
+                        marginBottom: "24px",
+                      }}
+                    >
+                      <p style={{ margin: "0 0 8px 0", fontWeight: "600", color: "#1a365d" }}>
+                        {selectedOrderItem.name}
+                      </p>
+                      <p style={{ margin: "0", fontSize: "14px", color: "#64748b" }}>
+                        Part: {selectedOrderItem.partNumber}
+                      </p>
+                      <p style={{ margin: "8px 0 0 0", fontSize: "14px", color: "#5b7c99", fontWeight: "600" }}>
+                        Price: {selectedOrderItem.currency || "USD"}{" "}
+                        {formatNumber(selectedOrderItem.price || 0)} per unit
+                      </p>
+                    </div>
+
+                    <div style={{ marginBottom: "24px" }}>
+                      <label
+                        style={{
+                          display: "block",
+                          marginBottom: "8px",
+                          fontWeight: "600",
+                          color: "#1a365d",
+                          fontSize: "14px",
+                        }}
+                      >
+                        Quantity (Max: {selectedOrderItem.qty || 0})
+                      </label>
+                      <input
+                        type="number"
+                        min="1"
+                        max={selectedOrderItem.qty || 0}
+                        value={orderQuantity}
+                        onChange={(e) =>
+                          setOrderQuantity(
+                            Math.max(
+                              1,
+                              Math.min(
+                                parseInt(e.target.value) || 1,
+                                selectedOrderItem.qty || 0,
+                              ),
+                            ),
+                          )
+                        }
+                        style={{
+                          width: "100%",
+                          padding: "12px",
+                          border: "1px solid #d0dce6",
+                          borderRadius: "6px",
+                          fontSize: "14px",
+                          boxSizing: "border-box",
+                        }}
+                      />
+                    </div>
+
+                    <div style={{ marginBottom: "24px" }}>
+                      <label
+                        style={{
+                          display: "block",
+                          marginBottom: "8px",
+                          fontWeight: "600",
+                          color: "#1a365d",
+                          fontSize: "14px",
+                        }}
+                      >
+                        Notes (Optional)
+                      </label>
+                      <textarea
+                        value={orderNotes}
+                        onChange={(e) => setOrderNotes(e.target.value)}
+                        placeholder="Add any special notes for this order..."
+                        style={{
+                          width: "100%",
+                          padding: "12px",
+                          border: "1px solid #d0dce6",
+                          borderRadius: "6px",
+                          fontSize: "14px",
+                          fontFamily: "inherit",
+                          minHeight: "100px",
+                          boxSizing: "border-box",
+                          resize: "vertical",
+                        }}
+                      />
+                    </div>
+
+                    <div
+                      style={{
+                        background: "#f1f5f9",
+                        padding: "16px",
+                        borderRadius: "8px",
+                        marginBottom: "24px",
+                      }}
+                    >
+                      <p style={{ margin: "0", fontSize: "13px", color: "#64748b" }}>
+                        Total: {selectedOrderItem.currency || "USD"}{" "}
+                        {formatNumber(
+                          (selectedOrderItem.price || 0) * orderQuantity,
+                        )}
+                      </p>
+                    </div>
+
+                    <div style={{ display: "flex", gap: "12px" }}>
+                      <button
+                        onClick={() => setShowPlaceOrderDialog(false)}
+                        style={{
+                          flex: 1,
+                          padding: "12px",
+                          background: "#e2e8f0",
+                          color: "#1a365d",
+                          border: "none",
+                          borderRadius: "6px",
+                          cursor: "pointer",
+                          fontWeight: "600",
+                          fontSize: "14px",
+                          transition: "all 0.25s ease",
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.background = "#cbd5e1";
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background = "#e2e8f0";
+                        }}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={async () => {
+                          await placeOrder(
+                            selectedOrderItem,
+                            orderQuantity,
+                            orderNotes,
+                          );
+                          setShowPlaceOrderDialog(false);
+                        }}
+                        style={{
+                          flex: 1,
+                          padding: "12px",
+                          background: "#16a34a",
+                          color: "white",
+                          border: "none",
+                          borderRadius: "6px",
+                          cursor: "pointer",
+                          fontWeight: "600",
+                          fontSize: "14px",
+                          transition: "all 0.25s ease",
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.background = "#14931d";
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background = "#16a34a";
+                        }}
+                      >
+                        Place Order
+                      </button>
+                    </div>
+                  </div>
                 </div>
               )}
             </div>
@@ -5248,6 +5633,250 @@ export default function App() {
                     setInquiryHistory(inquiryHistory.filter((i) => i.id !== id))
                   }
                 />
+              )}
+
+              {activeWarehouseTab === "orders" && (
+                <div>
+                  <div style={{ marginBottom: "28px" }}>
+                    <h2
+                      style={{
+                        margin: "0 0 18px 0",
+                        fontSize: "22px",
+                        fontWeight: "800",
+                        color: "#5b7c99",
+                        letterSpacing: "-0.3px",
+                        textTransform: "uppercase",
+                      }}
+                    >
+                      Incoming Orders ({orders.length})
+                    </h2>
+                  </div>
+
+                  {orders.length === 0 ? (
+                    <div
+                      style={{
+                        background: "#f8fafc",
+                        border: "2px dashed #cbd5e1",
+                        borderRadius: "8px",
+                        padding: "48px 32px",
+                        textAlign: "center",
+                      }}
+                    >
+                      <p
+                        style={{
+                          fontSize: "16px",
+                          color: "#64748b",
+                          margin: "0",
+                        }}
+                      >
+                        No orders yet. When buyers purchase your items from the marketplace, they will appear here.
+                      </p>
+                    </div>
+                  ) : (
+                    <div
+                      style={{
+                        overflowX: "auto",
+                        borderRadius: "8px",
+                        boxShadow: "0 2px 8px rgba(0, 0, 0, 0.08)",
+                      }}
+                    >
+                      <table
+                        style={{
+                          width: "100%",
+                          borderCollapse: "collapse",
+                          background: "#ffffff",
+                        }}
+                      >
+                        <thead>
+                          <tr
+                            style={{
+                              background: "#f1f5f9",
+                              borderBottom: "2px solid #e2e8f0",
+                            }}
+                          >
+                            <th
+                              style={{
+                                padding: "16px",
+                                textAlign: "left",
+                                fontWeight: "700",
+                                color: "#5b7c99",
+                                fontSize: "13px",
+                                textTransform: "uppercase",
+                                letterSpacing: "0.3px",
+                              }}
+                            >
+                              Item Name
+                            </th>
+                            <th
+                              style={{
+                                padding: "16px",
+                                textAlign: "left",
+                                fontWeight: "700",
+                                color: "#5b7c99",
+                                fontSize: "13px",
+                                textTransform: "uppercase",
+                                letterSpacing: "0.3px",
+                              }}
+                            >
+                              Buyer
+                            </th>
+                            <th
+                              style={{
+                                padding: "16px",
+                                textAlign: "left",
+                                fontWeight: "700",
+                                color: "#5b7c99",
+                                fontSize: "13px",
+                                textTransform: "uppercase",
+                                letterSpacing: "0.3px",
+                              }}
+                            >
+                              Qty
+                            </th>
+                            <th
+                              style={{
+                                padding: "16px",
+                                textAlign: "left",
+                                fontWeight: "700",
+                                color: "#5b7c99",
+                                fontSize: "13px",
+                                textTransform: "uppercase",
+                                letterSpacing: "0.3px",
+                              }}
+                            >
+                              Total Price
+                            </th>
+                            <th
+                              style={{
+                                padding: "16px",
+                                textAlign: "left",
+                                fontWeight: "700",
+                                color: "#5b7c99",
+                                fontSize: "13px",
+                                textTransform: "uppercase",
+                                letterSpacing: "0.3px",
+                              }}
+                            >
+                              Status
+                            </th>
+                            <th
+                              style={{
+                                padding: "16px",
+                                textAlign: "center",
+                                fontWeight: "700",
+                                color: "#5b7c99",
+                                fontSize: "13px",
+                                textTransform: "uppercase",
+                                letterSpacing: "0.3px",
+                              }}
+                            >
+                              Actions
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {orders.map((order, index) => (
+                            <tr
+                              key={order.id}
+                              style={{
+                                borderBottom: "1px solid #e2e8f0",
+                                background:
+                                  index % 2 === 0 ? "#ffffff" : "#f8fafc",
+                              }}
+                            >
+                              <td style={{ padding: "16px", color: "#1a365d", fontWeight: "600" }}>
+                                {order.itemName}
+                              </td>
+                              <td style={{ padding: "16px", color: "#64748b" }}>
+                                {order.buyer}
+                              </td>
+                              <td style={{ padding: "16px", color: "#64748b" }}>
+                                {order.quantity} units
+                              </td>
+                              <td
+                                style={{
+                                  padding: "16px",
+                                  color: "#1a365d",
+                                  fontWeight: "600",
+                                }}
+                              >
+                                {order.itemCurrency}{" "}
+                                {formatNumber(order.totalPrice)}
+                              </td>
+                              <td style={{ padding: "16px" }}>
+                                <span
+                                  style={{
+                                    padding: "6px 12px",
+                                    borderRadius: "6px",
+                                    fontSize: "12px",
+                                    fontWeight: "700",
+                                    textTransform: "uppercase",
+                                    color:
+                                      order.status === "pending"
+                                        ? "#b45309"
+                                        : order.status === "accepted"
+                                          ? "#0369a1"
+                                          : order.status === "shipped"
+                                            ? "#7c3aed"
+                                            : order.status === "delivered"
+                                              ? "#16a34a"
+                                              : "#dc2626",
+                                    background:
+                                      order.status === "pending"
+                                        ? "#fef3c7"
+                                        : order.status === "accepted"
+                                          ? "#cffafe"
+                                          : order.status === "shipped"
+                                            ? "#ede9fe"
+                                            : order.status === "delivered"
+                                              ? "#dcfce7"
+                                              : "#fee2e2",
+                                  }}
+                                >
+                                  {order.status}
+                                </span>
+                              </td>
+                              <td
+                                style={{
+                                  padding: "16px",
+                                  textAlign: "center",
+                                }}
+                              >
+                                <select
+                                  value={order.status}
+                                  onChange={(e) =>
+                                    updateOrderStatus(
+                                      order.id,
+                                      e.target.value as Order["status"],
+                                    )
+                                  }
+                                  style={{
+                                    padding: "8px 12px",
+                                    borderRadius: "6px",
+                                    border: "1px solid #cbd5e1",
+                                    background: "#ffffff",
+                                    color: "#1a365d",
+                                    cursor: "pointer",
+                                    fontSize: "12px",
+                                    fontWeight: "600",
+                                  }}
+                                >
+                                  <option value="pending">Pending</option>
+                                  <option value="accepted">Accepted</option>
+                                  <option value="shipped">Shipped</option>
+                                  <option value="delivered">
+                                    Delivered
+                                  </option>
+                                  <option value="cancelled">Cancelled</option>
+                                </select>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
               )}
 
               {activeWarehouseTab === "settings" && (
