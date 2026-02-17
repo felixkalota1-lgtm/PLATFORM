@@ -240,13 +240,15 @@ export default function Vendors({
     try {
       console.log(`🔍 DIAGNOSTIC: Checking if user "${currentUser}" exists...`);
       const usersRef = collection(db, "userSettings");
-      
+
       // Try to get all users
       const allUsersQuery = query(usersRef);
       const allUsersDocs = await getDocs(allUsersQuery);
-      
-      console.log(`📊 DIAGNOSTIC: Total users in Firestore: ${allUsersDocs.docs.length}`);
-      
+
+      console.log(
+        `📊 DIAGNOSTIC: Total users in Firestore: ${allUsersDocs.docs.length}`,
+      );
+
       allUsersDocs.docs.forEach((doc, index) => {
         const data = doc.data();
         console.log(`  User ${index + 1}:`, {
@@ -280,7 +282,9 @@ export default function Vendors({
       // FIRESTORE FIRST (Source of Truth) - Search all companies in real-time
       const usersRef = collection(db, "userSettings");
 
-      console.log(`🔍 SEARCHING FOR: "${searchTerm}" (lowercase: "${searchLower}")`);
+      console.log(
+        `🔍 SEARCHING FOR: "${searchTerm}" (lowercase: "${searchLower}")`,
+      );
 
       // Strategy: Query by multiple fields and deduplicate
       // We search: company name, username, and email with prefix matching
@@ -297,8 +301,8 @@ export default function Vendors({
         const companyDocs = await getDocs(companyQuery);
         console.log(`✓ Found ${companyDocs.docs.length} by company name`);
         allDocs = [...companyDocs.docs];
-      } catch (e) {
-        console.warn("⚠️ Company name search failed:", e);
+      } catch (e: any) {
+        console.error("❌ Company name search error:", e?.message || e);
       }
 
       // PRIORITY 2: Search by username searchable field (for old accounts)
@@ -317,8 +321,8 @@ export default function Vendors({
             (doc: any) => !allDocs.find((d: any) => d.id === doc.id),
           ),
         ];
-      } catch (e) {
-        console.warn("⚠️ Username search failed:", e);
+      } catch (e: any) {
+        console.error("❌ Username search error:", e?.message || e);
       }
 
       // PRIORITY 3: Search by email searchable field
@@ -337,11 +341,40 @@ export default function Vendors({
             (doc: any) => !allDocs.find((d: any) => d.id === doc.id),
           ),
         ];
-      } catch (e) {
-        console.warn("⚠️ Email search failed:", e);
+      } catch (e: any) {
+        console.error("❌ Email search error:", e?.message || e);
       }
 
-      console.log(`📊 Total docs from Firestore: ${allDocs.length}`);
+      console.log(`📊 Total docs from Firestore (searchable fields): ${allDocs.length}`);
+
+      // FALLBACK: If searchable queries returned nothing, search all users (for old accounts without searchable fields)
+      if (allDocs.length === 0) {
+        console.log("🔄 FALLBACK: Searchable queries returned 0 results, fetching ALL users for client-side filtering...");
+        try {
+          const allUsersDocs = await getDocs(usersRef);
+          console.log(`📊 Total users in Firestore: ${allUsersDocs.docs.length}`);
+          
+          for (const doc of allUsersDocs.docs) {
+            const username = (doc.data().username || "").toLowerCase();
+            const email = (doc.data().email || "").toLowerCase();
+            const companyName = (doc.data().companyName || "").toLowerCase();
+
+            // Check if search term matches ANY field
+            const matchesUsername = username.includes(searchLower);
+            const matchesEmail = email.includes(searchLower);
+            const matchesCompany = companyName.includes(searchLower);
+
+            if (matchesUsername || matchesEmail || matchesCompany) {
+              if (!allDocs.find((d: any) => d.id === doc.id)) {
+                allDocs.push(doc);
+              }
+            }
+          }
+          console.log(`✓ FALLBACK found ${allDocs.length} matches via client-side filtering`);
+        } catch (e: any) {
+          console.error("❌ FALLBACK search error:", e?.message || e);
+        }
+      }
 
       // Process all results from Firestore and apply substring filtering
       for (const doc of allDocs) {
