@@ -299,10 +299,13 @@ export default function Vendors({
           where("companyNameSearchable", "<=", searchLower + "\uf8ff"),
         );
         const companyDocs = await getDocs(companyQuery);
-        console.log(`✓ Found ${companyDocs.docs.length} by company name`);
+        console.log(`✓ Found ${companyDocs.docs.length} by company name searchable`);
+        if (companyDocs.docs.length > 0) {
+          console.log("  Results:", companyDocs.docs.map(d => ({ username: d.data().username, companyNameSearchable: d.data().companyNameSearchable })));
+        }
         allDocs = [...companyDocs.docs];
       } catch (e: any) {
-        console.error("❌ Company name search error:", e?.message || e);
+        console.error("❌ Company name search error:", e?.message || e, e?.code);
       }
 
       // PRIORITY 2: Search by username searchable field (for old accounts)
@@ -314,7 +317,10 @@ export default function Vendors({
           where("usernameSearchable", "<=", searchLower + "\uf8ff"),
         );
         const usernameDocs = await getDocs(usernameQuery);
-        console.log(`✓ Found ${usernameDocs.docs.length} by username`);
+        console.log(`✓ Found ${usernameDocs.docs.length} by username searchable`);
+        if (usernameDocs.docs.length > 0) {
+          console.log("  Results:", usernameDocs.docs.map(d => ({ username: d.data().username, usernameSearchable: d.data().usernameSearchable })));
+        }
         allDocs = [
           ...allDocs,
           ...usernameDocs.docs.filter(
@@ -322,7 +328,7 @@ export default function Vendors({
           ),
         ];
       } catch (e: any) {
-        console.error("❌ Username search error:", e?.message || e);
+        console.error("❌ Username search error:", e?.message || e, e?.code);
       }
 
       // PRIORITY 3: Search by email searchable field
@@ -334,7 +340,10 @@ export default function Vendors({
           where("emailSearchable", "<=", searchLower + "\uf8ff"),
         );
         const emailDocs = await getDocs(emailQuery);
-        console.log(`✓ Found ${emailDocs.docs.length} by email`);
+        console.log(`✓ Found ${emailDocs.docs.length} by email searchable`);
+        if (emailDocs.docs.length > 0) {
+          console.log("  Results:", emailDocs.docs.map(d => ({ username: d.data().username, emailSearchable: d.data().emailSearchable })));
+        }
         allDocs = [
           ...allDocs,
           ...emailDocs.docs.filter(
@@ -342,7 +351,7 @@ export default function Vendors({
           ),
         ];
       } catch (e: any) {
-        console.error("❌ Email search error:", e?.message || e);
+        console.error("❌ Email search error:", e?.message || e, e?.code);
       }
 
       console.log(`📊 Total docs from Firestore (searchable fields): ${allDocs.length}`);
@@ -357,12 +366,15 @@ export default function Vendors({
           
           for (const doc of allUsersDocs.docs) {
             const userData = doc.data();
-            const username = (userData.username || "").toLowerCase();
-            const email = (userData.email || "").toLowerCase();
-            const companyName = (userData.companyName || "").toLowerCase();
+            
+            // IMPORTANT: Use searchable fields for matching (these are always populated)
+            // Fall back to base fields if searchable fields don't exist (for very old accounts)
+            const username = (userData.usernameSearchable || userData.username || "").toLowerCase();
+            const email = (userData.emailSearchable || userData.email || "").toLowerCase();
+            const companyName = (userData.companyNameSearchable || userData.companyName || "").toLowerCase();
 
             // DIAGNOSTIC: Log all fields for this user
-            console.log(`  User "${userData.username}": {username: "${username}", email: "${email}", companyName: "${companyName}", rawEmail: ${userData.email}, rawCompany: ${userData.companyName}}`);
+            console.log(`  User "${userData.username}": {username: "${username}", email: "${email}", companyName: "${companyName}", hasSearchableFields: ${!!userData.usernameSearchable}}`);
 
             // Check if search term matches ANY field
             const matchesUsername = username.includes(searchLower);
@@ -386,9 +398,15 @@ export default function Vendors({
       for (const doc of allDocs) {
         if (doc.data().username === currentUser) continue;
 
-        const companyName = (doc.data().companyName || "").toLowerCase();
-        const username = (doc.data().username || "").toLowerCase();
-        const email = (doc.data().email || "").toLowerCase();
+        // IMPORTANT: Use searchable fields for matching + display (these are always populated)
+        // Fall back to base fields if searchable fields don't exist
+        const companyName = (doc.data().companyNameSearchable || doc.data().companyName || "").toLowerCase();
+        const username = (doc.data().usernameSearchable || doc.data().username || "").toLowerCase();
+        const email = (doc.data().emailSearchable || doc.data().email || "").toLowerCase();
+
+        // For display: Use original (non-searchable) values with fallback
+        const displayCompanyName = doc.data().companyName || doc.data().username || "";
+        const displayEmail = doc.data().email || "";
 
         // Check if search term matches ANY field (prefix or substring)
         const matchesCompany =
@@ -403,8 +421,8 @@ export default function Vendors({
             seenIds.add(doc.id);
             results.push({
               id: doc.data().username,
-              name: doc.data().companyName || doc.data().username,
-              email: doc.data().email || "",
+              name: displayCompanyName,
+              email: displayEmail,
               phone: doc.data().phone,
               address: doc.data().address,
               website: doc.data().website,
