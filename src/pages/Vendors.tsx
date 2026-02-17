@@ -279,8 +279,8 @@ export default function Vendors({
       const results: Company[] = [];
       const seenIds = new Set<string>();
 
-      // FIRESTORE FIRST (Source of Truth) - Search all companies in real-time
-      const usersRef = collection(db, "userSettings");
+      // FIRESTORE FIRST (Source of Truth) - Search from 'vendorSearchIndex' collection (globally readable)
+      const searchRef = collection(db, "vendorSearchIndex");
 
       console.log(
         `🔍 SEARCHING FOR: "${searchTerm}" (lowercase: "${searchLower}")`,
@@ -294,32 +294,52 @@ export default function Vendors({
       try {
         console.log("📋 Querying by companyNameSearchable...");
         const companyQuery = query(
-          usersRef,
+          searchRef,
           where("companyNameSearchable", ">=", searchLower),
           where("companyNameSearchable", "<=", searchLower + "\uf8ff"),
         );
         const companyDocs = await getDocs(companyQuery);
-        console.log(`✓ Found ${companyDocs.docs.length} by company name searchable`);
+        console.log(
+          `✓ Found ${companyDocs.docs.length} by company name searchable`,
+        );
         if (companyDocs.docs.length > 0) {
-          console.log("  Results:", companyDocs.docs.map(d => ({ username: d.data().username, companyNameSearchable: d.data().companyNameSearchable })));
+          console.log(
+            "  Results:",
+            companyDocs.docs.map((d) => ({
+              username: d.data().username,
+              companyNameSearchable: d.data().companyNameSearchable,
+            })),
+          );
         }
         allDocs = [...companyDocs.docs];
       } catch (e: any) {
-        console.error("❌ Company name search error:", e?.message || e, e?.code);
+        console.error(
+          "❌ Company name search error:",
+          e?.message || e,
+          e?.code,
+        );
       }
 
       // PRIORITY 2: Search by username searchable field (for old accounts)
       try {
         console.log("📋 Querying by usernameSearchable...");
         const usernameQuery = query(
-          usersRef,
+          searchRef,
           where("usernameSearchable", ">=", searchLower),
           where("usernameSearchable", "<=", searchLower + "\uf8ff"),
         );
         const usernameDocs = await getDocs(usernameQuery);
-        console.log(`✓ Found ${usernameDocs.docs.length} by username searchable`);
+        console.log(
+          `✓ Found ${usernameDocs.docs.length} by username searchable`,
+        );
         if (usernameDocs.docs.length > 0) {
-          console.log("  Results:", usernameDocs.docs.map(d => ({ username: d.data().username, usernameSearchable: d.data().usernameSearchable })));
+          console.log(
+            "  Results:",
+            usernameDocs.docs.map((d) => ({
+              username: d.data().username,
+              usernameSearchable: d.data().usernameSearchable,
+            })),
+          );
         }
         allDocs = [
           ...allDocs,
@@ -335,14 +355,20 @@ export default function Vendors({
       try {
         console.log("📋 Querying by emailSearchable...");
         const emailQuery = query(
-          usersRef,
+          searchRef,
           where("emailSearchable", ">=", searchLower),
           where("emailSearchable", "<=", searchLower + "\uf8ff"),
         );
         const emailDocs = await getDocs(emailQuery);
         console.log(`✓ Found ${emailDocs.docs.length} by email searchable`);
         if (emailDocs.docs.length > 0) {
-          console.log("  Results:", emailDocs.docs.map(d => ({ username: d.data().username, emailSearchable: d.data().emailSearchable })));
+          console.log(
+            "  Results:",
+            emailDocs.docs.map((d) => ({
+              username: d.data().username,
+              emailSearchable: d.data().emailSearchable,
+            })),
+          );
         }
         allDocs = [
           ...allDocs,
@@ -354,27 +380,47 @@ export default function Vendors({
         console.error("❌ Email search error:", e?.message || e, e?.code);
       }
 
-      console.log(`📊 Total docs from Firestore (searchable fields): ${allDocs.length}`);
+      console.log(
+        `📊 Total docs from Firestore (searchable fields): ${allDocs.length}`,
+      );
 
-      // FALLBACK: If searchable queries returned nothing, search all users (for old accounts without searchable fields)
+      // FALLBACK: If searchable queries returned nothing, search all vendors
       if (allDocs.length === 0) {
-        console.log("🔄 FALLBACK: Searchable queries returned 0 results, fetching ALL users for client-side filtering...");
+        console.log(
+          "🔄 FALLBACK: Searchable queries returned 0 results, fetching ALL vendors for client-side filtering...",
+        );
         try {
-          const allUsersDocs = await getDocs(usersRef);
-          console.log(`📊 Total users in Firestore: ${allUsersDocs.docs.length}`);
-          console.log("🔍 User data diagnostic:");
-          
-          for (const doc of allUsersDocs.docs) {
-            const userData = doc.data();
-            
+          const allVendorsDocs = await getDocs(searchRef);
+          console.log(
+            `📊 Total vendors in searchIndex: ${allVendorsDocs.docs.length}`,
+          );
+          console.log("🔍 Vendor data diagnostic:");
+
+          for (const doc of allVendorsDocs.docs) {
+            const vendorData = doc.data();
+
             // IMPORTANT: Use searchable fields for matching (these are always populated)
             // Fall back to base fields if searchable fields don't exist (for very old accounts)
-            const username = (userData.usernameSearchable || userData.username || "").toLowerCase();
-            const email = (userData.emailSearchable || userData.email || "").toLowerCase();
-            const companyName = (userData.companyNameSearchable || userData.companyName || "").toLowerCase();
+            const username = (
+              vendorData.usernameSearchable ||
+              vendorData.username ||
+              ""
+            ).toLowerCase();
+            const email = (
+              vendorData.emailSearchable ||
+              vendorData.email ||
+              ""
+            ).toLowerCase();
+            const companyName = (
+              vendorData.companyNameSearchable ||
+              vendorData.companyName ||
+              ""
+            ).toLowerCase();
 
-            // DIAGNOSTIC: Log all fields for this user
-            console.log(`  User "${userData.username}": {username: "${username}", email: "${email}", companyName: "${companyName}", hasSearchableFields: ${!!userData.usernameSearchable}}`);
+            // DIAGNOSTIC: Log all fields for this vendor
+            console.log(
+              `  Vendor "${vendorData.username}": {username: "${username}", email: "${email}", companyName: "${companyName}", hasSearchableFields: ${!!vendorData.usernameSearchable}}`,
+            );
 
             // Check if search term matches ANY field
             const matchesUsername = username.includes(searchLower);
@@ -382,13 +428,17 @@ export default function Vendors({
             const matchesCompany = companyName.includes(searchLower);
 
             if (matchesUsername || matchesEmail || matchesCompany) {
-              console.log(`    ✓ MATCH: matches=${matchesUsername || matchesEmail || matchesCompany} (u:${matchesUsername} e:${matchesEmail} c:${matchesCompany})`);
+              console.log(
+                `    ✓ MATCH: matches=${matchesUsername || matchesEmail || matchesCompany} (u:${matchesUsername} e:${matchesEmail} c:${matchesCompany})`,
+              );
               if (!allDocs.find((d: any) => d.id === doc.id)) {
                 allDocs.push(doc);
               }
             }
           }
-          console.log(`✓ FALLBACK found ${allDocs.length} matches via client-side filtering`);
+          console.log(
+            `✓ FALLBACK found ${allDocs.length} matches via client-side filtering`,
+          );
         } catch (e: any) {
           console.error("❌ FALLBACK search error:", e?.message || e);
         }
@@ -400,12 +450,25 @@ export default function Vendors({
 
         // IMPORTANT: Use searchable fields for matching + display (these are always populated)
         // Fall back to base fields if searchable fields don't exist
-        const companyName = (doc.data().companyNameSearchable || doc.data().companyName || "").toLowerCase();
-        const username = (doc.data().usernameSearchable || doc.data().username || "").toLowerCase();
-        const email = (doc.data().emailSearchable || doc.data().email || "").toLowerCase();
+        const companyName = (
+          doc.data().companyNameSearchable ||
+          doc.data().companyName ||
+          ""
+        ).toLowerCase();
+        const username = (
+          doc.data().usernameSearchable ||
+          doc.data().username ||
+          ""
+        ).toLowerCase();
+        const email = (
+          doc.data().emailSearchable ||
+          doc.data().email ||
+          ""
+        ).toLowerCase();
 
         // For display: Use original (non-searchable) values with fallback
-        const displayCompanyName = doc.data().companyName || doc.data().username || "";
+        const displayCompanyName =
+          doc.data().companyName || doc.data().username || "";
         const displayEmail = doc.data().email || "";
 
         // Check if search term matches ANY field (prefix or substring)

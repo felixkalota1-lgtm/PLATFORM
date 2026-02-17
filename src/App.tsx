@@ -2591,6 +2591,25 @@ export default function App() {
           });
           console.log("✅ SIGNUP: Successfully saved to Firestore");
 
+          // CRITICAL: Also save to searchable collection (for vendor search - bypasses security rule issues)
+          console.log("📤 SIGNUP: Also saving to 'vendorSearchIndex' for global search access");
+          const searchableData = {
+            username: signupForm.username,
+            usernameSearchable: usernameSearchable,
+            email: signupForm.email,
+            emailSearchable: emailSearchable,
+            companyName: signupForm.companyName.trim(),
+            companyNameSearchable: companyNameSearchable,
+            createdAt: new Date().toISOString(),
+          };
+          
+          try {
+            await setDoc(doc(db, "vendorSearchIndex", signupForm.username), searchableData);
+            console.log("✅ SIGNUP: Saved to vendorSearchIndex collection");
+          } catch (searchIndexError) {
+            console.warn("⚠️  SIGNUP: Could not save to vendorSearchIndex:", searchIndexError);
+          }
+
           // CRITICAL: Wait a moment to ensure write is committed
           await new Promise(resolve => setTimeout(resolve, 200));
 
