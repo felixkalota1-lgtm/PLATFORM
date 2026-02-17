@@ -8,6 +8,8 @@ import {
   setDoc,
   doc,
   deleteDoc,
+  getDoc,
+  updateDoc,
   orderBy,
   limit,
   startAfter,
@@ -750,6 +752,35 @@ export default function App() {
         quotationHistory: [],
         inquiryHistory: [],
       };
+    }
+  };
+
+  // Migration: Add searchable fields to existing users
+  const migrateUserSearchableFields = async (username: string) => {
+    try {
+      if (!db) return; // No migration needed for localStorage
+
+      const userDocRef = doc(db, "userSettings", username);
+      const userSnap = await getDoc(userDocRef);
+      
+      if (!userSnap.exists()) return;
+
+      const userData = userSnap.data();
+      
+      // Only migrate if missing searchable fields
+      if (!userData.usernameSearchable || !userData.emailSearchable) {
+        console.log(`Migrating searchable fields for ${username}`);
+        
+        await updateDoc(userDocRef, {
+          usernameSearchable: (userData.username || "").toLowerCase().trim(),
+          emailSearchable: (userData.email || "").toLowerCase().trim(),
+          companyNameSearchable: (userData.companyName || "").toLowerCase().trim(),
+        });
+        
+        console.log(`Migration complete for ${username}`);
+      }
+    } catch (error) {
+      console.warn("Migration error (non-blocking):", error);
     }
   };
 
@@ -2488,14 +2519,18 @@ export default function App() {
       // Optimization #1: Hash password before storing (CRITICAL SECURITY)
       const hashedPassword = await bcryptjs.hash(signupForm.password, 10);
 
-      // Optimization: Create searchable field for company name (lowercase for case-insensitive search)
+      // Optimization: Create searchable lowercase fields for all searchable attributes
       const companyNameSearchable = signupForm.companyName.toLowerCase().trim();
+      const usernameSearchable = signupForm.username.toLowerCase().trim();
+      const emailSearchable = signupForm.email.toLowerCase().trim();
 
       // Create user in Firestore or localStorage
       if (db) {
         await setDoc(doc(db, "userSettings", signupForm.username), {
           username: signupForm.username,
+          usernameSearchable: usernameSearchable,
           email: signupForm.email,
+          emailSearchable: emailSearchable,
           companyName: signupForm.companyName.trim(),
           companyNameSearchable: companyNameSearchable,
           password: hashedPassword,
@@ -2506,7 +2541,9 @@ export default function App() {
         const users = JSON.parse(localStorage.getItem("pspm_users") || "{}");
         users[signupForm.username] = {
           username: signupForm.username,
+          usernameSearchable: usernameSearchable,
           email: signupForm.email,
+          emailSearchable: emailSearchable,
           companyName: signupForm.companyName.trim(),
           companyNameSearchable: companyNameSearchable,
           password: hashedPassword,
@@ -2525,6 +2562,8 @@ export default function App() {
       localStorage.setItem("pspm_current_user", signupForm.username);
       // Cache user for future logins (0 reads next time)
       cacheUserData(signupForm.username, signupForm.email);
+      // Migration: Ensure searchable fields exist
+      await migrateUserSearchableFields(signupForm.username);
       setIsLoggedIn(true);
       setSignupForm({
         username: "",
@@ -2603,6 +2642,9 @@ export default function App() {
         quotationHistory: userQuotationHistory,
         inquiryHistory: userInquiryHistory,
       } = await loadUserDataOnLogin(user.username);
+
+      // Migration: Ensure searchable fields exist for vendor search
+      await migrateUserSearchableFields(user.username);
 
       setProducts(userProducts);
       setActiveSubmenu(

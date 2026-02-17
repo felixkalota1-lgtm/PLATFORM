@@ -249,31 +249,37 @@ export default function Vendors({
       // FIRESTORE FIRST (Source of Truth) - Search all companies in real-time
       const usersRef = collection(db, "userSettings");
 
+      console.log(`🔍 SEARCHING FOR: "${searchTerm}" (lowercase: "${searchLower}")`);
+
       // Strategy: Query by multiple fields and deduplicate
       // We search: company name, username, and email with prefix matching
 
       // PRIORITY 1: Search by company name searchable field (prefix match)
       let allDocs: any[] = [];
       try {
+        console.log("📋 Querying by companyNameSearchable...");
         const companyQuery = query(
           usersRef,
           where("companyNameSearchable", ">=", searchLower),
           where("companyNameSearchable", "<=", searchLower + "\uf8ff"),
         );
         const companyDocs = await getDocs(companyQuery);
+        console.log(`✓ Found ${companyDocs.docs.length} by company name`);
         allDocs = [...companyDocs.docs];
       } catch (e) {
-        console.warn("Company name search failed:", e);
+        console.warn("⚠️ Company name search failed:", e);
       }
 
-      // PRIORITY 2: Search by username prefix (for old accounts)
+      // PRIORITY 2: Search by username searchable field (for old accounts)
       try {
+        console.log("📋 Querying by usernameSearchable...");
         const usernameQuery = query(
           usersRef,
-          where("username", ">=", searchLower),
-          where("username", "<=", searchLower + "\uf8ff"),
+          where("usernameSearchable", ">=", searchLower),
+          where("usernameSearchable", "<=", searchLower + "\uf8ff"),
         );
         const usernameDocs = await getDocs(usernameQuery);
+        console.log(`✓ Found ${usernameDocs.docs.length} by username`);
         allDocs = [
           ...allDocs,
           ...usernameDocs.docs.filter(
@@ -281,28 +287,30 @@ export default function Vendors({
           ),
         ];
       } catch (e) {
-        console.warn("Username search failed:", e);
+        console.warn("⚠️ Username search failed:", e);
       }
 
-      // PRIORITY 3: Search by email prefix (if user types an email)
-      if (searchLower.includes("@")) {
-        try {
-          const emailQuery = query(
-            usersRef,
-            where("email", ">=", searchLower),
-            where("email", "<=", searchLower + "\uf8ff"),
-          );
-          const emailDocs = await getDocs(emailQuery);
-          allDocs = [
-            ...allDocs,
-            ...emailDocs.docs.filter(
-              (doc: any) => !allDocs.find((d: any) => d.id === doc.id),
-            ),
-          ];
-        } catch (e) {
-          console.warn("Email search failed:", e);
-        }
+      // PRIORITY 3: Search by email searchable field
+      try {
+        console.log("📋 Querying by emailSearchable...");
+        const emailQuery = query(
+          usersRef,
+          where("emailSearchable", ">=", searchLower),
+          where("emailSearchable", "<=", searchLower + "\uf8ff"),
+        );
+        const emailDocs = await getDocs(emailQuery);
+        console.log(`✓ Found ${emailDocs.docs.length} by email`);
+        allDocs = [
+          ...allDocs,
+          ...emailDocs.docs.filter(
+            (doc: any) => !allDocs.find((d: any) => d.id === doc.id),
+          ),
+        ];
+      } catch (e) {
+        console.warn("⚠️ Email search failed:", e);
       }
+
+      console.log(`📊 Total docs from Firestore: ${allDocs.length}`);
 
       // Process all results from Firestore and apply substring filtering
       for (const doc of allDocs) {
@@ -343,13 +351,13 @@ export default function Vendors({
       if (results.length > 0) {
         await cacheVendors(results);
         console.log(
-          `Found ${results.length} companies matching "${searchTerm}" (Firestore → cached to IndexedDB)`,
+          `✅ Found ${results.length} companies matching "${searchTerm}" (Firestore → cached to IndexedDB)`,
         );
       } else {
-        console.log(`No companies found matching "${searchTerm}"`);
+        console.log(`❌ No companies found matching "${searchTerm}"`);
       }
     } catch (error) {
-      console.error("Error searching companies:", error);
+      console.error("❌ Error searching companies:", error);
       alert("Error searching companies");
     } finally {
       setIsLoading(false);
