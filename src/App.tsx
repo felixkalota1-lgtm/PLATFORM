@@ -758,29 +758,41 @@ export default function App() {
   // Migration: Add searchable fields to existing users
   const migrateUserSearchableFields = async (username: string) => {
     try {
-      if (!db) return; // No migration needed for localStorage
+      if (!db) {
+        console.log("⏭️  Migration: Skipped (localStorage mode)");
+        return;
+      }
 
+      console.log(`🔄 Migration: Starting for user "${username}"`);
       const userDocRef = doc(db, "userSettings", username);
       const userSnap = await getDoc(userDocRef);
       
-      if (!userSnap.exists()) return;
+      if (!userSnap.exists()) {
+        console.log(`⚠️  Migration: User document not found for "${username}"`);
+        return;
+      }
 
       const userData = userSnap.data();
+      console.log(`📄 Migration: Current user data:`, userData);
       
       // Only migrate if missing searchable fields
       if (!userData.usernameSearchable || !userData.emailSearchable) {
-        console.log(`Migrating searchable fields for ${username}`);
+        console.log(`🔧 Migration: Missing searchable fields, creating them...`);
         
-        await updateDoc(userDocRef, {
+        const updateData = {
           usernameSearchable: (userData.username || "").toLowerCase().trim(),
           emailSearchable: (userData.email || "").toLowerCase().trim(),
           companyNameSearchable: (userData.companyName || "").toLowerCase().trim(),
-        });
+        };
         
-        console.log(`Migration complete for ${username}`);
+        console.log(`📝 Migration: Updating with:`, updateData);
+        await updateDoc(userDocRef, updateData);
+        console.log(`✅ Migration: Complete for "${username}"`);
+      } else {
+        console.log(`✓ Migration: Searchable fields already exist for "${username}"`);
       }
     } catch (error) {
-      console.warn("Migration error (non-blocking):", error);
+      console.error("❌ Migration error:", error);
     }
   };
 
@@ -2524,9 +2536,18 @@ export default function App() {
       const usernameSearchable = signupForm.username.toLowerCase().trim();
       const emailSearchable = signupForm.email.toLowerCase().trim();
 
+      console.log("📝 SIGNUP: Creating user with searchable fields", {
+        username: signupForm.username,
+        usernameSearchable,
+        email: signupForm.email,
+        emailSearchable,
+        companyName: signupForm.companyName,
+        companyNameSearchable,
+      });
+
       // Create user in Firestore or localStorage
       if (db) {
-        await setDoc(doc(db, "userSettings", signupForm.username), {
+        const userData = {
           username: signupForm.username,
           usernameSearchable: usernameSearchable,
           email: signupForm.email,
@@ -2535,7 +2556,11 @@ export default function App() {
           companyNameSearchable: companyNameSearchable,
           password: hashedPassword,
           createdAt: new Date().toISOString(),
-        });
+        };
+        
+        console.log("💾 SIGNUP: Saving to Firestore:", { userSettings: signupForm.username });
+        await setDoc(doc(db, "userSettings", signupForm.username), userData);
+        console.log("✅ SIGNUP: Successfully saved to Firestore");
       } else {
         // Fallback to localStorage
         const users = JSON.parse(localStorage.getItem("pspm_users") || "{}");

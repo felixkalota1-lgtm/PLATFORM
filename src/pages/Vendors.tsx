@@ -66,6 +66,8 @@ export default function Vendors({
   // Load connections on mount
   React.useEffect(() => {
     loadConnections();
+    // Run diagnostic to see what's in Firestore
+    diagnosticCheckUserExists();
   }, []);
 
   const loadConnections = async () => {
@@ -231,6 +233,35 @@ export default function Vendors({
         resolve([]);
       }
     });
+  };
+
+  // Diagnostic: Check what's actually in Firestore
+  const diagnosticCheckUserExists = async () => {
+    try {
+      console.log(`🔍 DIAGNOSTIC: Checking if user "${currentUser}" exists...`);
+      const usersRef = collection(db, "userSettings");
+      
+      // Try to get all users
+      const allUsersQuery = query(usersRef);
+      const allUsersDocs = await getDocs(allUsersQuery);
+      
+      console.log(`📊 DIAGNOSTIC: Total users in Firestore: ${allUsersDocs.docs.length}`);
+      
+      allUsersDocs.docs.forEach((doc, index) => {
+        const data = doc.data();
+        console.log(`  User ${index + 1}:`, {
+          id: doc.id,
+          username: data.username,
+          email: data.email,
+          companyName: data.companyName,
+          usernameSearchable: data.usernameSearchable,
+          emailSearchable: data.emailSearchable,
+          companyNameSearchable: data.companyNameSearchable,
+        });
+      });
+    } catch (error) {
+      console.error("🔴 DIAGNOSTIC ERROR:", error);
+    }
   };
 
   const handleSearch = async (searchTerm: string) => {
