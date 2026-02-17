@@ -766,7 +766,7 @@ export default function App() {
       console.log(`🔄 Migration: Starting for user "${username}"`);
       const userDocRef = doc(db, "userSettings", username);
       const userSnap = await getDoc(userDocRef);
-      
+
       if (!userSnap.exists()) {
         console.log(`⚠️  Migration: User document not found for "${username}"`);
         return;
@@ -774,22 +774,28 @@ export default function App() {
 
       const userData = userSnap.data();
       console.log(`📄 Migration: Current user data:`, userData);
-      
+
       // Only migrate if missing searchable fields
       if (!userData.usernameSearchable || !userData.emailSearchable) {
-        console.log(`🔧 Migration: Missing searchable fields, creating them...`);
-        
+        console.log(
+          `🔧 Migration: Missing searchable fields, creating them...`,
+        );
+
         const updateData = {
           usernameSearchable: (userData.username || "").toLowerCase().trim(),
           emailSearchable: (userData.email || "").toLowerCase().trim(),
-          companyNameSearchable: (userData.companyName || "").toLowerCase().trim(),
+          companyNameSearchable: (userData.companyName || "")
+            .toLowerCase()
+            .trim(),
         };
-        
+
         console.log(`📝 Migration: Updating with:`, updateData);
         await updateDoc(userDocRef, updateData);
         console.log(`✅ Migration: Complete for "${username}"`);
       } else {
-        console.log(`✓ Migration: Searchable fields already exist for "${username}"`);
+        console.log(
+          `✓ Migration: Searchable fields already exist for "${username}"`,
+        );
       }
     } catch (error) {
       console.error("❌ Migration error:", error);
@@ -2557,20 +2563,39 @@ export default function App() {
           password: hashedPassword,
           createdAt: new Date().toISOString(),
         };
-        
-        console.log("💾 SIGNUP: Saving to Firestore:", { userSettings: signupForm.username });
-        console.log("📦 SIGNUP: Data object to save:", userData);
-        
+
+        console.log("� SIGNUP: Data object to save:", userData);
+        console.log("📦 SIGNUP: Detailed field breakdown:", {
+          "email (raw string)": signupForm.email,
+          "email (in userData)": userData.email,
+          "companyName (raw string)": signupForm.companyName,
+          "companyName (in userData)": userData.companyName,
+          "emailSearchable": userData.emailSearchable,
+          "companyNameSearchable": userData.companyNameSearchable,
+        });
+
+        console.log("💾 SIGNUP: Saving to Firestore collection 'userSettings' with ID:", signupForm.username);
+
         // Use merge to ensure we don't lose data, and verify each field
         try {
-          await setDoc(doc(db, "userSettings", signupForm.username), userData, { merge: false });
+          await setDoc(doc(db, "userSettings", signupForm.username), userData, {
+            merge: false,
+          });
           console.log("✅ SIGNUP: Successfully saved to Firestore");
-          
+
           // Verify the write by reading it back immediately
           const userDocRef = doc(db, "userSettings", signupForm.username);
           const userSnap = await getDoc(userDocRef);
           if (userSnap.exists()) {
-            console.log("✓ SIGNUP: Verification - Data in Firestore:", userSnap.data());
+            const savedData = userSnap.data();
+            console.log("✓ SIGNUP: Verification - Full data in Firestore:", savedData);
+            console.log("✓ SIGNUP: Verification - Field breakdown:", {
+              "email (from Firestore)": savedData?.email,
+              "companyName (from Firestore)": savedData?.companyName,
+              "emailSearchable (from Firestore)": savedData?.emailSearchable,
+              "companyNameSearchable (from Firestore)": savedData?.companyNameSearchable,
+              "All keys in document": Object.keys(savedData || {}),
+            });
           } else {
             console.error("❌ SIGNUP: Verification failed - Document not found!");
           }
