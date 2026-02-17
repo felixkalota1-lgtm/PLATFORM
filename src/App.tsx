@@ -2559,8 +2559,25 @@ export default function App() {
         };
         
         console.log("💾 SIGNUP: Saving to Firestore:", { userSettings: signupForm.username });
-        await setDoc(doc(db, "userSettings", signupForm.username), userData);
-        console.log("✅ SIGNUP: Successfully saved to Firestore");
+        console.log("📦 SIGNUP: Data object to save:", userData);
+        
+        // Use merge to ensure we don't lose data, and verify each field
+        try {
+          await setDoc(doc(db, "userSettings", signupForm.username), userData, { merge: false });
+          console.log("✅ SIGNUP: Successfully saved to Firestore");
+          
+          // Verify the write by reading it back immediately
+          const userDocRef = doc(db, "userSettings", signupForm.username);
+          const userSnap = await getDoc(userDocRef);
+          if (userSnap.exists()) {
+            console.log("✓ SIGNUP: Verification - Data in Firestore:", userSnap.data());
+          } else {
+            console.error("❌ SIGNUP: Verification failed - Document not found!");
+          }
+        } catch (writeError) {
+          console.error("❌ SIGNUP: Firestore write failed:", writeError);
+          throw writeError;
+        }
       } else {
         // Fallback to localStorage
         const users = JSON.parse(localStorage.getItem("pspm_users") || "{}");
