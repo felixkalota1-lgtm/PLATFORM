@@ -774,6 +774,10 @@ export default function App() {
 
       const userData = userSnap.data();
       console.log(`📄 Migration: Current user data:`, userData);
+      console.log(`📄 Migration: email = "${userData?.email}" (type: ${typeof userData?.email})`);
+      console.log(`📄 Migration: companyName = "${userData?.companyName}" (type: ${typeof userData?.companyName})`);
+      console.log(`📄 Migration: username = "${userData?.username}" (type: ${typeof userData?.username})`);
+      console.log(`📄 Migration: All keys:`, Object.keys(userData || {}));
 
       // Only migrate if missing searchable fields
       if (!userData.usernameSearchable || !userData.emailSearchable) {
@@ -2570,34 +2574,51 @@ export default function App() {
           "email (in userData)": userData.email,
           "companyName (raw string)": signupForm.companyName,
           "companyName (in userData)": userData.companyName,
-          "emailSearchable": userData.emailSearchable,
-          "companyNameSearchable": userData.companyNameSearchable,
+          emailSearchable: userData.emailSearchable,
+          companyNameSearchable: userData.companyNameSearchable,
         });
 
-        console.log("💾 SIGNUP: Saving to Firestore collection 'userSettings' with ID:", signupForm.username);
+        console.log(
+          "💾 SIGNUP: Saving to Firestore collection 'userSettings' with ID:",
+          signupForm.username,
+        );
 
         // Use merge to ensure we don't lose data, and verify each field
         try {
+          console.log("📤 SIGNUP: Calling setDoc with merge: false");
           await setDoc(doc(db, "userSettings", signupForm.username), userData, {
             merge: false,
           });
           console.log("✅ SIGNUP: Successfully saved to Firestore");
 
+          // CRITICAL: Wait a moment to ensure write is committed
+          await new Promise(resolve => setTimeout(resolve, 200));
+
           // Verify the write by reading it back immediately
           const userDocRef = doc(db, "userSettings", signupForm.username);
+          console.log("📥 SIGNUP: Reading back from Firestore...");
           const userSnap = await getDoc(userDocRef);
           if (userSnap.exists()) {
             const savedData = userSnap.data();
-            console.log("✓ SIGNUP: Verification - Full data in Firestore:", savedData);
-            console.log("✓ SIGNUP: Verification - Field breakdown:", {
-              "email (from Firestore)": savedData?.email,
-              "companyName (from Firestore)": savedData?.companyName,
-              "emailSearchable (from Firestore)": savedData?.emailSearchable,
-              "companyNameSearchable (from Firestore)": savedData?.companyNameSearchable,
-              "All keys in document": Object.keys(savedData || {}),
-            });
+            console.log(
+              "✓ SIGNUP: Verification - Full data in Firestore:",
+              savedData,
+            );
+            console.log("✓ SIGNUP: Second read - email value:", savedData?.email, "type:", typeof savedData?.email);
+            console.log("✓ SIGNUP: Second read - companyName value:", savedData?.companyName, "type:", typeof savedData?.companyName);
+            console.log("✓ SIGNUP: All keys:", Object.keys(savedData || {}));
+            
+            // CRITICAL: Do another read IMMEDIATELY to ensure consistency
+            console.log("🔄 SIGNUP: Double-checking with third read...");
+            const userSnap2 = await getDoc(userDocRef);
+            if (userSnap2.exists()) {
+              const savedData2 = userSnap2.data();
+              console.log("✓ SIGNUP: Third read - email:", savedData2?.email, "company:", savedData2?.companyName);
+            }
           } else {
-            console.error("❌ SIGNUP: Verification failed - Document not found!");
+            console.error(
+              "❌ SIGNUP: Verification failed - Document not found!",
+            );
           }
         } catch (writeError) {
           console.error("❌ SIGNUP: Firestore write failed:", writeError);
