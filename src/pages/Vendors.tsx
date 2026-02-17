@@ -279,8 +279,8 @@ export default function Vendors({
       const results: Company[] = [];
       const seenIds = new Set<string>();
 
-      // FIRESTORE FIRST (Source of Truth) - Search from 'vendorSearchIndex' collection (globally readable)
-      const searchRef = collection(db, "vendorSearchIndex");
+      // FIRESTORE FIRST (Source of Truth) - Search all companies in real-time
+      const usersRef = collection(db, "userSettings");
 
       console.log(
         `🔍 SEARCHING FOR: "${searchTerm}" (lowercase: "${searchLower}")`,
@@ -294,7 +294,7 @@ export default function Vendors({
       try {
         console.log("📋 Querying by companyNameSearchable...");
         const companyQuery = query(
-          searchRef,
+          usersRef,
           where("companyNameSearchable", ">=", searchLower),
           where("companyNameSearchable", "<=", searchLower + "\uf8ff"),
         );
@@ -324,7 +324,7 @@ export default function Vendors({
       try {
         console.log("📋 Querying by usernameSearchable...");
         const usernameQuery = query(
-          searchRef,
+          usersRef,
           where("usernameSearchable", ">=", searchLower),
           where("usernameSearchable", "<=", searchLower + "\uf8ff"),
         );
@@ -355,7 +355,7 @@ export default function Vendors({
       try {
         console.log("📋 Querying by emailSearchable...");
         const emailQuery = query(
-          searchRef,
+          usersRef,
           where("emailSearchable", ">=", searchLower),
           where("emailSearchable", "<=", searchLower + "\uf8ff"),
         );
@@ -384,19 +384,19 @@ export default function Vendors({
         `📊 Total docs from Firestore (searchable fields): ${allDocs.length}`,
       );
 
-      // FALLBACK: If searchable queries returned nothing, search all vendors
+      // FALLBACK: If searchable queries returned nothing, search all users (for old accounts without searchable fields)
       if (allDocs.length === 0) {
         console.log(
-          "🔄 FALLBACK: Searchable queries returned 0 results, fetching ALL vendors for client-side filtering...",
+          "🔄 FALLBACK: Searchable queries returned 0 results, fetching ALL users for client-side filtering...",
         );
         try {
-          const allVendorsDocs = await getDocs(searchRef);
+          const allUsersDocs = await getDocs(usersRef);
           console.log(
-            `📊 Total vendors in searchIndex: ${allVendorsDocs.docs.length}`,
+            `📊 Total users in Firestore: ${allUsersDocs.docs.length}`,
           );
-          console.log("🔍 Vendor data diagnostic:");
+          console.log("🔍 User data diagnostic:");
 
-          for (const doc of allVendorsDocs.docs) {
+          for (const doc of allUsersDocs.docs) {
             const vendorData = doc.data();
 
             // IMPORTANT: Use searchable fields for matching (these are always populated)
@@ -417,9 +417,9 @@ export default function Vendors({
               ""
             ).toLowerCase();
 
-            // DIAGNOSTIC: Log all fields for this vendor
+            // DIAGNOSTIC: Log all fields for this user
             console.log(
-              `  Vendor "${vendorData.username}": {username: "${username}", email: "${email}", companyName: "${companyName}", hasSearchableFields: ${!!vendorData.usernameSearchable}}`,
+              `  User "${vendorData.username}": {username: "${username}", email: "${email}", companyName: "${companyName}", hasSearchableFields: ${!!vendorData.usernameSearchable}}`,
             );
 
             // Check if search term matches ANY field
