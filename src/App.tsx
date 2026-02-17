@@ -16,6 +16,7 @@ import * as XLSX from "xlsx";
 import bcryptjs from "bcryptjs";
 import CryptoJS from "crypto-js";
 import jsPDF from "jspdf";
+import html2canvas from "html2canvas";
 import Quotations from "./pages/Quotations";
 import Inquiries from "./pages/Inquiries";
 import Settings from "./pages/Settings";
@@ -45,20 +46,31 @@ interface PDFTemplate {
   isDefault: boolean;
 }
 
+interface OrderItem {
+  productId: string;
+  name: string;
+  price: number;
+  currency: string;
+  quantity: number;
+}
+
 interface Order {
   id: string;
-  marketplaceItemId: string;
-  itemName: string;
-  itemPrice: number;
-  itemCurrency: string;
-  quantity: number;
+  marketplaceItemId?: string;
+  itemName?: string;
+  itemPrice?: number;
+  itemCurrency?: string;
+  quantity?: number;
   totalPrice: number;
   buyer: string;
   seller: string;
   status: "pending" | "accepted" | "shipped" | "delivered" | "cancelled";
-  createdAt: number;
-  updatedAt: number;
+  createdAt: number | string;
+  updatedAt?: number;
   buyerNotes?: string;
+  items?: OrderItem[];
+  currency?: string;
+  timestamp?: number;
 }
 
 const CURRENCY_OPTIONS = [
@@ -391,6 +403,32 @@ export default function App() {
   const [retractingOrderId, setRetractingOrderId] = useState<string | null>(
     null,
   );
+  const [showRetractQuotationConfirm, setShowRetractQuotationConfirm] =
+    useState(false);
+  const [retractingQuotationId, setRetractingQuotationId] = useState<
+    string | null
+  >(null);
+  const [showRetractInquiryConfirm, setShowRetractInquiryConfirm] =
+    useState(false);
+  const [retractingInquiryId, setRetractingInquiryId] = useState<string | null>(
+    null,
+  );
+  const [showOrderPreview, setShowOrderPreview] = useState(false);
+  const [selectedOrderForPreview, setSelectedOrderForPreview] =
+    useState<Order | null>(null);
+  const [activeQuotationsView, setActiveQuotationsView] = useState<
+    "incoming" | "outgoing"
+  >("outgoing");
+  const [showQuotationPreview, setShowQuotationPreview] = useState(false);
+  const [selectedQuotationForPreview, setSelectedQuotationForPreview] =
+    useState<any | null>(null);
+  const [activeInquiriesView, setActiveInquiriesView] = useState<
+    "incoming" | "outgoing"
+  >("outgoing");
+  const [showInquiryPreview, setShowInquiryPreview] = useState(false);
+  const [selectedInquiryForPreview, setSelectedInquiryForPreview] = useState<
+    any | null
+  >(null);
   const [showQuantityEditor, setShowQuantityEditor] = useState<{
     show: boolean;
     mode: "quotation" | "inquiry";
@@ -421,6 +459,7 @@ export default function App() {
   const [inquiryTemplate, setInquiryTemplate] = useState<PDFTemplate | null>(
     null,
   );
+  const [inquiryLetterhead, setInquiryLetterhead] = useState<any | null>(null);
   const [quotationHistory, setQuotationHistory] = useState<any[]>([]);
   const [inquiryHistory, setInquiryHistory] = useState<any[]>([]);
   const [activeSubmenuTab, setActiveSubmenuTab] = useState<
@@ -437,6 +476,30 @@ export default function App() {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     });
+  };
+
+  // Get first item name from order (handles both old and new order formats)
+  const getFirstItemName = (order: Order): string => {
+    if (order.items && order.items.length > 0) {
+      return order.items[0].name;
+    }
+    return order.itemName || "Unknown Item";
+  };
+
+  // Get total item count from order
+  const getTotalItemCount = (order: Order): number => {
+    if (order.items && order.items.length > 0) {
+      return order.items.reduce((sum, item) => sum + item.quantity, 0);
+    }
+    return order.quantity || 0;
+  };
+
+  // Get total number of different products in order
+  const getProductCount = (order: Order): number => {
+    if (order.items && order.items.length > 0) {
+      return order.items.length;
+    }
+    return 1;
   };
 
   // Format part number with selected format
@@ -724,13 +787,30 @@ export default function App() {
   // Restore login session on page refresh
   useEffect(() => {
     const savedUser = localStorage.getItem("pspm_current_user");
+    const savedSubmenu =
+      localStorage.getItem(`cache_submenu_${savedUser}`) || "warehouse";
     const savedTab =
       localStorage.getItem(`cache_tab_${savedUser}`) || "products";
+    const savedOrdersView =
+      localStorage.getItem(`cache_orders_view_${savedUser}`) || "incoming";
+    const savedUploadType =
+      localStorage.getItem(`cache_upload_type_${savedUser}`) || "single";
+    const savedMarketplaceTab =
+      localStorage.getItem(`cache_marketplace_tab_${savedUser}`) || "all";
+    const savedQuotationsView =
+      localStorage.getItem(`cache_quotations_view_${savedUser}`) || "outgoing";
+    const savedInquiriesView =
+      localStorage.getItem(`cache_inquiries_view_${savedUser}`) || "outgoing";
+
     if (savedUser) {
       // Set user and login state FIRST (before async operations)
       setCurrentUser(savedUser);
       setIsLoggedIn(true);
-      setActiveSubmenu("warehouse");
+      // Restore to the module user was on (not hardcoded to warehouse)
+      setActiveSubmenu(
+        (savedSubmenu as "marketplace" | "warehouse" | "allDocuments") ||
+          "warehouse",
+      );
 
       // Set active warehouse tab immediately from localStorage
       setActiveWarehouseTab(
@@ -742,9 +822,34 @@ export default function App() {
           | "settings",
       );
 
+      // Set active orders view from localStorage
+      setActiveOrdersView(
+        (savedOrdersView as "incoming" | "outgoing") || "incoming",
+      );
+
+      // Set upload type from localStorage
+      setUploadType((savedUploadType as "single" | "bulk") || "single");
+
+      // Set marketplace tab from localStorage
+      setActiveMarketplaceTab(
+        (savedMarketplaceTab as "all" | "myListings") || "all",
+      );
+
+      // Set quotations view from localStorage
+      setActiveQuotationsView(
+        (savedQuotationsView as "incoming" | "outgoing") || "outgoing",
+      );
+
+      // Set inquiries view from localStorage
+      setActiveInquiriesView(
+        (savedInquiriesView as "incoming" | "outgoing") || "outgoing",
+      );
+
       // Load user data and history (will also call setQuotationHistory and setInquiryHistory)
       loadUserDataOnLogin(savedUser).then((data) => {
-        console.log(`Page restore: User ${savedUser}, Tab ${savedTab}`);
+        console.log(
+          `Page restore: User ${savedUser}, Module ${savedSubmenu}, Tab ${savedTab}, OrdersView ${savedOrdersView}, UploadType ${savedUploadType}, MarketplaceTab ${savedMarketplaceTab}`,
+        );
         console.log(
           `SETTING STATE - data.quotationHistory:`,
           data.quotationHistory,
@@ -761,6 +866,14 @@ export default function App() {
         );
       });
 
+      // Load letterhead from Firestore
+      loadLetterhead(savedUser).then((letterhead) => {
+        if (letterhead) {
+          setInquiryLetterhead(letterhead);
+          console.log(`Page restore: Loaded letterhead for ${savedUser}`);
+        }
+      });
+
       // Load cart from IndexedDB
       loadCartFromIndexedDB(savedUser).then((cartItems) => {
         setCart(cartItems);
@@ -775,10 +888,60 @@ export default function App() {
     console.log(`quotationHistory state changed:`, quotationHistory);
   }, [quotationHistory]);
 
-  // Debug: Log when inquiryHistory state changes
+  // Save navigation state when activeSubmenu changes
   useEffect(() => {
-    console.log(`inquiryHistory state changed:`, inquiryHistory);
-  }, [inquiryHistory]);
+    if (isLoggedIn && currentUser) {
+      localStorage.setItem(`cache_submenu_${currentUser}`, activeSubmenu);
+    }
+  }, [activeSubmenu, isLoggedIn, currentUser]);
+
+  // Save orders view state when it changes
+  useEffect(() => {
+    if (isLoggedIn && currentUser) {
+      localStorage.setItem(
+        `cache_orders_view_${currentUser}`,
+        activeOrdersView,
+      );
+    }
+  }, [activeOrdersView, isLoggedIn, currentUser]);
+
+  // Save upload type when it changes
+  useEffect(() => {
+    if (isLoggedIn && currentUser) {
+      localStorage.setItem(`cache_upload_type_${currentUser}`, uploadType);
+    }
+  }, [uploadType, isLoggedIn, currentUser]);
+
+  // Save marketplace tab when it changes
+  useEffect(() => {
+    if (isLoggedIn && currentUser) {
+      localStorage.setItem(
+        `cache_marketplace_tab_${currentUser}`,
+        activeMarketplaceTab,
+      );
+    }
+  }, [activeMarketplaceTab, isLoggedIn, currentUser]);
+
+  // Save quotations view when it changes
+  useEffect(() => {
+    if (isLoggedIn && currentUser) {
+      localStorage.setItem(
+        `cache_quotations_view_${currentUser}`,
+        activeQuotationsView,
+      );
+    }
+  }, [activeQuotationsView, isLoggedIn, currentUser]);
+
+  // Save inquiries view when it changes
+  useEffect(() => {
+    if (isLoggedIn && currentUser) {
+      localStorage.setItem(
+        `cache_inquiries_view_${currentUser}`,
+        activeInquiriesView,
+      );
+    }
+  }, [activeInquiriesView, isLoggedIn, currentUser]);
+
   useEffect(() => {
     if (isLoggedIn && currentUser && activeSubmenu === "warehouse") {
       // Save to localStorage IMMEDIATELY for instant persistence on reload
@@ -1011,14 +1174,31 @@ export default function App() {
   const saveQuotationToIndexedDB = async (items: Product[], metadata?: any) => {
     const dbInstance = await initIndexedDB();
     const meta = metadata || quotationMetadata;
+    const totalPrice = items.reduce(
+      (sum: number, item: any) =>
+        sum + (item.price || 0) * (item.qty || item.quantity || 0),
+      0,
+    );
+    const currency = items.length > 0 ? items[0].currency || "USD" : "USD";
+    console.log("DEBUG saveQuotationToIndexedDB:", {
+      itemsCount: items.length,
+      calculatedTotalPrice: totalPrice,
+      extractedCurrency: currency,
+      firstItemPrice: items[0]?.price,
+      firstItemQty: items[0]?.qty,
+      firstItemCurrency: items[0]?.currency,
+    });
     const quotationData = {
       id: meta.id || "Q-" + Date.now(),
       number: meta.number,
       date: meta.date,
       items: items,
+      totalPrice: totalPrice,
+      currency: currency,
       createdAt: new Date().toISOString(),
       username: currentUser,
     };
+    console.log("DEBUG quotationData to be stored:", quotationData);
     return new Promise((resolve, reject) => {
       const transaction = dbInstance.transaction(["quotations"], "readwrite");
       const store = transaction.objectStore("quotations");
@@ -1032,21 +1212,187 @@ export default function App() {
   const saveInquiryToIndexedDB = async (items: Product[], metadata?: any) => {
     const dbInstance = await initIndexedDB();
     const meta = metadata || inquiryMetadata;
+    const totalPrice = items.reduce(
+      (sum: number, item: any) =>
+        sum + (item.price || 0) * (item.qty || item.quantity || 0),
+      0,
+    );
+    const currency = items.length > 0 ? items[0].currency || "USD" : "USD";
     const inquiryData = {
       id: meta.id || "I-" + Date.now(),
       number: meta.number,
       date: meta.date,
       items: items,
+      totalPrice: totalPrice,
+      currency: currency,
       createdAt: new Date().toISOString(),
       username: currentUser,
     };
     return new Promise((resolve, reject) => {
       const transaction = dbInstance.transaction(["inquiries"], "readwrite");
       const store = transaction.objectStore("inquiries");
-      const request = store.add(inquiryData);
+      const request = store.put(inquiryData);
       request.onsuccess = () => resolve(inquiryData.id);
       request.onerror = () => reject(request.error);
     });
+  };
+
+  // Generate PDF from displayed inquiry letter
+  const generateInquiryPDFFromLetter = async (
+    inquiry: any,
+    letterElement: HTMLDivElement | null,
+  ) => {
+    try {
+      if (!letterElement) {
+        throw new Error("Letter element not found");
+      }
+
+      // Capture the letter element as a canvas image
+      const canvas = await html2canvas(letterElement, {
+        scale: 2,
+        useCORS: true,
+        logging: false,
+        backgroundColor: "#ffffff",
+        allowTaint: true,
+      });
+
+      const imgWidth = 210; // A4 width in mm
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+      // Create PDF
+      const doc = new jsPDF({
+        orientation: "portrait",
+        unit: "mm",
+        format: "a4",
+      });
+
+      const pageHeight = doc.internal.pageSize.getHeight();
+      const topMargin = 15; // mm
+      const bottomMargin = 15; // mm
+      const usablePageHeight = pageHeight - topMargin - bottomMargin; // Reduce height to add margins
+      const pageHeightPixels = (usablePageHeight * canvas.width) / imgWidth; // Convert page height back to pixels
+
+      // Calculate number of pages needed
+      const pages = Math.ceil(canvas.height / pageHeightPixels);
+
+      // Split canvas into sections and add to PDF
+      for (let i = 0; i < pages; i++) {
+        if (i > 0) {
+          doc.addPage();
+        }
+
+        // Create a temporary canvas for this page section
+        const pageCanvas = document.createElement("canvas");
+        pageCanvas.width = canvas.width;
+        pageCanvas.height = pageHeightPixels;
+
+        const ctx = pageCanvas.getContext("2d");
+        if (!ctx) throw new Error("Could not get canvas context");
+
+        // Draw the portion of the original canvas for this page
+        const sourceY = i * pageHeightPixels;
+        ctx.drawImage(
+          canvas,
+          0,
+          sourceY,
+          canvas.width,
+          pageHeightPixels,
+          0,
+          0,
+          canvas.width,
+          pageHeightPixels,
+        );
+
+        // Convert this page's canvas to image and add to PDF with margins
+        const pageImgData = pageCanvas.toDataURL("image/png");
+        doc.addImage(
+          pageImgData,
+          "PNG",
+          0,
+          topMargin,
+          imgWidth,
+          usablePageHeight,
+        );
+      }
+
+      // Save to IndexedDB
+      const inquiryData = {
+        id: inquiry.id,
+        number: inquiry.number,
+        date: inquiry.date,
+        recipientName: inquiry.recipientName,
+        recipientEmail: inquiry.recipientEmail,
+        recipientCompany: inquiry.recipientCompany,
+        inquiryBody: inquiry.inquiryBody,
+        items: inquiry.items,
+        letterhead: inquiry.letterhead || null,
+        createdAt: new Date().toISOString(),
+        username: currentUser,
+      };
+
+      const dbInstance = await initIndexedDB();
+      await new Promise((resolve, reject) => {
+        const transaction = dbInstance.transaction(["inquiries"], "readwrite");
+        const store = transaction.objectStore("inquiries");
+        const request = store.put(inquiryData);
+        request.onsuccess = () => resolve(inquiryData.id);
+        request.onerror = () => reject(request.error);
+      });
+
+      // Update React state with new inquiry in history
+      setInquiryHistory((prev) => [
+        ...prev,
+        {
+          id: inquiry.id,
+          number: inquiry.number,
+          date: inquiry.date,
+          items: inquiry.items,
+          createdAt: new Date().toISOString(),
+          recipientName: inquiry.recipientName,
+          recipientEmail: inquiry.recipientEmail,
+          recipientCompany: inquiry.recipientCompany,
+          inquiryBody: inquiry.inquiryBody,
+          letterhead: inquiry.letterhead || null,
+        },
+      ]);
+
+      // Download PDF
+      doc.save(`${inquiry.number}.pdf`);
+
+      // Show success message
+      alert(`Inquiry ${inquiry.number} generated and saved successfully!`);
+      console.log(`Inquiry PDF generated: ${inquiry.number}`);
+
+      return doc.output("datauristring");
+    } catch (error) {
+      console.error("Error generating inquiry PDF:", error);
+      alert(
+        `Error generating PDF: ${error instanceof Error ? error.message : "Unknown error"}`,
+      );
+      throw error;
+    }
+  };
+
+  // Delete inquiry from IndexedDB
+  const deleteInquiryFromIndexedDB = async (
+    inquiryId: string,
+  ): Promise<void> => {
+    try {
+      const database = await initIndexedDB();
+      const transaction = database.transaction(["inquiries"], "readwrite");
+      const store = transaction.objectStore("inquiries");
+
+      return new Promise((resolve, reject) => {
+        const request = store.delete(inquiryId);
+        request.onerror = () => reject(request.error);
+        request.onsuccess = () => {
+          console.log(`Inquiry ${inquiryId} deleted from IndexedDB`);
+          resolve();
+        };
+      });
+    } catch (error) {
+      console.error("Error deleting inquiry from IndexedDB:", error);
+    }
   };
 
   // Generate PDF from template with items data
@@ -1183,13 +1529,26 @@ export default function App() {
           console.log(
             `IndexedDB query for quotations with user="${user}" returned ${request.result.length} results`,
           );
-          const results = request.result.map((q) => ({
-            id: q.id,
-            number: q.number,
-            date: q.date,
-            items: q.items,
-            createdAt: q.createdAt,
-          }));
+          const results = request.result.map((q) => {
+            const mapped = {
+              id: q.id,
+              number: q.number,
+              date: q.date,
+              items: q.items,
+              totalPrice: q.totalPrice,
+              currency: q.currency,
+              createdAt: q.createdAt,
+            };
+            console.log("DEBUG Quota:", {
+              id: q.id,
+              stored: { totalPrice: q.totalPrice, currency: q.currency },
+              mapped: {
+                totalPrice: mapped.totalPrice,
+                currency: mapped.currency,
+              },
+            });
+            return mapped;
+          });
           resolve(
             results.sort(
               (a, b) =>
@@ -1229,13 +1588,26 @@ export default function App() {
           console.log(
             `IndexedDB query for inquiries with user="${user}" returned ${request.result.length} results`,
           );
-          const results = request.result.map((i) => ({
-            id: i.id,
-            number: i.number,
-            date: i.date,
-            items: i.items,
-            createdAt: i.createdAt,
-          }));
+          const results = request.result.map((i) => {
+            const mapped = {
+              id: i.id,
+              number: i.number,
+              date: i.date,
+              items: i.items,
+              totalPrice: i.totalPrice,
+              currency: i.currency,
+              createdAt: i.createdAt,
+            };
+            console.log("DEBUG Inquiry:", {
+              id: i.id,
+              stored: { totalPrice: i.totalPrice, currency: i.currency },
+              mapped: {
+                totalPrice: mapped.totalPrice,
+                currency: mapped.currency,
+              },
+            });
+            return mapped;
+          });
           resolve(
             results.sort(
               (a, b) =>
@@ -1255,6 +1627,46 @@ export default function App() {
     } catch (error) {
       console.error("Error loading inquiry history:", error);
       return [];
+    }
+  };
+
+  // Load letterhead from Firestore
+  const loadLetterhead = async (username: string): Promise<any | null> => {
+    try {
+      if (!db) {
+        console.log("Firestore not available, cannot load letterhead");
+        return null;
+      }
+      const docSnap = await getDocs(
+        query(
+          collection(db, "userSettings"),
+          where("__name__", "==", `${username}_letterhead`),
+        ),
+      );
+      if (docSnap.docs.length > 0) {
+        console.log(`Loaded letterhead for ${username}`);
+        return docSnap.docs[0].data();
+      }
+      console.log(`No letterhead found for ${username}`);
+      return null;
+    } catch (error) {
+      console.error("Error loading letterhead:", error);
+      return null;
+    }
+  };
+
+  // Delete letterhead from Firestore
+  const deleteLetterhead = async (username: string) => {
+    try {
+      if (!db) {
+        console.log("Firestore not available, cannot delete letterhead");
+        return;
+      }
+      await deleteDoc(doc(db, "userSettings", `${username}_letterhead`));
+      setInquiryLetterhead(null);
+      console.log(`Deleted letterhead for ${username}`);
+    } catch (error) {
+      console.error("Error deleting letterhead:", error);
     }
   };
 
@@ -1534,11 +1946,11 @@ export default function App() {
 
       // Remove from local state
       const updatedOrders = outgoingOrders.filter(
-        (order) => order.id !== orderId
+        (order) => order.id !== orderId,
       );
       setOutgoingOrders(updatedOrders);
       console.log(
-        `Order removed from local state. Remaining orders: ${updatedOrders.length}`
+        `Order removed from local state. Remaining orders: ${updatedOrders.length}`,
       );
 
       setUploadMessage({
@@ -1557,6 +1969,102 @@ export default function App() {
     } finally {
       setShowRetractConfirm(false);
       setRetractingOrderId(null);
+    }
+  };
+
+  const retractQuotation = async (quotationId: string | null) => {
+    try {
+      if (!db || !quotationId) {
+        console.error("Cannot retract quotation: missing db or quotationId", {
+          db: !!db,
+          quotationId,
+        });
+        setUploadMessage({
+          type: "error",
+          text: "Error: Quotation ID not found",
+        });
+        return;
+      }
+
+      console.log(`Retracting quotation: ${quotationId}`);
+
+      // Delete from Firestore
+      await deleteDoc(doc(db, "quotations", quotationId));
+      console.log(`Quotation ${quotationId} deleted from Firestore`);
+
+      // Remove from local state
+      const updatedQuotations = quotationHistory.filter(
+        (quote) => quote.id !== quotationId,
+      );
+      setQuotationHistory(updatedQuotations);
+      console.log(
+        `Quotation removed from local state. Remaining quotations: ${updatedQuotations.length}`,
+      );
+
+      setUploadMessage({
+        type: "success",
+        text: "Quotation retracted successfully",
+      });
+      setTimeout(() => setUploadMessage(null), 3000);
+    } catch (error) {
+      console.error("Error retracting quotation:", error);
+      setUploadMessage({
+        type: "error",
+        text: `Error retracting quotation: ${
+          error instanceof Error ? error.message : "Unknown error"
+        }`,
+      });
+    } finally {
+      setShowRetractQuotationConfirm(false);
+      setRetractingQuotationId(null);
+    }
+  };
+
+  const retractInquiry = async (inquiryId: string | null) => {
+    try {
+      if (!db || !inquiryId) {
+        console.error("Cannot retract inquiry: missing db or inquiryId", {
+          db: !!db,
+          inquiryId,
+        });
+        setUploadMessage({
+          type: "error",
+          text: "Error: Inquiry ID not found",
+        });
+        return;
+      }
+
+      console.log(`Retracting inquiry: ${inquiryId}`);
+
+      // Delete from Firestore
+      await deleteDoc(doc(db, "inquiries", inquiryId));
+      console.log(`Inquiry ${inquiryId} deleted from Firestore`);
+
+      // Remove from local state
+      const updatedInquiries = inquiryHistory.filter(
+        (inquiry) => inquiry.id !== inquiryId,
+      );
+      setInquiryHistory(updatedInquiries);
+      console.log(
+        `Inquiry removed from local state. Remaining inquiries: ${updatedInquiries.length}`,
+      );
+
+      setUploadMessage({
+        type: "success",
+        text: "Inquiry retracted successfully",
+      });
+      setTimeout(() => setUploadMessage(null), 3000);
+    } catch (error) {
+      console.error("Error retracting inquiry:", error);
+      setUploadMessage({
+        type: "error",
+        text: `Error retracting inquiry: ${
+          error instanceof Error ? error.message : "Unknown error"
+        }`,
+      });
+    } finally {
+      setShowRetractInquiryConfirm(false);
+      setRetractingInquiryId(null);
     }
   };
 
@@ -1630,7 +2138,10 @@ export default function App() {
           successCount++;
           sellerEmails[seller] = seller; // Store seller for potential notification
         } catch (sellerError) {
-          console.error(`Error creating order for seller ${seller}:`, sellerError);
+          console.error(
+            `Error creating order for seller ${seller}:`,
+            sellerError,
+          );
         }
       }
 
@@ -2093,7 +2604,7 @@ export default function App() {
         setCart(cartItems);
         setHasLoadedCart(true);
         console.log(`Login: Loaded ${cartItems.length} cart items`);
-      });      // Optimization #4: Reset inactivity timer on successful login
+      }); // Optimization #4: Reset inactivity timer on successful login
       resetInactivityTimer();
     } catch (error) {
       setAuthError("Error logging in. Please try again.");
@@ -2905,6 +3416,47 @@ export default function App() {
 
         <nav style={{ flex: 1 }}>
           <div
+            onClick={() => setActiveSubmenu("warehouse")}
+            style={{
+              padding: "14px 18px",
+              cursor: "pointer",
+              background:
+                activeSubmenu === "warehouse"
+                  ? "rgba(91, 124, 153, 0.12)"
+                  : "rgba(100, 116, 139, 0.08)",
+              borderLeft:
+                activeSubmenu === "warehouse"
+                  ? "4px solid #5b7c99"
+                  : "4px solid transparent",
+              transition: "all 0.3s ease",
+              color: activeSubmenu === "warehouse" ? "#5b7c99" : "#64748b",
+              fontWeight: activeSubmenu === "warehouse" ? "700" : "600",
+              fontSize: "13px",
+              marginLeft: "8px",
+              marginRight: "8px",
+              borderRadius: "0 6px 6px 0",
+              letterSpacing: "0.3px",
+              boxShadow:
+                activeSubmenu === "warehouse"
+                  ? "inset 0 1px 2px rgba(91, 124, 153, 0.08)"
+                  : "inset 0 1px 2px rgba(100, 116, 139, 0.04)",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background =
+                activeSubmenu === "warehouse"
+                  ? "rgba(91, 124, 153, 0.18)"
+                  : "rgba(100, 116, 139, 0.12)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background =
+                activeSubmenu === "warehouse"
+                  ? "rgba(91, 124, 153, 0.12)"
+                  : "rgba(100, 116, 139, 0.08)";
+            }}
+          >
+            Hub
+          </div>
+          <div
             onClick={() => setActiveSubmenu("marketplace")}
             style={{
               padding: "14px 18px",
@@ -2944,47 +3496,6 @@ export default function App() {
             }}
           >
             Marketplace
-          </div>
-          <div
-            onClick={() => setActiveSubmenu("warehouse")}
-            style={{
-              padding: "14px 18px",
-              cursor: "pointer",
-              background:
-                activeSubmenu === "warehouse"
-                  ? "rgba(91, 124, 153, 0.12)"
-                  : "rgba(100, 116, 139, 0.08)",
-              borderLeft:
-                activeSubmenu === "warehouse"
-                  ? "4px solid #5b7c99"
-                  : "4px solid transparent",
-              transition: "all 0.3s ease",
-              color: activeSubmenu === "warehouse" ? "#5b7c99" : "#64748b",
-              fontWeight: activeSubmenu === "warehouse" ? "700" : "600",
-              fontSize: "13px",
-              marginLeft: "8px",
-              marginRight: "8px",
-              borderRadius: "0 6px 6px 0",
-              letterSpacing: "0.3px",
-              boxShadow:
-                activeSubmenu === "warehouse"
-                  ? "inset 0 1px 2px rgba(91, 124, 153, 0.08)"
-                  : "inset 0 1px 2px rgba(100, 116, 139, 0.04)",
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background =
-                activeSubmenu === "warehouse"
-                  ? "rgba(91, 124, 153, 0.18)"
-                  : "rgba(100, 116, 139, 0.12)";
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background =
-                activeSubmenu === "warehouse"
-                  ? "rgba(91, 124, 153, 0.12)"
-                  : "rgba(100, 116, 139, 0.08)";
-            }}
-          >
-            Warehouse
           </div>
           <div
             onClick={() => setActiveSubmenu("allDocuments")}
@@ -3144,7 +3655,7 @@ export default function App() {
                 textTransform: "uppercase",
               }}
             >
-              Warehouse Management
+              Hub
             </h1>
             <div
               style={{
@@ -3643,7 +4154,8 @@ export default function App() {
                                       // Add to Cart
                                       const newCartItem = {
                                         productId: item.id,
-                                        seller: (item.seller as string) || "Unknown",
+                                        seller:
+                                          (item.seller as string) || "Unknown",
                                         name: item.name,
                                         price: item.price || 0,
                                         currency: item.currency || "USD",
@@ -3655,19 +4167,22 @@ export default function App() {
                                       const existingIndex = cart.findIndex(
                                         (cartItem) =>
                                           cartItem.productId === item.id &&
-                                          cartItem.seller === newCartItem.seller,
+                                          cartItem.seller ===
+                                            newCartItem.seller,
                                       );
 
                                       let updatedCart;
                                       if (existingIndex >= 0) {
                                         // Item already in cart, increase quantity
-                                        updatedCart = cart.map((cartItem, idx) =>
-                                          idx === existingIndex
-                                            ? {
-                                                ...cartItem,
-                                                quantity: cartItem.quantity + 1,
-                                              }
-                                            : cartItem,
+                                        updatedCart = cart.map(
+                                          (cartItem, idx) =>
+                                            idx === existingIndex
+                                              ? {
+                                                  ...cartItem,
+                                                  quantity:
+                                                    cartItem.quantity + 1,
+                                                }
+                                              : cartItem,
                                         );
                                       } else {
                                         // New item, add to cart
@@ -3675,7 +4190,10 @@ export default function App() {
                                       }
 
                                       setCart(updatedCart);
-                                      saveCartToIndexedDB(currentUser, updatedCart);
+                                      saveCartToIndexedDB(
+                                        currentUser,
+                                        updatedCart,
+                                      );
 
                                       setUploadMessage({
                                         type: "success",
@@ -4267,127 +4785,6 @@ export default function App() {
                         }}
                       >
                         Place Order
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Retract Order Confirmation Dialog */}
-              {showRetractConfirm && retractingOrderId && (
-                <div
-                  style={{
-                    position: "fixed",
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    bottom: 0,
-                    background: "rgba(0, 0, 0, 0.5)",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    zIndex: 1001,
-                  }}
-                  onClick={() => {
-                    setShowRetractConfirm(false);
-                    setRetractingOrderId(null);
-                  }}
-                >
-                  <div
-                    style={{
-                      background: "#ffffff",
-                      borderRadius: "12px",
-                      padding: "32px",
-                      maxWidth: "400px",
-                      width: "90%",
-                      boxShadow: "0 20px 60px rgba(0, 0, 0, 0.15)",
-                    }}
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <h2
-                      style={{
-                        margin: "0 0 16px 0",
-                        fontSize: "18px",
-                        fontWeight: "800",
-                        color: "#1a365d",
-                      }}
-                    >
-                      Are you sure?
-                    </h2>
-
-                    <p
-                      style={{
-                        margin: "0 0 24px 0",
-                        fontSize: "14px",
-                        color: "#64748b",
-                        lineHeight: "1.6",
-                      }}
-                    >
-                      This will permanently retract your order. The seller will
-                      not receive this order. This action cannot be undone.
-                    </p>
-
-                    <div style={{ display: "flex", gap: "12px" }}>
-                      <button
-                        onClick={() => {
-                          setShowRetractConfirm(false);
-                          setRetractingOrderId(null);
-                        }}
-                        style={{
-                          flex: 1,
-                          padding: "12px",
-                          background: "#e2e8f0",
-                          color: "#1a365d",
-                          border: "none",
-                          borderRadius: "6px",
-                          cursor: "pointer",
-                          fontWeight: "600",
-                          fontSize: "14px",
-                          transition: "all 0.25s ease",
-                        }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.background = "#cbd5e1";
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.background = "#e2e8f0";
-                        }}
-                      >
-                        Keep Order
-                      </button>
-                      <button
-                        onClick={() => {
-                          if (retractingOrderId) {
-                            retractOrder(retractingOrderId);
-                          } else {
-                            console.error(
-                              "Retract button clicked but retractingOrderId is null"
-                            );
-                            setUploadMessage({
-                              type: "error",
-                              text: "Error: Order ID not found",
-                            });
-                          }
-                        }}
-                        style={{
-                          flex: 1,
-                          padding: "12px",
-                          background: "#dc2626",
-                          color: "white",
-                          border: "none",
-                          borderRadius: "6px",
-                          cursor: "pointer",
-                          fontWeight: "600",
-                          fontSize: "14px",
-                          transition: "all 0.25s ease",
-                        }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.background = "#b91c1c";
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.background = "#dc2626";
-                        }}
-                      >
-                        Retract Order
                       </button>
                     </div>
                   </div>
@@ -5762,6 +6159,16 @@ export default function App() {
                                       ...p,
                                       qty: quantityEdits[p.id] || p.qty,
                                     }));
+                                  console.log(
+                                    "DEBUG: Selected items:",
+                                    selectedItems.map((s) => ({
+                                      id: s.id,
+                                      name: s.name,
+                                      price: s.price,
+                                      qty: s.qty,
+                                      currency: s.currency,
+                                    })),
+                                  );
                                   try {
                                     if (
                                       showQuantityEditor.mode === "quotation"
@@ -5779,13 +6186,8 @@ export default function App() {
                                     } else {
                                       const newMeta = generateInquiryMetadata();
                                       setInquiries(selectedItems);
-                                      await saveInquiryToIndexedDB(
-                                        selectedItems,
-                                        newMeta,
-                                      );
-                                      const newHistory =
-                                        await loadInquiryHistory();
-                                      setInquiryHistory(newHistory);
+                                      // Don't save to IndexedDB yet - will save when PDF is generated
+                                      // Items are just in the current composition area
                                     }
                                   } catch (error) {
                                     console.error(
@@ -6069,97 +6471,401 @@ export default function App() {
               )}
 
               {activeWarehouseTab === "quotations" && (
-                <Quotations
-                  items={quotations}
-                  history={quotationHistory}
-                  onGeneratePDF={() => {
-                    console.log("Generating quotation PDF...");
-                    const newMeta = generateQuotationMetadata();
-                    generateQuotationPDF(quotations).catch((err) =>
-                      console.error("PDF generation error:", err),
-                    );
-                  }}
-                  onSendEmail={async () => {
-                    console.log("Sending quotation via email...");
-                    try {
-                      const newMeta = generateQuotationMetadata();
-                      // Save to history first
-                      await saveQuotationToIndexedDB(quotations, newMeta);
-                      const newHistory =
-                        await loadQuotationHistory(currentUser);
-                      setQuotationHistory(newHistory);
-                      // Generate PDF
-                      await generateQuotationPDF(quotations);
-                      // Then open email with content
-                      const link = generateEmailLink("quotation", quotations);
-                      console.log("Email link:", link);
-                      window.open(link);
-                      alert(
-                        "Quotation saved to History!\n\nPDF generated and saved to your Downloads folder.\n\nTo attach it to your email:\n1. The PDF file is saved as: Quotation_" +
-                          newMeta.number +
-                          ".pdf\n2. In your email compose window, attach the file from Downloads\n3. Complete and send the email",
-                      );
-                    } catch (error) {
-                      console.error("Error:", error);
-                      alert(
-                        "Error: " +
-                          (error instanceof Error
-                            ? error.message
-                            : "Unknown error"),
-                      );
-                    }
-                  }}
-                  onDeleteHistory={(id) =>
-                    setQuotationHistory(
-                      quotationHistory.filter((q) => q.id !== id),
-                    )
-                  }
-                />
+                <div>
+                  <div style={{ marginBottom: "28px" }}>
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        marginBottom: "18px",
+                      }}
+                    >
+                      <h2
+                        style={{
+                          margin: "0",
+                          fontSize: "22px",
+                          fontWeight: "800",
+                          color: "#5b7c99",
+                          letterSpacing: "-0.3px",
+                          textTransform: "uppercase",
+                        }}
+                      >
+                        {activeQuotationsView === "incoming"
+                          ? `Incoming Quotations (${0})`
+                          : `Outgoing Quotations (${quotationHistory.length})`}
+                      </h2>
+                    </div>
+
+                    {/* Quotations View Selector - Side by Side Buttons */}
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: "8px",
+                      }}
+                    >
+                      <button
+                        onClick={() => {
+                          setActiveQuotationsView("incoming");
+                        }}
+                        style={{
+                          padding: "10px 16px",
+                          borderRadius: "6px",
+                          border:
+                            activeQuotationsView === "incoming"
+                              ? "2px solid #0284c7"
+                              : "1px solid #d0dce6",
+                          background:
+                            activeQuotationsView === "incoming"
+                              ? "#0284c7"
+                              : "#ffffff",
+                          color:
+                            activeQuotationsView === "incoming"
+                              ? "white"
+                              : "#1a365d",
+                          cursor: "pointer",
+                          fontSize: "14px",
+                          fontWeight: "600",
+                          transition: "all 0.25s ease",
+                          boxShadow:
+                            activeQuotationsView === "incoming"
+                              ? "0 4px 8px rgba(2, 132, 199, 0.2)"
+                              : "0 2px 4px rgba(0, 0, 0, 0.04)",
+                        }}
+                        onMouseEnter={(e) => {
+                          if (activeQuotationsView !== "incoming") {
+                            e.currentTarget.style.background = "#f0f9ff";
+                            e.currentTarget.style.borderColor = "#0284c7";
+                          }
+                        }}
+                        onMouseLeave={(e) => {
+                          if (activeQuotationsView !== "incoming") {
+                            e.currentTarget.style.background = "#ffffff";
+                            e.currentTarget.style.borderColor = "#d0dce6";
+                          }
+                        }}
+                      >
+                        📧 Incoming Quotations
+                      </button>
+                      <button
+                        onClick={() => {
+                          setActiveQuotationsView("outgoing");
+                        }}
+                        style={{
+                          padding: "10px 16px",
+                          borderRadius: "6px",
+                          border:
+                            activeQuotationsView === "outgoing"
+                              ? "2px solid #0284c7"
+                              : "1px solid #d0dce6",
+                          background:
+                            activeQuotationsView === "outgoing"
+                              ? "#0284c7"
+                              : "#ffffff",
+                          color:
+                            activeQuotationsView === "outgoing"
+                              ? "white"
+                              : "#1a365d",
+                          cursor: "pointer",
+                          fontSize: "14px",
+                          fontWeight: "600",
+                          transition: "all 0.25s ease",
+                          boxShadow:
+                            activeQuotationsView === "outgoing"
+                              ? "0 4px 8px rgba(2, 132, 199, 0.2)"
+                              : "0 2px 4px rgba(0, 0, 0, 0.04)",
+                        }}
+                        onMouseEnter={(e) => {
+                          if (activeQuotationsView !== "outgoing") {
+                            e.currentTarget.style.background = "#f0f9ff";
+                            e.currentTarget.style.borderColor = "#0284c7";
+                          }
+                        }}
+                        onMouseLeave={(e) => {
+                          if (activeQuotationsView !== "outgoing") {
+                            e.currentTarget.style.background = "#ffffff";
+                            e.currentTarget.style.borderColor = "#d0dce6";
+                          }
+                        }}
+                      >
+                        📤 Outgoing Quotations
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Incoming Quotations - Always Blank (Feature to be implemented later) */}
+                  {activeQuotationsView === "incoming" && (
+                    <div
+                      style={{
+                        background: "#f8fafc",
+                        border: "2px dashed #cbd5e1",
+                        borderRadius: "8px",
+                        padding: "48px 32px",
+                        textAlign: "center",
+                      }}
+                    >
+                      <p
+                        style={{
+                          fontSize: "16px",
+                          color: "#64748b",
+                          margin: "0",
+                        }}
+                      >
+                        No incoming quotations yet. When other users send
+                        quotations to you, they will appear here.
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Outgoing Quotations */}
+                  {activeQuotationsView === "outgoing" && (
+                    <>
+                      {quotationHistory.length === 0 ? (
+                        <div
+                          style={{
+                            background: "#f8fafc",
+                            border: "2px dashed #cbd5e1",
+                            borderRadius: "8px",
+                            padding: "48px 32px",
+                            textAlign: "center",
+                          }}
+                        >
+                          <p
+                            style={{
+                              fontSize: "16px",
+                              color: "#64748b",
+                              margin: "0",
+                            }}
+                          >
+                            No outgoing quotations yet. Create a quotation in
+                            the Quotation Builder above.
+                          </p>
+                        </div>
+                      ) : (
+                        <div
+                          style={{
+                            overflowX: "auto",
+                            borderRadius: "8px",
+                            boxShadow: "0 2px 8px rgba(0, 0, 0, 0.08)",
+                          }}
+                        >
+                          <table
+                            style={{
+                              width: "100%",
+                              borderCollapse: "collapse",
+                              background: "#ffffff",
+                            }}
+                          >
+                            <thead>
+                              <tr
+                                style={{
+                                  background: "#f1f5f9",
+                                  borderBottom: "2px solid #e2e8f0",
+                                }}
+                              >
+                                <th
+                                  style={{
+                                    padding: "16px",
+                                    textAlign: "left",
+                                    fontWeight: "700",
+                                    color: "#5b7c99",
+                                    fontSize: "13px",
+                                    textTransform: "uppercase",
+                                    letterSpacing: "0.3px",
+                                  }}
+                                >
+                                  Quote #
+                                </th>
+                                <th
+                                  style={{
+                                    padding: "16px",
+                                    textAlign: "left",
+                                    fontWeight: "700",
+                                    color: "#5b7c99",
+                                    fontSize: "13px",
+                                    textTransform: "uppercase",
+                                    letterSpacing: "0.3px",
+                                  }}
+                                >
+                                  Product Name
+                                </th>
+                                <th
+                                  style={{
+                                    padding: "16px",
+                                    textAlign: "left",
+                                    fontWeight: "700",
+                                    color: "#5b7c99",
+                                    fontSize: "13px",
+                                    textTransform: "uppercase",
+                                    letterSpacing: "0.3px",
+                                  }}
+                                >
+                                  Total Price
+                                </th>
+                                <th
+                                  style={{
+                                    padding: "16px",
+                                    textAlign: "center",
+                                    fontWeight: "700",
+                                    color: "#5b7c99",
+                                    fontSize: "13px",
+                                    textTransform: "uppercase",
+                                    letterSpacing: "0.3px",
+                                  }}
+                                >
+                                  Actions
+                                </th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {quotationHistory.map((quote, index) => (
+                                <tr
+                                  key={index}
+                                  style={{
+                                    borderBottom: "1px solid #e2e8f0",
+                                    background:
+                                      index % 2 === 0 ? "#ffffff" : "#f8fafc",
+                                  }}
+                                >
+                                  <td
+                                    style={{
+                                      padding: "16px",
+                                      color: "#1a365d",
+                                      fontWeight: "600",
+                                      fontSize: "13px",
+                                    }}
+                                  >
+                                    {quote.number || quote.id.substring(0, 8)}
+                                  </td>
+                                  <td
+                                    style={{
+                                      padding: "16px",
+                                      color: "#64748b",
+                                      fontSize: "13px",
+                                    }}
+                                  >
+                                    {quote.items && quote.items.length > 0
+                                      ? quote.items[0].name
+                                      : "N/A"}
+                                  </td>
+                                  <td
+                                    style={{
+                                      padding: "16px",
+                                      color: "#1a365d",
+                                      fontWeight: "600",
+                                      fontSize: "13px",
+                                    }}
+                                  >
+                                    {quote.currency || "USD"}{" "}
+                                    {formatNumber(quote.totalPrice || 0)}
+                                  </td>
+                                  <td
+                                    style={{
+                                      padding: "16px",
+                                      textAlign: "center",
+                                    }}
+                                  >
+                                    <div
+                                      style={{
+                                        display: "flex",
+                                        gap: "8px",
+                                        justifyContent: "center",
+                                      }}
+                                    >
+                                      <button
+                                        onClick={() => {
+                                          setSelectedQuotationForPreview(quote);
+                                          setShowQuotationPreview(true);
+                                        }}
+                                        style={{
+                                          padding: "6px 12px",
+                                          background: "#0284c7",
+                                          color: "white",
+                                          border: "none",
+                                          borderRadius: "4px",
+                                          cursor: "pointer",
+                                          fontSize: "12px",
+                                          fontWeight: "600",
+                                          transition: "all 0.25s ease",
+                                        }}
+                                        onMouseEnter={(e) => {
+                                          e.currentTarget.style.background =
+                                            "#0369a1";
+                                        }}
+                                        onMouseLeave={(e) => {
+                                          e.currentTarget.style.background =
+                                            "#0284c7";
+                                        }}
+                                      >
+                                        Preview
+                                      </button>
+                                      <button
+                                        onClick={() => {
+                                          setRetractingQuotationId(quote.id);
+                                          setShowRetractQuotationConfirm(true);
+                                        }}
+                                        style={{
+                                          padding: "6px 12px",
+                                          background: "#dc2626",
+                                          color: "white",
+                                          border: "none",
+                                          borderRadius: "4px",
+                                          cursor: "pointer",
+                                          fontSize: "12px",
+                                          fontWeight: "600",
+                                          transition: "all 0.25s ease",
+                                        }}
+                                        onMouseEnter={(e) => {
+                                          e.currentTarget.style.background =
+                                            "#b91c1c";
+                                        }}
+                                        onMouseLeave={(e) => {
+                                          e.currentTarget.style.background =
+                                            "#dc2626";
+                                        }}
+                                      >
+                                        Delete
+                                      </button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
               )}
 
               {activeWarehouseTab === "inquiries" && (
                 <Inquiries
                   items={inquiries}
                   history={inquiryHistory}
-                  onGeneratePDF={() => {
-                    console.log("Generating inquiry PDF...");
-                    const newMeta = generateInquiryMetadata();
-                    generateInquiryPDF(inquiries).catch((err) =>
-                      console.error("PDF generation error:", err),
-                    );
-                  }}
-                  onSendEmail={async () => {
-                    console.log("Sending inquiry via email...");
-                    try {
-                      const newMeta = generateInquiryMetadata();
-                      // Save to history first
-                      await saveInquiryToIndexedDB(inquiries, newMeta);
-                      const newHistory = await loadInquiryHistory(currentUser);
-                      setInquiryHistory(newHistory);
-                      // Generate PDF
-                      await generateInquiryPDF(inquiries);
-                      // Then open email with content
-                      const link = generateEmailLink("inquiry", inquiries);
-                      console.log("Email link:", link);
-                      window.open(link);
-                      alert(
-                        "Inquiry saved to History!\n\nPDF generated and saved to your Downloads folder.\n\nTo attach it to your email:\n1. The PDF file is saved as: Inquiry_" +
-                          newMeta.number +
-                          ".pdf\n2. In your email compose window, attach the file from Downloads\n3. Complete and send the email",
-                      );
-                    } catch (error) {
-                      console.error("Error:", error);
-                      alert(
-                        "Error: " +
-                          (error instanceof Error
-                            ? error.message
-                            : "Unknown error"),
-                      );
+                  letterhead={inquiryLetterhead}
+                  onGeneratePDF={async (inquiry, letterRef) => {
+                    if (inquiry && letterRef) {
+                      await generateInquiryPDFFromLetter(inquiry, letterRef);
+                    } else {
+                      alert("Please compose an inquiry first");
                     }
                   }}
-                  onDeleteHistory={(id) =>
-                    setInquiryHistory(inquiryHistory.filter((i) => i.id !== id))
-                  }
+                  onSendEmail={() => {
+                    alert("Email feature coming soon!");
+                  }}
+                  onDeleteHistory={async (id) => {
+                    if (id === "clear-current") {
+                      setInquiries([]);
+                    } else {
+                      // Delete from state
+                      setInquiryHistory(
+                        inquiryHistory.filter((i) => i.id !== id),
+                      );
+                      // Delete from IndexedDB
+                      await deleteInquiryFromIndexedDB(id);
+                    }
+                  }}
                 />
               )}
 
@@ -6465,7 +7171,10 @@ export default function App() {
                                       fontWeight: "600",
                                     }}
                                   >
-                                    {order.itemName}
+                                    {getFirstItemName(order)}{" "}
+                                    {getProductCount(order) > 1
+                                      ? `(+${getProductCount(order) - 1} more)`
+                                      : ""}
                                   </td>
                                   <td
                                     style={{
@@ -6481,7 +7190,7 @@ export default function App() {
                                       color: "#64748b",
                                     }}
                                   >
-                                    {order.quantity} units
+                                    {getTotalItemCount(order)} units
                                   </td>
                                   <td
                                     style={{
@@ -6490,7 +7199,7 @@ export default function App() {
                                       fontWeight: "600",
                                     }}
                                   >
-                                    {order.itemCurrency}{" "}
+                                    {order.currency || order.itemCurrency}{" "}
                                     {formatNumber(order.totalPrice)}
                                   </td>
                                   <td style={{ padding: "16px" }}>
@@ -6532,35 +7241,74 @@ export default function App() {
                                       textAlign: "center",
                                     }}
                                   >
-                                    <select
-                                      value={order.status}
-                                      onChange={(e) =>
-                                        updateOrderStatus(
-                                          order.id,
-                                          e.target.value as Order["status"],
-                                        )
-                                      }
+                                    <div
                                       style={{
-                                        padding: "8px 12px",
-                                        borderRadius: "6px",
-                                        border: "1px solid #cbd5e1",
-                                        background: "#ffffff",
-                                        color: "#1a365d",
-                                        cursor: "pointer",
-                                        fontSize: "12px",
-                                        fontWeight: "600",
+                                        display: "flex",
+                                        gap: "8px",
+                                        justifyContent: "center",
+                                        alignItems: "center",
+                                        flexWrap: "wrap",
                                       }}
                                     >
-                                      <option value="pending">Pending</option>
-                                      <option value="accepted">Accepted</option>
-                                      <option value="shipped">Shipped</option>
-                                      <option value="delivered">
-                                        Delivered
-                                      </option>
-                                      <option value="cancelled">
-                                        Cancelled
-                                      </option>
-                                    </select>
+                                      <button
+                                        onClick={() => {
+                                          setSelectedOrderForPreview(order);
+                                          setShowOrderPreview(true);
+                                        }}
+                                        style={{
+                                          padding: "8px 12px",
+                                          background: "#0284c7",
+                                          color: "white",
+                                          border: "none",
+                                          borderRadius: "6px",
+                                          cursor: "pointer",
+                                          fontSize: "12px",
+                                          fontWeight: "600",
+                                          transition: "all 0.25s ease",
+                                        }}
+                                        onMouseEnter={(e) => {
+                                          e.currentTarget.style.background =
+                                            "#0369a1";
+                                        }}
+                                        onMouseLeave={(e) => {
+                                          e.currentTarget.style.background =
+                                            "#0284c7";
+                                        }}
+                                      >
+                                        Preview
+                                      </button>
+                                      <select
+                                        value={order.status}
+                                        onChange={(e) =>
+                                          updateOrderStatus(
+                                            order.id,
+                                            e.target.value as Order["status"],
+                                          )
+                                        }
+                                        style={{
+                                          padding: "8px 12px",
+                                          borderRadius: "6px",
+                                          border: "1px solid #cbd5e1",
+                                          background: "#ffffff",
+                                          color: "#1a365d",
+                                          cursor: "pointer",
+                                          fontSize: "12px",
+                                          fontWeight: "600",
+                                        }}
+                                      >
+                                        <option value="pending">Pending</option>
+                                        <option value="accepted">
+                                          Accepted
+                                        </option>
+                                        <option value="shipped">Shipped</option>
+                                        <option value="delivered">
+                                          Delivered
+                                        </option>
+                                        <option value="cancelled">
+                                          Cancelled
+                                        </option>
+                                      </select>
+                                    </div>
                                   </td>
                                 </tr>
                               ))}
@@ -6714,7 +7462,10 @@ export default function App() {
                                       fontWeight: "600",
                                     }}
                                   >
-                                    {order.itemName}
+                                    {getFirstItemName(order)}{" "}
+                                    {getProductCount(order) > 1
+                                      ? `(+${getProductCount(order) - 1} more)`
+                                      : ""}
                                   </td>
                                   <td
                                     style={{
@@ -6730,7 +7481,7 @@ export default function App() {
                                       color: "#64748b",
                                     }}
                                   >
-                                    {order.quantity} units
+                                    {getTotalItemCount(order)} units
                                   </td>
                                   <td
                                     style={{
@@ -6739,7 +7490,7 @@ export default function App() {
                                       fontWeight: "600",
                                     }}
                                   >
-                                    {order.itemCurrency}{" "}
+                                    {order.currency || order.itemCurrency}{" "}
                                     {formatNumber(order.totalPrice)}
                                   </td>
                                   <td style={{ padding: "16px" }}>
@@ -6781,33 +7532,68 @@ export default function App() {
                                       textAlign: "center",
                                     }}
                                   >
-                                    <button
-                                      onClick={() => {
-                                        setRetractingOrderId(order.id);
-                                        setShowRetractConfirm(true);
-                                      }}
+                                    <div
                                       style={{
-                                        padding: "8px 12px",
-                                        background: "#dc2626",
-                                        color: "white",
-                                        border: "none",
-                                        borderRadius: "6px",
-                                        cursor: "pointer",
-                                        fontSize: "12px",
-                                        fontWeight: "600",
-                                        transition: "all 0.25s ease",
-                                      }}
-                                      onMouseEnter={(e) => {
-                                        e.currentTarget.style.background =
-                                          "#b91c1c";
-                                      }}
-                                      onMouseLeave={(e) => {
-                                        e.currentTarget.style.background =
-                                          "#dc2626";
+                                        display: "flex",
+                                        gap: "8px",
+                                        justifyContent: "center",
                                       }}
                                     >
-                                      Retract
-                                    </button>
+                                      <button
+                                        onClick={() => {
+                                          setSelectedOrderForPreview(order);
+                                          setShowOrderPreview(true);
+                                        }}
+                                        style={{
+                                          padding: "8px 12px",
+                                          background: "#0284c7",
+                                          color: "white",
+                                          border: "none",
+                                          borderRadius: "6px",
+                                          cursor: "pointer",
+                                          fontSize: "12px",
+                                          fontWeight: "600",
+                                          transition: "all 0.25s ease",
+                                        }}
+                                        onMouseEnter={(e) => {
+                                          e.currentTarget.style.background =
+                                            "#0369a1";
+                                        }}
+                                        onMouseLeave={(e) => {
+                                          e.currentTarget.style.background =
+                                            "#0284c7";
+                                        }}
+                                      >
+                                        Preview
+                                      </button>
+                                      <button
+                                        onClick={() => {
+                                          setRetractingOrderId(order.id);
+                                          setShowRetractConfirm(true);
+                                        }}
+                                        style={{
+                                          padding: "8px 12px",
+                                          background: "#dc2626",
+                                          color: "white",
+                                          border: "none",
+                                          borderRadius: "6px",
+                                          cursor: "pointer",
+                                          fontSize: "12px",
+                                          fontWeight: "600",
+                                          transition: "all 0.25s ease",
+                                        }}
+                                        onMouseEnter={(e) => {
+                                          e.currentTarget.style.background =
+                                            "#b91c1c";
+                                        }}
+                                        onMouseLeave={(e) => {
+                                          e.currentTarget.style.background =
+                                            "#dc2626";
+                                        }}
+                                      >
+                                        Retract
+                                      </button>
+                                    </div>
                                   </td>
                                 </tr>
                               ))}
@@ -6824,8 +7610,26 @@ export default function App() {
                 <Settings
                   quotationTemplate={quotationTemplate}
                   inquiryTemplate={inquiryTemplate}
+                  inquiryLetterhead={inquiryLetterhead}
                   onSaveTemplate={saveTemplate}
                   onLoadTemplate={loadTemplate}
+                  onSaveLetterhead={(letterhead) => {
+                    setInquiryLetterhead(letterhead);
+                    if (db) {
+                      setDoc(
+                        doc(db, "userSettings", `${currentUser}_letterhead`),
+                        letterhead,
+                      ).catch((err) =>
+                        console.error("Error saving letterhead:", err),
+                      );
+                    } else {
+                      localStorage.setItem(
+                        `pspm_letterhead_${currentUser}`,
+                        JSON.stringify(letterhead),
+                      );
+                    }
+                  }}
+                  onDeleteLetterhead={() => deleteLetterhead(currentUser)}
                 />
               )}
 
@@ -7715,6 +8519,1517 @@ export default function App() {
           ) : null}
         </div>
 
+        {/* Retract Order Confirmation Dialog */}
+        {showRetractConfirm && retractingOrderId && (
+          <div
+            style={{
+              position: "fixed",
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              background: "rgba(0, 0, 0, 0.5)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              zIndex: 1001,
+            }}
+            onClick={() => {
+              setShowRetractConfirm(false);
+              setRetractingOrderId(null);
+            }}
+          >
+            <div
+              style={{
+                background: "#ffffff",
+                borderRadius: "12px",
+                padding: "32px",
+                maxWidth: "400px",
+                width: "90%",
+                boxShadow: "0 20px 60px rgba(0, 0, 0, 0.15)",
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h2
+                style={{
+                  margin: "0 0 16px 0",
+                  fontSize: "18px",
+                  fontWeight: "800",
+                  color: "#1a365d",
+                }}
+              >
+                Are you sure?
+              </h2>
+
+              <p
+                style={{
+                  margin: "0 0 24px 0",
+                  fontSize: "14px",
+                  color: "#64748b",
+                  lineHeight: "1.6",
+                }}
+              >
+                This will permanently retract your order. The seller will not
+                receive this order. This action cannot be undone.
+              </p>
+
+              <div style={{ display: "flex", gap: "12px" }}>
+                <button
+                  onClick={() => {
+                    setShowRetractConfirm(false);
+                    setRetractingOrderId(null);
+                  }}
+                  style={{
+                    flex: 1,
+                    padding: "12px",
+                    background: "#e2e8f0",
+                    color: "#1a365d",
+                    border: "none",
+                    borderRadius: "6px",
+                    cursor: "pointer",
+                    fontWeight: "600",
+                    fontSize: "14px",
+                    transition: "all 0.25s ease",
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = "#cbd5e1";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = "#e2e8f0";
+                  }}
+                >
+                  Keep Order
+                </button>
+                <button
+                  onClick={() => {
+                    if (retractingOrderId) {
+                      retractOrder(retractingOrderId);
+                    } else {
+                      console.error(
+                        "Retract button clicked but retractingOrderId is null",
+                      );
+                      setUploadMessage({
+                        type: "error",
+                        text: "Error: Order ID not found",
+                      });
+                    }
+                  }}
+                  style={{
+                    flex: 1,
+                    padding: "12px",
+                    background: "#dc2626",
+                    color: "white",
+                    border: "none",
+                    borderRadius: "6px",
+                    cursor: "pointer",
+                    fontWeight: "600",
+                    fontSize: "14px",
+                    transition: "all 0.25s ease",
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = "#b91c1c";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = "#dc2626";
+                  }}
+                >
+                  Retract Order
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Retract Quotation Confirmation Dialog */}
+        {showRetractQuotationConfirm && retractingQuotationId && (
+          <div
+            style={{
+              position: "fixed",
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              background: "rgba(0, 0, 0, 0.5)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              zIndex: 1001,
+            }}
+            onClick={() => {
+              setShowRetractQuotationConfirm(false);
+              setRetractingQuotationId(null);
+            }}
+          >
+            <div
+              style={{
+                background: "#ffffff",
+                borderRadius: "12px",
+                padding: "32px",
+                maxWidth: "400px",
+                width: "90%",
+                boxShadow: "0 20px 60px rgba(0, 0, 0, 0.15)",
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h2
+                style={{
+                  margin: "0 0 16px 0",
+                  fontSize: "18px",
+                  fontWeight: "800",
+                  color: "#1a365d",
+                }}
+              >
+                Are you sure?
+              </h2>
+
+              <p
+                style={{
+                  margin: "0 0 24px 0",
+                  fontSize: "14px",
+                  color: "#64748b",
+                  lineHeight: "1.6",
+                }}
+              >
+                This will permanently delete your quotation. This action cannot
+                be undone.
+              </p>
+
+              <div style={{ display: "flex", gap: "12px" }}>
+                <button
+                  onClick={() => {
+                    setShowRetractQuotationConfirm(false);
+                    setRetractingQuotationId(null);
+                  }}
+                  style={{
+                    flex: 1,
+                    padding: "12px",
+                    background: "#e2e8f0",
+                    color: "#1a365d",
+                    border: "none",
+                    borderRadius: "6px",
+                    cursor: "pointer",
+                    fontWeight: "600",
+                    fontSize: "14px",
+                    transition: "all 0.25s ease",
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = "#cbd5e1";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = "#e2e8f0";
+                  }}
+                >
+                  Keep Quotation
+                </button>
+                <button
+                  onClick={() => {
+                    if (retractingQuotationId) {
+                      retractQuotation(retractingQuotationId);
+                    } else {
+                      console.error(
+                        "Retract button clicked but retractingQuotationId is null",
+                      );
+                      setUploadMessage({
+                        type: "error",
+                        text: "Error: Quotation ID not found",
+                      });
+                    }
+                  }}
+                  style={{
+                    flex: 1,
+                    padding: "12px",
+                    background: "#dc2626",
+                    color: "white",
+                    border: "none",
+                    borderRadius: "6px",
+                    cursor: "pointer",
+                    fontWeight: "600",
+                    fontSize: "14px",
+                    transition: "all 0.25s ease",
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = "#b91c1c";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = "#dc2626";
+                  }}
+                >
+                  Delete Quotation
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Retract Inquiry Confirmation Dialog */}
+        {showRetractInquiryConfirm && retractingInquiryId && (
+          <div
+            style={{
+              position: "fixed",
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              background: "rgba(0, 0, 0, 0.5)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              zIndex: 1001,
+            }}
+            onClick={() => {
+              setShowRetractInquiryConfirm(false);
+              setRetractingInquiryId(null);
+            }}
+          >
+            <div
+              style={{
+                background: "#ffffff",
+                borderRadius: "12px",
+                padding: "32px",
+                maxWidth: "400px",
+                width: "90%",
+                boxShadow: "0 20px 60px rgba(0, 0, 0, 0.15)",
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h2
+                style={{
+                  margin: "0 0 16px 0",
+                  fontSize: "18px",
+                  fontWeight: "800",
+                  color: "#1a365d",
+                }}
+              >
+                Are you sure?
+              </h2>
+
+              <p
+                style={{
+                  margin: "0 0 24px 0",
+                  fontSize: "14px",
+                  color: "#64748b",
+                  lineHeight: "1.6",
+                }}
+              >
+                This will permanently delete your inquiry. This action cannot be
+                undone.
+              </p>
+
+              <div style={{ display: "flex", gap: "12px" }}>
+                <button
+                  onClick={() => {
+                    setShowRetractInquiryConfirm(false);
+                    setRetractingInquiryId(null);
+                  }}
+                  style={{
+                    flex: 1,
+                    padding: "12px",
+                    background: "#e2e8f0",
+                    color: "#1a365d",
+                    border: "none",
+                    borderRadius: "6px",
+                    cursor: "pointer",
+                    fontWeight: "600",
+                    fontSize: "14px",
+                    transition: "all 0.25s ease",
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = "#cbd5e1";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = "#e2e8f0";
+                  }}
+                >
+                  Keep Inquiry
+                </button>
+                <button
+                  onClick={() => {
+                    if (retractingInquiryId) {
+                      retractInquiry(retractingInquiryId);
+                    } else {
+                      console.error(
+                        "Retract button clicked but retractingInquiryId is null",
+                      );
+                      setUploadMessage({
+                        type: "error",
+                        text: "Error: Inquiry ID not found",
+                      });
+                    }
+                  }}
+                  style={{
+                    flex: 1,
+                    padding: "12px",
+                    background: "#dc2626",
+                    color: "white",
+                    border: "none",
+                    borderRadius: "6px",
+                    cursor: "pointer",
+                    fontWeight: "600",
+                    fontSize: "14px",
+                    transition: "all 0.25s ease",
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = "#b91c1c";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = "#dc2626";
+                  }}
+                >
+                  Delete Inquiry
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Order Preview Modal */}
+        {showOrderPreview && selectedOrderForPreview && (
+          <div
+            style={{
+              position: "fixed",
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              background: "rgba(0, 0, 0, 0.5)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              zIndex: 1001,
+            }}
+            onClick={() => {
+              setShowOrderPreview(false);
+              setSelectedOrderForPreview(null);
+            }}
+          >
+            <div
+              style={{
+                background: "#ffffff",
+                borderRadius: "12px",
+                padding: "32px",
+                maxWidth: "700px",
+                width: "90%",
+                maxHeight: "80vh",
+                overflowY: "auto",
+                boxShadow: "0 20px 60px rgba(0, 0, 0, 0.15)",
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h2
+                style={{
+                  margin: "0 0 24px 0",
+                  fontSize: "22px",
+                  fontWeight: "800",
+                  color: "#1a365d",
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                }}
+              >
+                <span>Order Details</span>
+                <span
+                  style={{
+                    fontSize: "12px",
+                    fontWeight: "700",
+                    textTransform: "uppercase",
+                    padding: "6px 12px",
+                    borderRadius: "6px",
+                    color:
+                      selectedOrderForPreview.status === "pending"
+                        ? "#b45309"
+                        : selectedOrderForPreview.status === "accepted"
+                          ? "#0369a1"
+                          : selectedOrderForPreview.status === "shipped"
+                            ? "#7c3aed"
+                            : selectedOrderForPreview.status === "delivered"
+                              ? "#16a34a"
+                              : "#dc2626",
+                    background:
+                      selectedOrderForPreview.status === "pending"
+                        ? "#fef3c7"
+                        : selectedOrderForPreview.status === "accepted"
+                          ? "#cffafe"
+                          : selectedOrderForPreview.status === "shipped"
+                            ? "#ede9fe"
+                            : selectedOrderForPreview.status === "delivered"
+                              ? "#dcfce7"
+                              : "#fee2e2",
+                  }}
+                >
+                  {selectedOrderForPreview.status}
+                </span>
+              </h2>
+
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr",
+                  gap: "16px",
+                  marginBottom: "24px",
+                  padding: "16px",
+                  background: "#f8fafc",
+                  borderRadius: "8px",
+                  border: "1px solid #e2e8f0",
+                }}
+              >
+                <div>
+                  <p
+                    style={{
+                      margin: "0 0 4px 0",
+                      fontSize: "12px",
+                      fontWeight: "700",
+                      color: "#5b7c99",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.3px",
+                    }}
+                  >
+                    Order ID
+                  </p>
+                  <p
+                    style={{
+                      margin: "0",
+                      fontSize: "13px",
+                      fontWeight: "600",
+                      color: "#1a365d",
+                      wordBreak: "break-all",
+                    }}
+                  >
+                    {selectedOrderForPreview.id}
+                  </p>
+                </div>
+                <div>
+                  <p
+                    style={{
+                      margin: "0 0 4px 0",
+                      fontSize: "12px",
+                      fontWeight: "700",
+                      color: "#5b7c99",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.3px",
+                    }}
+                  >
+                    Total Items
+                  </p>
+                  <p
+                    style={{
+                      margin: "0",
+                      fontSize: "13px",
+                      fontWeight: "600",
+                      color: "#1a365d",
+                    }}
+                  >
+                    {getProductCount(selectedOrderForPreview)} product(s),{" "}
+                    {getTotalItemCount(selectedOrderForPreview)} unit(s)
+                  </p>
+                </div>
+                <div>
+                  <p
+                    style={{
+                      margin: "0 0 4px 0",
+                      fontSize: "12px",
+                      fontWeight: "700",
+                      color: "#5b7c99",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.3px",
+                    }}
+                  >
+                    From
+                  </p>
+                  <p
+                    style={{
+                      margin: "0",
+                      fontSize: "13px",
+                      fontWeight: "600",
+                      color: "#1a365d",
+                    }}
+                  >
+                    {selectedOrderForPreview.buyer}
+                  </p>
+                </div>
+                <div>
+                  <p
+                    style={{
+                      margin: "0 0 4px 0",
+                      fontSize: "12px",
+                      fontWeight: "700",
+                      color: "#5b7c99",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.3px",
+                    }}
+                  >
+                    To
+                  </p>
+                  <p
+                    style={{
+                      margin: "0",
+                      fontSize: "13px",
+                      fontWeight: "600",
+                      color: "#1a365d",
+                    }}
+                  >
+                    {selectedOrderForPreview.seller}
+                  </p>
+                </div>
+              </div>
+
+              <h3
+                style={{
+                  margin: "0 0 16px 0",
+                  fontSize: "16px",
+                  fontWeight: "700",
+                  color: "#1a365d",
+                }}
+              >
+                Items in Order
+              </h3>
+
+              <div
+                style={{
+                  marginBottom: "24px",
+                  border: "1px solid #e2e8f0",
+                  borderRadius: "8px",
+                  overflow: "hidden",
+                }}
+              >
+                <table
+                  style={{
+                    width: "100%",
+                    borderCollapse: "collapse",
+                  }}
+                >
+                  <thead>
+                    <tr
+                      style={{
+                        background: "#f8fafc",
+                        borderBottom: "1px solid #e2e8f0",
+                      }}
+                    >
+                      <th
+                        style={{
+                          padding: "12px",
+                          textAlign: "left",
+                          fontWeight: "700",
+                          color: "#5b7c99",
+                          fontSize: "12px",
+                          textTransform: "uppercase",
+                          letterSpacing: "0.3px",
+                        }}
+                      >
+                        Product Name
+                      </th>
+                      <th
+                        style={{
+                          padding: "12px",
+                          textAlign: "center",
+                          fontWeight: "700",
+                          color: "#5b7c99",
+                          fontSize: "12px",
+                          textTransform: "uppercase",
+                          letterSpacing: "0.3px",
+                        }}
+                      >
+                        Qty
+                      </th>
+                      <th
+                        style={{
+                          padding: "12px",
+                          textAlign: "right",
+                          fontWeight: "700",
+                          color: "#5b7c99",
+                          fontSize: "12px",
+                          textTransform: "uppercase",
+                          letterSpacing: "0.3px",
+                        }}
+                      >
+                        Unit Price
+                      </th>
+                      <th
+                        style={{
+                          padding: "12px",
+                          textAlign: "right",
+                          fontWeight: "700",
+                          color: "#5b7c99",
+                          fontSize: "12px",
+                          textTransform: "uppercase",
+                          letterSpacing: "0.3px",
+                        }}
+                      >
+                        Total
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {selectedOrderForPreview.items &&
+                    selectedOrderForPreview.items.length > 0 ? (
+                      selectedOrderForPreview.items.map((item, index) => (
+                        <tr
+                          key={index}
+                          style={{
+                            borderBottom: "1px solid #e2e8f0",
+                            background: index % 2 === 0 ? "#ffffff" : "#f8fafc",
+                          }}
+                        >
+                          <td
+                            style={{
+                              padding: "12px",
+                              color: "#1a365d",
+                              fontWeight: "600",
+                              fontSize: "13px",
+                            }}
+                          >
+                            {item.name}
+                          </td>
+                          <td
+                            style={{
+                              padding: "12px",
+                              textAlign: "center",
+                              color: "#64748b",
+                              fontSize: "13px",
+                            }}
+                          >
+                            {item.quantity}
+                          </td>
+                          <td
+                            style={{
+                              padding: "12px",
+                              textAlign: "right",
+                              color: "#64748b",
+                              fontSize: "13px",
+                            }}
+                          >
+                            {item.currency || selectedOrderForPreview.currency}{" "}
+                            {formatNumber(item.price)}
+                          </td>
+                          <td
+                            style={{
+                              padding: "12px",
+                              textAlign: "right",
+                              color: "#1a365d",
+                              fontWeight: "600",
+                              fontSize: "13px",
+                            }}
+                          >
+                            {item.currency || selectedOrderForPreview.currency}{" "}
+                            {formatNumber(item.price * item.quantity)}
+                          </td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td
+                          colSpan={4}
+                          style={{
+                            padding: "16px",
+                            textAlign: "center",
+                            color: "#64748b",
+                            fontSize: "13px",
+                          }}
+                        >
+                          No items in this order
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "flex-end",
+                  padding: "16px",
+                  background: "#f8fafc",
+                  borderTop: "1px solid #e2e8f0",
+                  borderRadius: "0 0 8px 8px",
+                  marginBottom: "24px",
+                }}
+              >
+                <div>
+                  <p
+                    style={{
+                      margin: "0 0 8px 0",
+                      fontSize: "12px",
+                      fontWeight: "700",
+                      color: "#5b7c99",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.3px",
+                    }}
+                  >
+                    Total Order Price
+                  </p>
+                  <p
+                    style={{
+                      margin: "0",
+                      fontSize: "18px",
+                      fontWeight: "800",
+                      color: "#1a365d",
+                    }}
+                  >
+                    {selectedOrderForPreview.currency ||
+                      selectedOrderForPreview.itemCurrency}{" "}
+                    {formatNumber(selectedOrderForPreview.totalPrice)}
+                  </p>
+                </div>
+              </div>
+
+              <button
+                onClick={() => {
+                  setShowOrderPreview(false);
+                  setSelectedOrderForPreview(null);
+                }}
+                style={{
+                  width: "100%",
+                  padding: "12px",
+                  background: "#0284c7",
+                  color: "white",
+                  border: "none",
+                  borderRadius: "6px",
+                  cursor: "pointer",
+                  fontWeight: "600",
+                  fontSize: "14px",
+                  transition: "all 0.25s ease",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = "#0369a1";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = "#0284c7";
+                }}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Quotation Preview Modal */}
+        {showQuotationPreview && selectedQuotationForPreview && (
+          <div
+            style={{
+              position: "fixed",
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              background: "rgba(0, 0, 0, 0.5)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              zIndex: 1001,
+            }}
+            onClick={() => {
+              setShowQuotationPreview(false);
+              setSelectedQuotationForPreview(null);
+            }}
+          >
+            <div
+              style={{
+                background: "#ffffff",
+                borderRadius: "12px",
+                padding: "32px",
+                maxWidth: "700px",
+                width: "90%",
+                maxHeight: "80vh",
+                overflowY: "auto",
+                boxShadow: "0 20px 60px rgba(0, 0, 0, 0.15)",
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h2
+                style={{
+                  margin: "0 0 24px 0",
+                  fontSize: "22px",
+                  fontWeight: "800",
+                  color: "#1a365d",
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                }}
+              >
+                <span>Quotation Details</span>
+              </h2>
+
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr",
+                  gap: "16px",
+                  marginBottom: "24px",
+                  padding: "16px",
+                  background: "#f8fafc",
+                  borderRadius: "8px",
+                  border: "1px solid #e2e8f0",
+                }}
+              >
+                <div>
+                  <p
+                    style={{
+                      margin: "0 0 4px 0",
+                      fontSize: "12px",
+                      fontWeight: "700",
+                      color: "#5b7c99",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.3px",
+                    }}
+                  >
+                    Quotation ID
+                  </p>
+                  <p
+                    style={{
+                      margin: "0",
+                      fontSize: "13px",
+                      fontWeight: "600",
+                      color: "#1a365d",
+                      wordBreak: "break-all",
+                    }}
+                  >
+                    {selectedQuotationForPreview.number ||
+                      selectedQuotationForPreview.id.substring(0, 8)}
+                  </p>
+                </div>
+                <div>
+                  <p
+                    style={{
+                      margin: "0 0 4px 0",
+                      fontSize: "12px",
+                      fontWeight: "700",
+                      color: "#5b7c99",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.3px",
+                    }}
+                  >
+                    Total Items
+                  </p>
+                  <p
+                    style={{
+                      margin: "0",
+                      fontSize: "13px",
+                      fontWeight: "600",
+                      color: "#1a365d",
+                    }}
+                  >
+                    {(() => {
+                      const items = selectedQuotationForPreview.items || [];
+                      const totalUnits = items.reduce(
+                        (sum: number, item: any) =>
+                          sum + (item.qty || item.quantity || 0),
+                        0,
+                      );
+                      return `${items.length} product(s), ${totalUnits} unit(s)`;
+                    })()}
+                  </p>
+                </div>
+              </div>
+
+              <h3
+                style={{
+                  margin: "0 0 16px 0",
+                  fontSize: "16px",
+                  fontWeight: "700",
+                  color: "#1a365d",
+                }}
+              >
+                Items in Quotation
+              </h3>
+
+              <div
+                style={{
+                  marginBottom: "24px",
+                  border: "1px solid #e2e8f0",
+                  borderRadius: "8px",
+                  overflow: "hidden",
+                }}
+              >
+                <table
+                  style={{
+                    width: "100%",
+                    borderCollapse: "collapse",
+                  }}
+                >
+                  <thead>
+                    <tr
+                      style={{
+                        background: "#f8fafc",
+                        borderBottom: "1px solid #e2e8f0",
+                      }}
+                    >
+                      <th
+                        style={{
+                          padding: "12px",
+                          textAlign: "left",
+                          fontWeight: "700",
+                          color: "#5b7c99",
+                          fontSize: "12px",
+                          textTransform: "uppercase",
+                          letterSpacing: "0.3px",
+                        }}
+                      >
+                        Product Name
+                      </th>
+                      <th
+                        style={{
+                          padding: "12px",
+                          textAlign: "center",
+                          fontWeight: "700",
+                          color: "#5b7c99",
+                          fontSize: "12px",
+                          textTransform: "uppercase",
+                          letterSpacing: "0.3px",
+                        }}
+                      >
+                        Qty
+                      </th>
+                      <th
+                        style={{
+                          padding: "12px",
+                          textAlign: "right",
+                          fontWeight: "700",
+                          color: "#5b7c99",
+                          fontSize: "12px",
+                          textTransform: "uppercase",
+                          letterSpacing: "0.3px",
+                        }}
+                      >
+                        Unit Price
+                      </th>
+                      <th
+                        style={{
+                          padding: "12px",
+                          textAlign: "right",
+                          fontWeight: "700",
+                          color: "#5b7c99",
+                          fontSize: "12px",
+                          textTransform: "uppercase",
+                          letterSpacing: "0.3px",
+                        }}
+                      >
+                        Total
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {selectedQuotationForPreview.items &&
+                    selectedQuotationForPreview.items.length > 0 ? (
+                      selectedQuotationForPreview.items.map(
+                        (item: any, index: number) => {
+                          const qty = item.qty || item.quantity || 0;
+                          const price = item.price || 0;
+                          const currency = item.currency || "USD";
+                          return (
+                            <tr
+                              key={index}
+                              style={{
+                                borderBottom: "1px solid #e2e8f0",
+                                background:
+                                  index % 2 === 0 ? "#ffffff" : "#f8fafc",
+                              }}
+                            >
+                              <td
+                                style={{
+                                  padding: "12px",
+                                  color: "#1a365d",
+                                  fontWeight: "600",
+                                  fontSize: "13px",
+                                }}
+                              >
+                                {item.name}
+                              </td>
+                              <td
+                                style={{
+                                  padding: "12px",
+                                  textAlign: "center",
+                                  color: "#64748b",
+                                  fontSize: "13px",
+                                }}
+                              >
+                                {qty}
+                              </td>
+                              <td
+                                style={{
+                                  padding: "12px",
+                                  textAlign: "right",
+                                  color: "#64748b",
+                                  fontSize: "13px",
+                                }}
+                              >
+                                {currency} {formatNumber(price)}
+                              </td>
+                              <td
+                                style={{
+                                  padding: "12px",
+                                  textAlign: "right",
+                                  color: "#1a365d",
+                                  fontWeight: "600",
+                                  fontSize: "13px",
+                                }}
+                              >
+                                {currency} {formatNumber(price * qty)}
+                              </td>
+                            </tr>
+                          );
+                        },
+                      )
+                    ) : (
+                      <tr>
+                        <td
+                          colSpan={4}
+                          style={{
+                            padding: "16px",
+                            textAlign: "center",
+                            color: "#64748b",
+                            fontSize: "13px",
+                          }}
+                        >
+                          No items in this quotation
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "flex-end",
+                  padding: "16px",
+                  background: "#f8fafc",
+                  borderTop: "1px solid #e2e8f0",
+                  borderRadius: "0 0 8px 8px",
+                  marginBottom: "24px",
+                }}
+              >
+                <div>
+                  <p
+                    style={{
+                      margin: "0 0 8px 0",
+                      fontSize: "12px",
+                      fontWeight: "700",
+                      color: "#5b7c99",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.3px",
+                    }}
+                  >
+                    Total Quotation Price
+                  </p>
+                  <p
+                    style={{
+                      margin: "0",
+                      fontSize: "18px",
+                      fontWeight: "800",
+                      color: "#1a365d",
+                    }}
+                  >
+                    {(() => {
+                      const items = selectedQuotationForPreview.items || [];
+                      const totalPrice = items.reduce(
+                        (sum: number, item: any) =>
+                          sum +
+                          (item.price || 0) * (item.qty || item.quantity || 0),
+                        0,
+                      );
+                      const currency =
+                        items.length > 0 ? items[0].currency || "USD" : "USD";
+                      return `${currency} ${formatNumber(totalPrice)}`;
+                    })()}
+                  </p>
+                </div>
+              </div>
+
+              <button
+                onClick={() => {
+                  setShowQuotationPreview(false);
+                  setSelectedQuotationForPreview(null);
+                }}
+                style={{
+                  width: "100%",
+                  padding: "12px",
+                  background: "#0284c7",
+                  color: "white",
+                  border: "none",
+                  borderRadius: "6px",
+                  cursor: "pointer",
+                  fontWeight: "600",
+                  fontSize: "14px",
+                  transition: "all 0.25s ease",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = "#0369a1";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = "#0284c7";
+                }}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Inquiry Preview Modal */}
+        {showInquiryPreview && selectedInquiryForPreview && (
+          <div
+            style={{
+              position: "fixed",
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              background: "rgba(0, 0, 0, 0.5)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              zIndex: 1001,
+            }}
+            onClick={() => {
+              setShowInquiryPreview(false);
+              setSelectedInquiryForPreview(null);
+            }}
+          >
+            <div
+              style={{
+                background: "#ffffff",
+                borderRadius: "12px",
+                padding: "32px",
+                maxWidth: "700px",
+                width: "90%",
+                maxHeight: "80vh",
+                overflowY: "auto",
+                boxShadow: "0 20px 60px rgba(0, 0, 0, 0.15)",
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h2
+                style={{
+                  margin: "0 0 24px 0",
+                  fontSize: "22px",
+                  fontWeight: "800",
+                  color: "#1a365d",
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                }}
+              >
+                <span>Inquiry Details</span>
+              </h2>
+
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr",
+                  gap: "16px",
+                  marginBottom: "24px",
+                  padding: "16px",
+                  background: "#f8fafc",
+                  borderRadius: "8px",
+                  border: "1px solid #e2e8f0",
+                }}
+              >
+                <div>
+                  <p
+                    style={{
+                      margin: "0 0 4px 0",
+                      fontSize: "12px",
+                      fontWeight: "700",
+                      color: "#5b7c99",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.3px",
+                    }}
+                  >
+                    Inquiry ID
+                  </p>
+                  <p
+                    style={{
+                      margin: "0",
+                      fontSize: "13px",
+                      fontWeight: "600",
+                      color: "#1a365d",
+                      wordBreak: "break-all",
+                    }}
+                  >
+                    {selectedInquiryForPreview.number ||
+                      selectedInquiryForPreview.id.substring(0, 8)}
+                  </p>
+                </div>
+                <div>
+                  <p
+                    style={{
+                      margin: "0 0 4px 0",
+                      fontSize: "12px",
+                      fontWeight: "700",
+                      color: "#5b7c99",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.3px",
+                    }}
+                  >
+                    Total Items
+                  </p>
+                  <p
+                    style={{
+                      margin: "0",
+                      fontSize: "13px",
+                      fontWeight: "600",
+                      color: "#1a365d",
+                    }}
+                  >
+                    {(() => {
+                      const items = selectedInquiryForPreview.items || [];
+                      const totalUnits = items.reduce(
+                        (sum: number, item: any) =>
+                          sum + (item.qty || item.quantity || 0),
+                        0,
+                      );
+                      return `${items.length} product(s), ${totalUnits} unit(s)`;
+                    })()}
+                  </p>
+                </div>
+              </div>
+
+              <h3
+                style={{
+                  margin: "0 0 16px 0",
+                  fontSize: "16px",
+                  fontWeight: "700",
+                  color: "#1a365d",
+                }}
+              >
+                Items in Inquiry
+              </h3>
+
+              <div
+                style={{
+                  marginBottom: "24px",
+                  border: "1px solid #e2e8f0",
+                  borderRadius: "8px",
+                  overflow: "hidden",
+                }}
+              >
+                <table
+                  style={{
+                    width: "100%",
+                    borderCollapse: "collapse",
+                  }}
+                >
+                  <thead>
+                    <tr
+                      style={{
+                        background: "#f8fafc",
+                        borderBottom: "1px solid #e2e8f0",
+                      }}
+                    >
+                      <th
+                        style={{
+                          padding: "12px",
+                          textAlign: "left",
+                          fontWeight: "700",
+                          color: "#5b7c99",
+                          fontSize: "12px",
+                          textTransform: "uppercase",
+                          letterSpacing: "0.3px",
+                        }}
+                      >
+                        Product Name
+                      </th>
+                      <th
+                        style={{
+                          padding: "12px",
+                          textAlign: "center",
+                          fontWeight: "700",
+                          color: "#5b7c99",
+                          fontSize: "12px",
+                          textTransform: "uppercase",
+                          letterSpacing: "0.3px",
+                        }}
+                      >
+                        Qty
+                      </th>
+                      <th
+                        style={{
+                          padding: "12px",
+                          textAlign: "right",
+                          fontWeight: "700",
+                          color: "#5b7c99",
+                          fontSize: "12px",
+                          textTransform: "uppercase",
+                          letterSpacing: "0.3px",
+                        }}
+                      >
+                        Unit Price
+                      </th>
+                      <th
+                        style={{
+                          padding: "12px",
+                          textAlign: "right",
+                          fontWeight: "700",
+                          color: "#5b7c99",
+                          fontSize: "12px",
+                          textTransform: "uppercase",
+                          letterSpacing: "0.3px",
+                        }}
+                      >
+                        Total
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {selectedInquiryForPreview.items &&
+                    selectedInquiryForPreview.items.length > 0 ? (
+                      selectedInquiryForPreview.items.map(
+                        (item: any, index: number) => {
+                          const qty = item.qty || item.quantity || 0;
+                          const price = item.price || 0;
+                          const currency = item.currency || "USD";
+                          return (
+                            <tr
+                              key={index}
+                              style={{
+                                borderBottom: "1px solid #e2e8f0",
+                                background:
+                                  index % 2 === 0 ? "#ffffff" : "#f8fafc",
+                              }}
+                            >
+                              <td
+                                style={{
+                                  padding: "12px",
+                                  color: "#1a365d",
+                                  fontWeight: "600",
+                                  fontSize: "13px",
+                                }}
+                              >
+                                {item.name}
+                              </td>
+                              <td
+                                style={{
+                                  padding: "12px",
+                                  textAlign: "center",
+                                  color: "#64748b",
+                                  fontSize: "13px",
+                                }}
+                              >
+                                {qty}
+                              </td>
+                              <td
+                                style={{
+                                  padding: "12px",
+                                  textAlign: "right",
+                                  color: "#64748b",
+                                  fontSize: "13px",
+                                }}
+                              >
+                                {currency} {formatNumber(price)}
+                              </td>
+                              <td
+                                style={{
+                                  padding: "12px",
+                                  textAlign: "right",
+                                  color: "#1a365d",
+                                  fontWeight: "600",
+                                  fontSize: "13px",
+                                }}
+                              >
+                                {currency} {formatNumber(price * qty)}
+                              </td>
+                            </tr>
+                          );
+                        },
+                      )
+                    ) : (
+                      <tr>
+                        <td
+                          colSpan={4}
+                          style={{
+                            padding: "16px",
+                            textAlign: "center",
+                            color: "#64748b",
+                            fontSize: "13px",
+                          }}
+                        >
+                          No items in this inquiry
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "flex-end",
+                  padding: "16px",
+                  background: "#f8fafc",
+                  borderTop: "1px solid #e2e8f0",
+                  borderRadius: "0 0 8px 8px",
+                  marginBottom: "24px",
+                }}
+              >
+                <div>
+                  <p
+                    style={{
+                      margin: "0 0 8px 0",
+                      fontSize: "12px",
+                      fontWeight: "700",
+                      color: "#5b7c99",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.3px",
+                    }}
+                  >
+                    Total Inquiry Amount
+                  </p>
+                  <p
+                    style={{
+                      margin: "0",
+                      fontSize: "18px",
+                      fontWeight: "800",
+                      color: "#1a365d",
+                    }}
+                  >
+                    {(() => {
+                      const items = selectedInquiryForPreview.items || [];
+                      const totalPrice = items.reduce(
+                        (sum: number, item: any) =>
+                          sum +
+                          (item.price || 0) * (item.qty || item.quantity || 0),
+                        0,
+                      );
+                      const currency =
+                        items.length > 0 ? items[0].currency || "USD" : "USD";
+                      return `${currency} ${formatNumber(totalPrice)}`;
+                    })()}
+                  </p>
+                </div>
+              </div>
+
+              <button
+                onClick={() => {
+                  setShowInquiryPreview(false);
+                  setSelectedInquiryForPreview(null);
+                }}
+                style={{
+                  width: "100%",
+                  padding: "12px",
+                  background: "#0284c7",
+                  color: "white",
+                  border: "none",
+                  borderRadius: "6px",
+                  cursor: "pointer",
+                  fontWeight: "600",
+                  fontSize: "14px",
+                  transition: "all 0.25s ease",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = "#0369a1";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = "#0284c7";
+                }}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Floating Cart Button */}
         {isLoggedIn && activeSubmenu !== "allDocuments" && (
           <button
@@ -8146,7 +10461,10 @@ export default function App() {
                       ).map((currency) => {
                         const total = cart
                           .filter((item) => item.currency === currency)
-                          .reduce((sum, item) => sum + item.price * item.quantity, 0);
+                          .reduce(
+                            (sum, item) => sum + item.price * item.quantity,
+                            0,
+                          );
                         return (
                           <div key={currency} style={{ textAlign: "center" }}>
                             <p
@@ -8194,8 +10512,9 @@ export default function App() {
                           color: "#94a3b8",
                         }}
                       >
-                        Will be split into {new Set(cart.map((item) => item.seller)).size}{" "}
-                        order(s) by seller
+                        Will be split into{" "}
+                        {new Set(cart.map((item) => item.seller)).size} order(s)
+                        by seller
                       </p>
                     </div>
                   </div>
@@ -8247,7 +10566,11 @@ export default function App() {
                       }}
                     >
                       Checkout ({new Set(cart.map((item) => item.seller)).size}{" "}
-                      order{new Set(cart.map((item) => item.seller)).size > 1 ? "s" : ""})
+                      order
+                      {new Set(cart.map((item) => item.seller)).size > 1
+                        ? "s"
+                        : ""}
+                      )
                     </button>
                   </div>
                 </div>
