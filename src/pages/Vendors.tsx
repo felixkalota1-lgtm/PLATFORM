@@ -353,11 +353,16 @@ export default function Vendors({
         try {
           const allUsersDocs = await getDocs(usersRef);
           console.log(`📊 Total users in Firestore: ${allUsersDocs.docs.length}`);
+          console.log("🔍 User data diagnostic:");
           
           for (const doc of allUsersDocs.docs) {
-            const username = (doc.data().username || "").toLowerCase();
-            const email = (doc.data().email || "").toLowerCase();
-            const companyName = (doc.data().companyName || "").toLowerCase();
+            const userData = doc.data();
+            const username = (userData.username || "").toLowerCase();
+            const email = (userData.email || "").toLowerCase();
+            const companyName = (userData.companyName || "").toLowerCase();
+
+            // DIAGNOSTIC: Log all fields for this user
+            console.log(`  User "${userData.username}": {username: "${username}", email: "${email}", companyName: "${companyName}", rawEmail: ${userData.email}, rawCompany: ${userData.companyName}}`);
 
             // Check if search term matches ANY field
             const matchesUsername = username.includes(searchLower);
@@ -365,6 +370,7 @@ export default function Vendors({
             const matchesCompany = companyName.includes(searchLower);
 
             if (matchesUsername || matchesEmail || matchesCompany) {
+              console.log(`    ✓ MATCH: matches=${matchesUsername || matchesEmail || matchesCompany} (u:${matchesUsername} e:${matchesEmail} c:${matchesCompany})`);
               if (!allDocs.find((d: any) => d.id === doc.id)) {
                 allDocs.push(doc);
               }
