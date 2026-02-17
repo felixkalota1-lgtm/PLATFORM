@@ -1,4 +1,16 @@
 import React from "react";
+import {
+  collection,
+  query,
+  where,
+  getDocs,
+  doc,
+  setDoc,
+  updateDoc,
+  serverTimestamp,
+  or,
+  Firestore,
+} from "firebase/firestore";
 
 interface Company {
   id: string;
@@ -21,12 +33,16 @@ interface VendorConnection {
 }
 
 interface VendorsProps {
+  db: Firestore;
+  currentUser: string;
   onSendInquiry?: (company: Company) => void;
   currentUserEmail?: string;
   currentUserCompany?: string;
 }
 
 export default function Vendors({
+  db,
+  currentUser,
   onSendInquiry,
   currentUserEmail,
   currentUserCompany,
@@ -55,11 +71,92 @@ export default function Vendors({
   const loadConnections = async () => {
     setIsLoading(true);
     try {
-      // TODO: Load from Firestore
-      console.log("Loading vendor connections...");
-      setConnections([]);
+      // Query connections where current user is involved (either as initiator or recipient)
+      const connectionsRef = collection(db, "vendorConnections");
+
+      // Get connections initiated by current user
+      const initiatedByMeQuery = query(
+        connectionsRef,
+        where("initiatedByUser", "==", currentUser),
+      );
+      const initiatedByMeDocs = await getDocs(initiatedByMeQuery);
+
+      // Get connections sent to current user
+      const sentToMeQuery = query(
+        connectionsRef,
+        where("targetUser", "==", currentUser),
+      );
+      const sentToMeDocs = await getDocs(sentToMeQuery);
+
+      const allConnections: VendorConnection[] = [];
+
+      // Process connections initiated by me
+      for (const doc of initiatedByMeDocs.docs) {
+        const data = doc.data();
+        const targetUserDoc = await getDocs(
+          query(
+            collection(db, "users"),
+            where("username", "==", data.targetUser),
+          ),
+        );
+        if (targetUserDoc.docs.length > 0) {
+          const userData = targetUserDoc.docs[0].data();
+          allConnections.push({
+            id: doc.id,
+            companyId: data.targetUser,
+            company: {
+              id: data.targetUser,
+              name: userData.companyName || data.targetUser,
+              email: userData.email || "",
+              phone: userData.phone,
+              address: userData.address,
+              website: userData.website,
+              addedAt: data.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
+            },
+            status: data.status,
+            initiatedBy: "you",
+            createdAt: data.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
+            respondedAt: data.respondedAt?.toDate?.()?.toISOString(),
+          });
+        }
+      }
+
+      // Process connections sent to me
+      for (const doc of sentToMeDocs.docs) {
+        const data = doc.data();
+        const initiatorUserDoc = await getDocs(
+          query(
+            collection(db, "users"),
+            where("username", "==", data.initiatedByUser),
+          ),
+        );
+        if (initiatorUserDoc.docs.length > 0) {
+          const userData = initiatorUserDoc.docs[0].data();
+          allConnections.push({
+            id: doc.id,
+            companyId: data.initiatedByUser,
+            company: {
+              id: data.initiatedByUser,
+              name: userData.companyName || data.initiatedByUser,
+              email: userData.email || "",
+              phone: userData.phone,
+              address: userData.address,
+              website: userData.website,
+              addedAt: data.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
+            },
+            status: data.status,
+            initiatedBy: "them",
+            createdAt: data.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
+            respondedAt: data.respondedAt?.toDate?.()?.toISOString(),
+          });
+        }
+      }
+
+      setConnections(allConnections);
+      console.log(`Loaded ${allConnections.length} vendor connections`);
     } catch (error) {
       console.error("Error loading connections:", error);
+      alert("Error loading vendor connections");
     } finally {
       setIsLoading(false);
     }
@@ -74,11 +171,38 @@ export default function Vendors({
 
     setIsLoading(true);
     try {
-      // TODO: Search companies in Firestore
-      console.log("Searching for companies:", query);
-      setSearchResults([]);
+      const usersRef = collection(db, "users");
+
+      // Search by username or company name
+      const usernameQuery = query(usersRef, where("username", ">=", query));
+      const usernameDocs = await getDocs(usernameQuery);
+
+      const results: Company[] = [];
+      const seenIds = new Set<string>();
+
+      for (const doc of usernameDocs.docs) {
+        // Don't include current user in search results
+        if (doc.data().username === currentUser) continue;
+
+        if (!seenIds.has(doc.id)) {
+          seenIds.add(doc.id);
+          results.push({
+            id: doc.data().username,
+            name: doc.data().companyName || doc.data().username,
+            email: doc.data().email || "",
+            phone: doc.data().phone,
+            address: doc.data().address,
+            website: doc.data().website,
+            addedAt: doc.data().addedAt || new Date().toISOString(),
+          });
+        }
+      }
+
+      setSearchResults(results);
+      console.log(`Found ${results.length} companies matching "${query}"`);
     } catch (error) {
       console.error("Error searching companies:", error);
+      alert("Error searching companies");
     } finally {
       setIsLoading(false);
     }
@@ -86,13 +210,37 @@ export default function Vendors({
 
   const handleAddCompanyClick = async (company: Company) => {
     try {
-      // TODO: Send connection request to Firestore
-      console.log("Sending connection request to:", company);
+      // Check if connection already exists
+      const connectionsRef = collection(db, "vendorConnections");
+      const existingQuery = query(
+        connectionsRef,
+        where("initiatedByUser", "==", currentUser),
+        where("targetUser", "==", company.id),
+      );
+      const existing = await getDocs(existingQuery);
+
+      if (existing.docs.length > 0) {
+        alert("Connection request already exists for this vendor");
+        return;
+      }
+
+      // Create new connection request
+      const connectionId = `${currentUser}_${company.id}_${Date.now()}`;
+      await setDoc(doc(db, "vendorConnections", connectionId), {
+        id: connectionId,
+        initiatedByUser: currentUser,
+        targetUser: company.id,
+        status: "pending",
+        createdAt: serverTimestamp(),
+      });
+
       alert(
         `Connection request sent to ${company.name}. They will need to accept the request.`,
       );
       setSearchResults([]);
       setSearchQuery("");
+      // Reload connections to show pending request
+      loadConnections();
     } catch (error) {
       console.error("Error sending connection request:", error);
       alert("Error sending connection request");
@@ -106,8 +254,53 @@ export default function Vendors({
     }
 
     try {
-      // TODO: Create new company and send connection request
-      console.log("Creating new company:", newCompanyData);
+      // First, try to find if a user with this email already exists
+      const usersRef = collection(db, "users");
+      const emailQuery = query(usersRef, where("email", "==", newCompanyData.email));
+      const emailDocs = await getDocs(emailQuery);
+
+      let targetUserId: string;
+
+      if (emailDocs.docs.length > 0) {
+        // User exists, use their username
+        targetUserId = emailDocs.docs[0].data().username;
+      } else {
+        // Create a placeholder company entry if system requires it
+        // For now, we'll use email as ID since company doesn't have account yet
+        targetUserId = newCompanyData.email;
+      }
+
+      // Check if connection already exists
+      const connectionsRef = collection(db, "vendorConnections");
+      const existingQuery = query(
+        connectionsRef,
+        where("initiatedByUser", "==", currentUser),
+        where("targetUser", "==", targetUserId),
+      );
+      const existing = await getDocs(existingQuery);
+
+      if (existing.docs.length > 0) {
+        alert("Connection request already exists for this company");
+        return;
+      }
+
+      // Create new connection request
+      const connectionId = `${currentUser}_${targetUserId}_${Date.now()}`;
+      await setDoc(doc(db, "vendorConnections", connectionId), {
+        id: connectionId,
+        initiatedByUser: currentUser,
+        targetUser: targetUserId,
+        status: "pending",
+        companyData: {
+          name: newCompanyData.name,
+          email: newCompanyData.email,
+          phone: newCompanyData.phone,
+          website: newCompanyData.website,
+          address: newCompanyData.address,
+        },
+        createdAt: serverTimestamp(),
+      });
+
       alert(
         `Company added and connection request sent to ${newCompanyData.name}`,
       );
@@ -119,6 +312,8 @@ export default function Vendors({
         address: "",
       });
       setShowAddCompany(false);
+      // Reload connections
+      loadConnections();
     } catch (error) {
       console.error("Error creating company:", error);
       alert("Error creating company");
@@ -127,8 +322,12 @@ export default function Vendors({
 
   const handleAcceptConnection = async (connectionId: string) => {
     try {
-      // TODO: Accept connection in Firestore
-      console.log("Accepting connection:", connectionId);
+      await updateDoc(doc(db, "vendorConnections", connectionId), {
+        status: "accepted",
+        respondedAt: serverTimestamp(),
+      });
+
+      alert("Connection accepted!");
       loadConnections();
     } catch (error) {
       console.error("Error accepting connection:", error);
@@ -138,8 +337,12 @@ export default function Vendors({
 
   const handleRejectConnection = async (connectionId: string) => {
     try {
-      // TODO: Reject connection in Firestore
-      console.log("Rejecting connection:", connectionId);
+      await updateDoc(doc(db, "vendorConnections", connectionId), {
+        status: "rejected",
+        respondedAt: serverTimestamp(),
+      });
+
+      alert("Connection rejected");
       loadConnections();
     } catch (error) {
       console.error("Error rejecting connection:", error);
@@ -153,9 +356,7 @@ export default function Vendors({
     }
   };
 
-  const connectedCompanies = connections.filter(
-    (c) => c.status === "accepted",
-  );
+  const connectedCompanies = connections.filter((c) => c.status === "accepted");
   const pendingRequests = connections.filter((c) => c.status === "pending");
 
   return (
@@ -208,7 +409,9 @@ export default function Vendors({
               border: "none",
               background: activeTab === tab ? "#ffffff" : "transparent",
               borderBottom:
-                activeTab === tab ? "2px solid #0284c7" : "2px solid transparent",
+                activeTab === tab
+                  ? "2px solid #0284c7"
+                  : "2px solid transparent",
               color: activeTab === tab ? "#0284c7" : "#64748b",
               fontSize: "14px",
               fontWeight: activeTab === tab ? "700" : "500",
@@ -454,9 +657,7 @@ export default function Vendors({
                         }}
                       >
                         <button
-                          onClick={() =>
-                            handleAcceptConnection(connection.id)
-                          }
+                          onClick={() => handleAcceptConnection(connection.id)}
                           style={{
                             flex: 1,
                             padding: "8px 12px",
@@ -479,9 +680,7 @@ export default function Vendors({
                           Accept
                         </button>
                         <button
-                          onClick={() =>
-                            handleRejectConnection(connection.id)
-                          }
+                          onClick={() => handleRejectConnection(connection.id)}
                           style={{
                             flex: 1,
                             padding: "8px 12px",
@@ -742,7 +941,8 @@ export default function Vendors({
                 <div
                   style={{
                     display: "grid",
-                    gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))",
+                    gridTemplateColumns:
+                      "repeat(auto-fill, minmax(300px, 1fr))",
                     gap: "16px",
                   }}
                 >

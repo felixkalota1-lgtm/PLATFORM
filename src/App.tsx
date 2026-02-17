@@ -313,7 +313,13 @@ export default function App() {
     "marketplace" | "warehouse" | "allDocuments"
   >("warehouse");
   const [activeWarehouseTab, setActiveWarehouseTab] = useState<
-    "products" | "upload" | "quotations" | "inquiries" | "orders" | "vendors" | "settings"
+    | "products"
+    | "upload"
+    | "quotations"
+    | "inquiries"
+    | "orders"
+    | "vendors"
+    | "settings"
   >("products");
   const [activeMarketplaceTab, setActiveMarketplaceTab] = useState<
     "all" | "myListings"
@@ -7637,6 +7643,8 @@ export default function App() {
 
               {activeWarehouseTab === "vendors" && (
                 <Vendors
+                  db={db}
+                  currentUser={currentUser}
                   onSendInquiry={(company) => {
                     // Pre-fill recipient data and navigate to inquiries
                     setActiveWarehouseTab("inquiries");
