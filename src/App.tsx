@@ -303,6 +303,7 @@ export default function App() {
   const [signupForm, setSignupForm] = useState({
     username: "",
     email: "",
+    companyName: "",
     password: "",
     confirmPassword: "",
   });
@@ -2439,6 +2440,7 @@ export default function App() {
     if (
       !signupForm.username ||
       !signupForm.email ||
+      !signupForm.companyName ||
       !signupForm.password ||
       !signupForm.confirmPassword
     ) {
@@ -2463,6 +2465,11 @@ export default function App() {
       return;
     }
 
+    if (signupForm.companyName.trim().length < 2) {
+      setAuthError("Company name must be at least 2 characters");
+      return;
+    }
+
     setIsLoading(true);
     try {
       // Check if username or email exists
@@ -2481,14 +2488,18 @@ export default function App() {
       // Optimization #1: Hash password before storing (CRITICAL SECURITY)
       const hashedPassword = await bcryptjs.hash(signupForm.password, 10);
 
+      // Optimization: Create searchable field for company name (lowercase for case-insensitive search)
+      const companyNameSearchable = signupForm.companyName.toLowerCase().trim();
+
       // Create user in Firestore or localStorage
       if (db) {
         await setDoc(doc(db, "userSettings", signupForm.username), {
           username: signupForm.username,
           email: signupForm.email,
+          companyName: signupForm.companyName.trim(),
+          companyNameSearchable: companyNameSearchable,
           password: hashedPassword,
           createdAt: new Date().toISOString(),
-          // Optimization #5: REMOVED activeTab (no longer written on signup)
         });
       } else {
         // Fallback to localStorage
@@ -2496,11 +2507,16 @@ export default function App() {
         users[signupForm.username] = {
           username: signupForm.username,
           email: signupForm.email,
+          companyName: signupForm.companyName.trim(),
+          companyNameSearchable: companyNameSearchable,
           password: hashedPassword,
           createdAt: new Date().toISOString(),
         };
         localStorage.setItem("pspm_users", JSON.stringify(users));
       }
+
+      // Clear vendor cache on new signup (will be rebuilt on next search)
+      localStorage.removeItem("pspm_vendor_cache");
 
       // Login immediately after signup
       setProducts([]);
@@ -2513,6 +2529,7 @@ export default function App() {
       setSignupForm({
         username: "",
         email: "",
+        companyName: "",
         password: "",
         confirmPassword: "",
       });
@@ -3224,16 +3241,16 @@ export default function App() {
                     color: "#64748b",
                   }}
                 >
-                  Username
+                  Company Name
                 </label>
                 <input
                   type="text"
-                  value={signupForm.username}
+                  value={signupForm.companyName}
                   onChange={(e) => {
-                    setSignupForm({ ...signupForm, username: e.target.value });
+                    setSignupForm({ ...signupForm, companyName: e.target.value });
                     setAuthError("");
                   }}
-                  placeholder="Choose a username"
+                  placeholder="e.g., Acme Corporation"
                   style={{
                     width: "100%",
                     padding: "10px 12px",
