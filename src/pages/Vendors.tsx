@@ -103,10 +103,7 @@ export default function Vendors({
       // Load all users in one batch query
       const userDataMap = new Map<string, any>();
       for (const username of allUsernames) {
-        const userQuery = query(
-          usersRef,
-          where("username", "==", username),
-        );
+        const userQuery = query(usersRef, where("username", "==", username));
         const userDoc = await getDocs(userQuery);
         if (userDoc.docs.length > 0) {
           userDataMap.set(username, userDoc.docs[0].data());
@@ -128,11 +125,15 @@ export default function Vendors({
               phone: userData.phone,
               address: userData.address,
               website: userData.website,
-              addedAt: data.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
+              addedAt:
+                data.createdAt?.toDate?.()?.toISOString() ||
+                new Date().toISOString(),
             },
             status: data.status,
             initiatedBy: "you",
-            createdAt: data.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
+            createdAt:
+              data.createdAt?.toDate?.()?.toISOString() ||
+              new Date().toISOString(),
             respondedAt: data.respondedAt?.toDate?.()?.toISOString(),
           });
         }
@@ -153,11 +154,15 @@ export default function Vendors({
               phone: userData.phone,
               address: userData.address,
               website: userData.website,
-              addedAt: data.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
+              addedAt:
+                data.createdAt?.toDate?.()?.toISOString() ||
+                new Date().toISOString(),
             },
             status: data.status,
             initiatedBy: "them",
-            createdAt: data.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
+            createdAt:
+              data.createdAt?.toDate?.()?.toISOString() ||
+              new Date().toISOString(),
             respondedAt: data.respondedAt?.toDate?.()?.toISOString(),
           });
         }
@@ -209,7 +214,7 @@ export default function Vendors({
           const allRequest = store.getAll();
           allRequest.onsuccess = () => {
             resolve(
-              allRequest.result.map((item) => ({
+              allRequest.result.map((item: any) => ({
                 id: item.id,
                 name: item.name,
                 email: item.email,
@@ -241,74 +246,81 @@ export default function Vendors({
       const results: Company[] = [];
       const seenIds = new Set<string>();
 
-      // OPTIMIZATION: Try cache first (0 Firestore reads if cache hit)
-      const cachedVendors = await getCachedVendors();
-      if (cachedVendors.length > 0) {
-        // Search cached vendors by company name (instant, 0 reads)
-        for (const vendor of cachedVendors) {
-          if (vendor.id === currentUser) continue;
-          if (
-            vendor.name.toLowerCase().includes(searchLower) ||
-            vendor.email.toLowerCase().includes(searchLower)
-          ) {
-            if (!seenIds.has(vendor.id)) {
-              seenIds.add(vendor.id);
-              results.push(vendor);
-            }
-          }
-        }
-        if (results.length > 0) {
-          setSearchResults(results);
-          console.log(
-            `Found ${results.length} companies in cache (0 Firestore reads)`,
-          );
-          setIsLoading(false);
-          return;
-        }
-      }
-
-      // FALLBACK: Query Firestore (1 read primary) - search by companyNameSearchable
+      // FIRESTORE FIRST (Source of Truth) - Search all companies in real-time
       const usersRef = collection(db, "userSettings");
 
-      // PRIMARY: Search by company name (case-insensitive using searchable field)
-      const companyQuery = query(
-        usersRef,
-        where("companyNameSearchable", ">=", searchLower),
-        where(
-          "companyNameSearchable",
-          "<=",
-          searchLower + "\uf8ff", // Wildcard for Firestore range query
-        ),
-      );
-      const companyDocs = await getDocs(companyQuery);
+      // Strategy: Query by multiple fields and deduplicate
+      // We search: company name, username, and email with prefix matching
 
-      for (const doc of companyDocs.docs) {
-        if (doc.data().username === currentUser) continue;
-        if (!seenIds.has(doc.id)) {
-          seenIds.add(doc.id);
-          results.push({
-            id: doc.data().username,
-            name: doc.data().companyName || doc.data().username,
-            email: doc.data().email || "",
-            phone: doc.data().phone,
-            address: doc.data().address,
-            website: doc.data().website,
-            addedAt: doc.data().createdAt || new Date().toISOString(),
-          });
+      // PRIORITY 1: Search by company name searchable field (prefix match)
+      let allDocs: any[] = [];
+      try {
+        const companyQuery = query(
+          usersRef,
+          where("companyNameSearchable", ">=", searchLower),
+          where("companyNameSearchable", "<=", searchLower + "\uf8ff"),
+        );
+        const companyDocs = await getDocs(companyQuery);
+        allDocs = [...companyDocs.docs];
+      } catch (e) {
+        console.warn("Company name search failed:", e);
+      }
+
+      // PRIORITY 2: Search by username prefix (for old accounts)
+      try {
+        const usernameQuery = query(
+          usersRef,
+          where("username", ">=", searchLower),
+          where("username", "<=", searchLower + "\uf8ff"),
+        );
+        const usernameDocs = await getDocs(usernameQuery);
+        allDocs = [
+          ...allDocs,
+          ...usernameDocs.docs.filter(
+            (doc: any) => !allDocs.find((d: any) => d.id === doc.id),
+          ),
+        ];
+      } catch (e) {
+        console.warn("Username search failed:", e);
+      }
+
+      // PRIORITY 3: Search by email prefix (if user types an email)
+      if (searchLower.includes("@")) {
+        try {
+          const emailQuery = query(
+            usersRef,
+            where("email", ">=", searchLower),
+            where("email", "<=", searchLower + "\uf8ff"),
+          );
+          const emailDocs = await getDocs(emailQuery);
+          allDocs = [
+            ...allDocs,
+            ...emailDocs.docs.filter(
+              (doc: any) => !allDocs.find((d: any) => d.id === doc.id),
+            ),
+          ];
+        } catch (e) {
+          console.warn("Email search failed:", e);
         }
       }
 
-      // SECONDARY: If few results, also search by email (1 read fallback)
-      if (results.length < 5 && searchLower.includes("@")) {
-        const emailQuery = query(
-          usersRef,
-          where("email", ">=", searchLower),
-          where("email", "<=", searchLower + "\uf8ff"),
-        );
-        const emailDocs = await getDocs(emailQuery);
+      // Process all results from Firestore and apply substring filtering
+      for (const doc of allDocs) {
+        if (doc.data().username === currentUser) continue;
 
-        for (const doc of emailDocs.docs) {
-          if (doc.data().username === currentUser) continue;
+        const companyName = (doc.data().companyName || "").toLowerCase();
+        const username = (doc.data().username || "").toLowerCase();
+        const email = (doc.data().email || "").toLowerCase();
+
+        // Check if search term matches ANY field (prefix or substring)
+        const matchesCompany =
+          companyName.startsWith(searchLower) ||
+          companyName.includes(searchLower);
+        const matchesUsername =
+          username.startsWith(searchLower) || username.includes(searchLower);
+        const matchesEmail = email.includes(searchLower);
+
+        if (matchesCompany || matchesUsername || matchesEmail) {
           if (!seenIds.has(doc.id)) {
             seenIds.add(doc.id);
             results.push({
@@ -326,12 +338,16 @@ export default function Vendors({
 
       setSearchResults(results);
 
-      // Cache results for future searches (reduce reads by 90%)
+      // CACHE RESULTS for performance on future identical searches
+      // (IndexedDB is now secondary - for caching, not for primary search)
       if (results.length > 0) {
         await cacheVendors(results);
+        console.log(
+          `Found ${results.length} companies matching "${searchTerm}" (Firestore → cached to IndexedDB)`,
+        );
+      } else {
+        console.log(`No companies found matching "${searchTerm}"`);
       }
-
-      console.log(`Found ${results.length} companies matching "${searchTerm}"`);
     } catch (error) {
       console.error("Error searching companies:", error);
       alert("Error searching companies");
@@ -388,7 +404,10 @@ export default function Vendors({
     try {
       // First, try to find if a user with this email already exists
       const usersRef = collection(db, "users");
-      const emailQuery = query(usersRef, where("email", "==", newCompanyData.email));
+      const emailQuery = query(
+        usersRef,
+        where("email", "==", newCompanyData.email),
+      );
       const emailDocs = await getDocs(emailQuery);
 
       let targetUserId: string;
