@@ -774,9 +774,15 @@ export default function App() {
 
       const userData = userSnap.data();
       console.log(`📄 Migration: Current user data:`, userData);
-      console.log(`📄 Migration: email = "${userData?.email}" (type: ${typeof userData?.email})`);
-      console.log(`📄 Migration: companyName = "${userData?.companyName}" (type: ${typeof userData?.companyName})`);
-      console.log(`📄 Migration: username = "${userData?.username}" (type: ${typeof userData?.username})`);
+      console.log(
+        `📄 Migration: email = "${userData?.email}" (type: ${typeof userData?.email})`,
+      );
+      console.log(
+        `📄 Migration: companyName = "${userData?.companyName}" (type: ${typeof userData?.companyName})`,
+      );
+      console.log(
+        `📄 Migration: username = "${userData?.username}" (type: ${typeof userData?.username})`,
+      );
       console.log(`📄 Migration: All keys:`, Object.keys(userData || {}));
 
       // Only migrate if missing searchable fields
@@ -803,6 +809,73 @@ export default function App() {
       }
     } catch (error) {
       console.error("❌ Migration error:", error);
+    }
+  };
+
+  // DIAGNOSTIC: Check what's actually stored in Firestore
+  const diagnosticCheckCollections = async (username: string) => {
+    console.log("\n════════════════════════════════════════════════════════════");
+    console.log("🔍 DIAGNOSTIC: Checking Firestore collections for:", username);
+    console.log("════════════════════════════════════════════════════════════\n");
+
+    try {
+      if (!db) {
+        console.log("⏭️  Diagnostic: Using localStorage mode");
+        return;
+      }
+
+      // Check userSettings collection
+      console.log("📋 Checking userSettings collection...");
+      const userSettingsRef = doc(db, "userSettings", username);
+      const userSettingsSnap = await getDoc(userSettingsRef);
+
+      if (userSettingsSnap.exists()) {
+        const data = userSettingsSnap.data();
+        console.log("✓ userSettings/", username, "exists");
+        console.log("  Fields present:", Object.keys(data || {}));
+        console.log("  Full data:", data);
+        console.log("  username:", data?.username);
+        console.log("  email:", data?.email, "(undefined means blocked by security rules)");
+        console.log("  companyName:", data?.companyName, "(undefined means blocked by security rules)");
+        console.log("  emailSearchable:", data?.emailSearchable, "(undefined means missing)");
+        console.log("  companyNameSearchable:", data?.companyNameSearchable, "(undefined means missing)");
+        console.log("  usernameSearchable:", data?.usernameSearchable, "(undefined means missing)");
+      } else {
+        console.log("✗ userSettings/", username, "DOES NOT EXIST");
+      }
+
+      // Check vendorSearchIndex collection
+      console.log("\n📋 Checking vendorSearchIndex collection...");
+      const vendorSearchRef = doc(db, "vendorSearchIndex", username);
+      const vendorSearchSnap = await getDoc(vendorSearchRef);
+
+      if (vendorSearchSnap.exists()) {
+        const data = vendorSearchSnap.data();
+        console.log("✓ vendorSearchIndex/", username, "exists");
+        console.log("  Fields present:", Object.keys(data || {}));
+        console.log("  Full data:", data);
+        console.log("  username:", data?.username, "(should be present)");
+        console.log("  email:", data?.email, "(should be present)");
+        console.log("  companyName:", data?.companyName, "(should be present)");
+        console.log("  emailSearchable:", data?.emailSearchable, "(should be present)");
+        console.log("  companyNameSearchable:", data?.companyNameSearchable, "(should be present)");
+        console.log("  usernameSearchable:", data?.usernameSearchable, "(should be present)");
+      } else {
+        console.log("✗ vendorSearchIndex/", username, "DOES NOT EXIST - THIS WILL CAUSE SEARCH TO FAIL");
+      }
+
+      console.log("\n════════════════════════════════════════════════════════════");
+      console.log("🎯 DIAGNOSIS SUMMARY:");
+      console.log("════════════════════════════════════════════════════════════");
+      console.log("If email/companyName are undefined in userSettings:");
+      console.log("  → Security rules are BLOCKING these fields from being saved");
+      console.log("If vendorSearchIndex does NOT exist:");
+      console.log("  → Signup code did not write to vendorSearchIndex successfully");
+      console.log("If vendorSearchIndex exists with complete data:");
+      console.log("  → We should search this collection instead of userSettings");
+      console.log("════════════════════════════════════════════════════════════\n");
+    } catch (error) {
+      console.error("❌ Diagnostic error:", error);
     }
   };
 
@@ -2592,7 +2665,9 @@ export default function App() {
           console.log("✅ SIGNUP: Successfully saved to Firestore");
 
           // CRITICAL: Also save to searchable collection (for vendor search - bypasses security rule issues)
-          console.log("📤 SIGNUP: Also saving to 'vendorSearchIndex' for global search access");
+          console.log(
+            "📤 SIGNUP: Also saving to 'vendorSearchIndex' for global search access",
+          );
           const searchableData = {
             username: signupForm.username,
             usernameSearchable: usernameSearchable,
@@ -2602,16 +2677,28 @@ export default function App() {
             companyNameSearchable: companyNameSearchable,
             createdAt: new Date().toISOString(),
           };
-          
+
+          console.log("📦 SIGNUP: vendorSearchIndex data to save:", searchableData);
+
           try {
-            await setDoc(doc(db, "vendorSearchIndex", signupForm.username), searchableData);
+            await setDoc(
+              doc(db, "vendorSearchIndex", signupForm.username),
+              searchableData,
+            );
             console.log("✅ SIGNUP: Saved to vendorSearchIndex collection");
+            
+            // Verify vendorSearchIndex write
+            const searchSnap = await getDoc(doc(db, "vendorSearchIndex", signupForm.username));
+            console.log("✓ SIGNUP: vendorSearchIndex verification:", searchSnap.data());
           } catch (searchIndexError) {
-            console.warn("⚠️  SIGNUP: Could not save to vendorSearchIndex:", searchIndexError);
+            console.error(
+              "❌ SIGNUP: Could not save to vendorSearchIndex:",
+              searchIndexError,
+            );
           }
 
           // CRITICAL: Wait a moment to ensure write is committed
-          await new Promise(resolve => setTimeout(resolve, 200));
+          await new Promise((resolve) => setTimeout(resolve, 200));
 
           // Verify the write by reading it back immediately
           const userDocRef = doc(db, "userSettings", signupForm.username);
@@ -2623,16 +2710,31 @@ export default function App() {
               "✓ SIGNUP: Verification - Full data in Firestore:",
               savedData,
             );
-            console.log("✓ SIGNUP: Second read - email value:", savedData?.email, "type:", typeof savedData?.email);
-            console.log("✓ SIGNUP: Second read - companyName value:", savedData?.companyName, "type:", typeof savedData?.companyName);
+            console.log(
+              "✓ SIGNUP: Second read - email value:",
+              savedData?.email,
+              "type:",
+              typeof savedData?.email,
+            );
+            console.log(
+              "✓ SIGNUP: Second read - companyName value:",
+              savedData?.companyName,
+              "type:",
+              typeof savedData?.companyName,
+            );
             console.log("✓ SIGNUP: All keys:", Object.keys(savedData || {}));
-            
+
             // CRITICAL: Do another read IMMEDIATELY to ensure consistency
             console.log("🔄 SIGNUP: Double-checking with third read...");
             const userSnap2 = await getDoc(userDocRef);
             if (userSnap2.exists()) {
               const savedData2 = userSnap2.data();
-              console.log("✓ SIGNUP: Third read - email:", savedData2?.email, "company:", savedData2?.companyName);
+              console.log(
+                "✓ SIGNUP: Third read - email:",
+                savedData2?.email,
+                "company:",
+                savedData2?.companyName,
+              );
             }
           } else {
             console.error(
@@ -2671,6 +2773,10 @@ export default function App() {
       cacheUserData(signupForm.username, signupForm.email);
       // Migration: Ensure searchable fields exist
       await migrateUserSearchableFields(signupForm.username);
+
+      // DIAGNOSTIC: Log what was actually saved for new signup
+      await diagnosticCheckCollections(signupForm.username);
+
       setIsLoggedIn(true);
       setSignupForm({
         username: "",
@@ -2752,6 +2858,9 @@ export default function App() {
 
       // Migration: Ensure searchable fields exist for vendor search
       await migrateUserSearchableFields(user.username);
+
+      // DIAGNOSTIC: Log what's actually in both collections
+      await diagnosticCheckCollections(user.username);
 
       setProducts(userProducts);
       setActiveSubmenu(

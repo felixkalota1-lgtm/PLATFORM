@@ -279,7 +279,9 @@ export default function Vendors({
       const results: Company[] = [];
       const seenIds = new Set<string>();
 
-      // FIRESTORE FIRST (Source of Truth) - Search all companies in real-time
+      // PRIMARY SOURCE: Search 'vendorSearchIndex' collection (has complete data)
+      const vendorSearchRef = collection(db, "vendorSearchIndex");
+      // FALLBACK: Also check userSettings (for legacy data)
       const usersRef = collection(db, "userSettings");
 
       console.log(
@@ -289,58 +291,47 @@ export default function Vendors({
       // Strategy: Query by multiple fields and deduplicate
       // We search: company name, username, and email with prefix matching
 
-      // PRIORITY 1: Search by company name searchable field (prefix match)
+      // PRIORITY 1: Search by company name in vendorSearchIndex (has all email/company data)
       let allDocs: any[] = [];
       try {
-        console.log("📋 Querying by companyNameSearchable...");
+        console.log("📋 Querying vendorSearchIndex by companyNameSearchable...");
         const companyQuery = query(
-          usersRef,
+          vendorSearchRef,
           where("companyNameSearchable", ">=", searchLower),
           where("companyNameSearchable", "<=", searchLower + "\uf8ff"),
         );
         const companyDocs = await getDocs(companyQuery);
         console.log(
-          `✓ Found ${companyDocs.docs.length} by company name searchable`,
+          `✓ Found ${companyDocs.docs.length} by company name in vendorSearchIndex`,
         );
-        if (companyDocs.docs.length > 0) {
-          console.log(
-            "  Results:",
-            companyDocs.docs.map((d) => ({
-              username: d.data().username,
-              companyNameSearchable: d.data().companyNameSearchable,
-            })),
-          );
-        }
         allDocs = [...companyDocs.docs];
       } catch (e: any) {
-        console.error(
-          "❌ Company name search error:",
-          e?.message || e,
-          e?.code,
-        );
+        console.warn("⚠️ vendorSearchIndex company search failed, trying userSettings...", e?.code);
+        // Fallback: Try userSettings if vendorSearchIndex is empty/error
+        try {
+          const companyQuery = query(
+            usersRef,
+            where("companyNameSearchable", ">=", searchLower),
+            where("companyNameSearchable", "<=", searchLower + "\uf8ff"),
+          );
+          const companyDocs = await getDocs(companyQuery);
+          console.log(`✓ Found ${companyDocs.docs.length} by company name in userSettings`);
+          allDocs = [...companyDocs.docs];
+        } catch (e2: any) {
+          console.error("❌ Company name search failed on both collections:", e2?.message);
+        }
       }
 
-      // PRIORITY 2: Search by username searchable field (for old accounts)
+      // PRIORITY 2: Search by username in vendorSearchIndex
       try {
-        console.log("📋 Querying by usernameSearchable...");
+        console.log("📋 Querying vendorSearchIndex by usernameSearchable...");
         const usernameQuery = query(
-          usersRef,
+          vendorSearchRef,
           where("usernameSearchable", ">=", searchLower),
           where("usernameSearchable", "<=", searchLower + "\uf8ff"),
         );
         const usernameDocs = await getDocs(usernameQuery);
-        console.log(
-          `✓ Found ${usernameDocs.docs.length} by username searchable`,
-        );
-        if (usernameDocs.docs.length > 0) {
-          console.log(
-            "  Results:",
-            usernameDocs.docs.map((d) => ({
-              username: d.data().username,
-              usernameSearchable: d.data().usernameSearchable,
-            })),
-          );
-        }
+        console.log(`✓ Found ${usernameDocs.docs.length} by username in vendorSearchIndex`);
         allDocs = [
           ...allDocs,
           ...usernameDocs.docs.filter(
@@ -348,28 +339,37 @@ export default function Vendors({
           ),
         ];
       } catch (e: any) {
-        console.error("❌ Username search error:", e?.message || e, e?.code);
+        console.warn("⚠️ vendorSearchIndex username search failed, trying userSettings...", e?.code);
+        // Fallback: Try userSettings
+        try {
+          const usernameQuery = query(
+            usersRef,
+            where("usernameSearchable", ">=", searchLower),
+            where("usernameSearchable", "<=", searchLower + "\uf8ff"),
+          );
+          const usernameDocs = await getDocs(usernameQuery);
+          console.log(`✓ Found ${usernameDocs.docs.length} by username in userSettings`);
+          allDocs = [
+            ...allDocs,
+            ...usernameDocs.docs.filter(
+              (doc: any) => !allDocs.find((d: any) => d.id === doc.id),
+            ),
+          ];
+        } catch (e2: any) {
+          console.error("❌ Username search failed on both collections:", e2?.message);
+        }
       }
 
-      // PRIORITY 3: Search by email searchable field
+      // PRIORITY 3: Search by email in vendorSearchIndex
       try {
-        console.log("📋 Querying by emailSearchable...");
+        console.log("📋 Querying vendorSearchIndex by emailSearchable...");
         const emailQuery = query(
-          usersRef,
+          vendorSearchRef,
           where("emailSearchable", ">=", searchLower),
           where("emailSearchable", "<=", searchLower + "\uf8ff"),
         );
         const emailDocs = await getDocs(emailQuery);
-        console.log(`✓ Found ${emailDocs.docs.length} by email searchable`);
-        if (emailDocs.docs.length > 0) {
-          console.log(
-            "  Results:",
-            emailDocs.docs.map((d) => ({
-              username: d.data().username,
-              emailSearchable: d.data().emailSearchable,
-            })),
-          );
-        }
+        console.log(`✓ Found ${emailDocs.docs.length} by email in vendorSearchIndex`);
         allDocs = [
           ...allDocs,
           ...emailDocs.docs.filter(
@@ -377,7 +377,25 @@ export default function Vendors({
           ),
         ];
       } catch (e: any) {
-        console.error("❌ Email search error:", e?.message || e, e?.code);
+        console.warn("⚠️ vendorSearchIndex email search failed, trying userSettings...", e?.code);
+        // Fallback: Try userSettings
+        try {
+          const emailQuery = query(
+            usersRef,
+            where("emailSearchable", ">=", searchLower),
+            where("emailSearchable", "<=", searchLower + "\uf8ff"),
+          );
+          const emailDocs = await getDocs(emailQuery);
+          console.log(`✓ Found ${emailDocs.docs.length} by email in userSettings`);
+          allDocs = [
+            ...allDocs,
+            ...emailDocs.docs.filter(
+              (doc: any) => !allDocs.find((d: any) => d.id === doc.id),
+            ),
+          ];
+        } catch (e2: any) {
+          console.error("❌ Email search failed on both collections:", e2?.message);
+        }
       }
 
       console.log(
