@@ -162,9 +162,9 @@ export default function Vendors({
     }
   };
 
-  const handleSearch = async (query: string) => {
-    setSearchQuery(query);
-    if (query.length < 2) {
+  const handleSearch = async (searchTerm: string) => {
+    setSearchQuery(searchTerm);
+    if (searchTerm.length < 2) {
       setSearchResults([]);
       return;
     }
@@ -174,7 +174,7 @@ export default function Vendors({
       const usersRef = collection(db, "users");
 
       // Search by username or company name
-      const usernameQuery = query(usersRef, where("username", ">=", query));
+      const usernameQuery = query(usersRef, where("username", ">=", searchTerm));
       const usernameDocs = await getDocs(usernameQuery);
 
       const results: Company[] = [];
@@ -199,7 +199,7 @@ export default function Vendors({
       }
 
       setSearchResults(results);
-      console.log(`Found ${results.length} companies matching "${query}"`);
+      console.log(`Found ${results.length} companies matching "${searchTerm}"`);
     } catch (error) {
       console.error("Error searching companies:", error);
       alert("Error searching companies");
