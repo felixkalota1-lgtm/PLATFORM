@@ -3247,10 +3247,45 @@ export default function App() {
                   type="text"
                   value={signupForm.companyName}
                   onChange={(e) => {
-                    setSignupForm({ ...signupForm, companyName: e.target.value });
+                    setSignupForm({
+                      ...signupForm,
+                      companyName: e.target.value,
+                    });
                     setAuthError("");
                   }}
                   placeholder="e.g., Acme Corporation"
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    border: "1px solid #e2e8f0",
+                    borderRadius: "6px",
+                    fontSize: "13px",
+                    boxSizing: "border-box",
+                    fontFamily: "inherit",
+                  }}
+                />
+              </div>
+
+              <div style={{ marginBottom: "16px" }}>
+                <label
+                  style={{
+                    display: "block",
+                    marginBottom: "6px",
+                    fontSize: "13px",
+                    fontWeight: "500",
+                    color: "#64748b",
+                  }}
+                >
+                  Username
+                </label>
+                <input
+                  type="text"
+                  value={signupForm.username}
+                  onChange={(e) => {
+                    setSignupForm({ ...signupForm, username: e.target.value });
+                    setAuthError("");
+                  }}
+                  placeholder="Choose a username"
                   style={{
                     width: "100%",
                     padding: "10px 12px",
