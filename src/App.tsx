@@ -21,6 +21,7 @@ import Quotations from "./pages/Quotations";
 import Inquiries from "./pages/Inquiries";
 import Settings from "./pages/Settings";
 import History from "./pages/History";
+import Vendors from "./pages/Vendors";
 
 interface Product {
   id: string;
@@ -293,6 +294,7 @@ const loadCartFromIndexedDB = async (
 export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
   const [currentUser, setCurrentUser] = useState<string>("");
+  const [currentUserCompany, setCurrentUserCompany] = useState<string>("");
   const [authMode, setAuthMode] = useState<"login" | "signup">("login");
   const [loginForm, setLoginForm] = useState({
     emailOrUsername: "",
@@ -311,7 +313,7 @@ export default function App() {
     "marketplace" | "warehouse" | "allDocuments"
   >("warehouse");
   const [activeWarehouseTab, setActiveWarehouseTab] = useState<
-    "products" | "upload" | "quotations" | "inquiries" | "orders" | "settings"
+    "products" | "upload" | "quotations" | "inquiries" | "orders" | "vendors" | "settings"
   >("products");
   const [activeMarketplaceTab, setActiveMarketplaceTab] = useState<
     "all" | "myListings"
@@ -3818,12 +3820,7 @@ export default function App() {
             </button>
 
             <button
-              onClick={() => {
-                if (!hasLoadedIncomingOrders) {
-                  loadIncomingOrders();
-                }
-                setActiveWarehouseTab("orders");
-              }}
+              onClick={() => setActiveWarehouseTab("orders")}
               style={{
                 background: "transparent",
                 border: "none",
@@ -3852,6 +3849,38 @@ export default function App() {
               }}
             >
               Orders
+            </button>
+
+            <button
+              onClick={() => setActiveWarehouseTab("vendors")}
+              style={{
+                background: "transparent",
+                border: "none",
+                borderBottom:
+                  activeWarehouseTab === "vendors"
+                    ? "3px solid #5b7c99"
+                    : "2px solid transparent",
+                padding: "18px 22px",
+                cursor: "pointer",
+                color: activeWarehouseTab === "vendors" ? "#5b7c99" : "#64748b",
+                fontWeight: activeWarehouseTab === "vendors" ? "700" : "600",
+                fontSize: "13px",
+                transition: "all 0.25s ease",
+                textTransform: "uppercase",
+                letterSpacing: "0.3px",
+              }}
+              onMouseEnter={(e) => {
+                if (activeWarehouseTab !== "vendors") {
+                  e.currentTarget.style.color = "#5b7c99";
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (activeWarehouseTab !== "vendors") {
+                  e.currentTarget.style.color = "#64748b";
+                }
+              }}
+            >
+              Vendors
             </button>
 
             <button
@@ -7604,6 +7633,18 @@ export default function App() {
                     </>
                   )}
                 </div>
+              )}
+
+              {activeWarehouseTab === "vendors" && (
+                <Vendors
+                  onSendInquiry={(company) => {
+                    // Pre-fill recipient data and navigate to inquiries
+                    setActiveWarehouseTab("inquiries");
+                    // Pass pre-filled data to Inquiries component
+                  }}
+                  currentUserEmail={currentUser}
+                  currentUserCompany={currentUserCompany}
+                />
               )}
 
               {activeWarehouseTab === "settings" && (

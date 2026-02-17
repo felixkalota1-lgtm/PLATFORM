@@ -42,6 +42,11 @@ interface InquiriesProps {
   ) => Promise<void>;
   onSendEmail?: () => void;
   onDeleteHistory?: (id: string) => void;
+  preFillRecipient?: {
+    name: string;
+    email: string;
+    company: string;
+  };
 }
 
 export default function Inquiries({
@@ -51,6 +56,7 @@ export default function Inquiries({
   onGeneratePDF,
   onSendEmail,
   onDeleteHistory,
+  preFillRecipient,
 }: InquiriesProps) {
   const [selectedHistoryId, setSelectedHistoryId] = React.useState<
     string | null
@@ -58,9 +64,9 @@ export default function Inquiries({
   const [previewId, setPreviewId] = React.useState<string | null>(null);
   const [showCompositor, setShowCompositor] = React.useState(false);
   const [compositorData, setCompositorData] = React.useState({
-    recipientName: "",
-    recipientEmail: "",
-    recipientCompany: "",
+    recipientName: preFillRecipient?.name || "",
+    recipientEmail: preFillRecipient?.email || "",
+    recipientCompany: preFillRecipient?.company || "",
     inquiryBody: "",
   });
   const [currentInquiry, setCurrentInquiry] = React.useState<{
@@ -80,7 +86,23 @@ export default function Inquiries({
     console.log(
       `Inquiries component received - items: ${items.length}, history: ${history.length}`,
     );
-  }, [items, history]);
+    // Auto-focus on compositor if recipient is pre-filled
+    if (preFillRecipient && !showCompositor) {
+      setShowCompositor(true);
+    }
+  }, [preFillRecipient]);
+
+  React.useEffect(() => {
+    // Update compositor data when preFillRecipient changes
+    if (preFillRecipient) {
+      setCompositorData({
+        recipientName: preFillRecipient.name,
+        recipientEmail: preFillRecipient.email,
+        recipientCompany: preFillRecipient.company,
+        inquiryBody: "",
+      });
+    }
+  }, [preFillRecipient]);
 
   const calculateTotal = () => {
     return items.reduce((sum, item) => sum + item.price * item.qty, 0);
@@ -165,6 +187,38 @@ export default function Inquiries({
           Inquiries
         </h2>
         <div style={{ display: "flex", gap: "12px" }}>
+          <button
+            onClick={() => {
+              setCompositorData({
+                recipientName: "",
+                recipientEmail: "",
+                recipientCompany: "",
+                inquiryBody: "",
+              });
+              setShowCompositor(!showCompositor);
+            }}
+            style={{
+              padding: "10px 20px",
+              background: "#16a34a",
+              color: "white",
+              border: "none",
+              borderRadius: "6px",
+              cursor: "pointer",
+              fontSize: "13px",
+              fontWeight: "600",
+              transition: "all 0.25s ease",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = "#15803d";
+              e.currentTarget.style.transform = "translateY(-2px)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = "#16a34a";
+              e.currentTarget.style.transform = "translateY(0)";
+            }}
+          >
+            Create Inquiry
+          </button>
           {items.length > 0 && (
             <>
               <button
@@ -189,7 +243,7 @@ export default function Inquiries({
                   e.currentTarget.style.transform = "translateY(0)";
                 }}
               >
-                Compose Inquiry Letter
+                Compose with Items
               </button>
               <button
                 onClick={handleGeneratePDF}
