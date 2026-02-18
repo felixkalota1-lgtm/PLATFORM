@@ -13,6 +13,7 @@ import {
   orderBy,
   limit,
   startAfter,
+  addDoc,
 } from "firebase/firestore";
 import { signInWithEmailAndPassword } from "firebase/auth";
 import * as XLSX from "xlsx";
@@ -483,6 +484,7 @@ export default function App() {
   } | null>(null);
   const [quotationHistory, setQuotationHistory] = useState<any[]>([]);
   const [inquiryHistory, setInquiryHistory] = useState<any[]>([]);
+  const [incomingInquiries, setIncomingInquiries] = useState<any[]>([]);
   const [activeSubmenuTab, setActiveSubmenuTab] = useState<
     "current" | "history"
   >("current");
@@ -742,9 +744,10 @@ export default function App() {
       // Load quotation and inquiry history with username
       const quotationHist = await loadQuotationHistory(username);
       const inquiryHist = await loadInquiryHistory(username);
+      const incomingInqHist = await loadIncomingInquiries(username);
 
       console.log(
-        `Login: Loaded ${quotationHist?.length || 0} quotations and ${inquiryHist?.length || 0} inquiries`,
+        `Login: Loaded ${quotationHist?.length || 0} quotations, ${inquiryHist?.length || 0} outgoing inquiries, and ${incomingInqHist?.length || 0} incoming inquiries`,
       );
 
       const cachedTab = localStorage.getItem(`cache_tab_${username}`);
@@ -753,6 +756,7 @@ export default function App() {
         activeTab: cachedTab || "products",
         quotationHistory: quotationHist || [],
         inquiryHistory: inquiryHist || [],
+        incomingInquiries: incomingInqHist || [],
       };
     } catch (error) {
       console.error("Error loading user data:", error);
@@ -761,6 +765,7 @@ export default function App() {
         activeTab: "products",
         quotationHistory: [],
         inquiryHistory: [],
+        incomingInquiries: [],
       };
     }
   };
@@ -1171,6 +1176,7 @@ export default function App() {
           setProducts(data.products);
           setQuotationHistory(data.quotationHistory);
           setInquiryHistory(data.inquiryHistory);
+          setIncomingInquiries(data.incomingInquiries);
           console.log(
             `✅ AUTH: Restored session - ${data.products.length} products loaded`,
           );
@@ -1714,6 +1720,105 @@ export default function App() {
       });
     } catch (error) {
       console.error("Error deleting inquiry from IndexedDB:", error);
+    }
+  };
+
+  // Save inquiry to IndexedDB and history (without PDF generation)
+  const saveInquiryToHistory = async (inquiry: any) => {
+    try {
+      // Save to IndexedDB
+      const inquiryData = {
+        id: inquiry.id,
+        number: inquiry.number,
+        date: inquiry.date,
+        recipientName: inquiry.recipientName,
+        recipientEmail: inquiry.recipientEmail,
+        recipientCompany: inquiry.recipientCompany,
+        inquiryBody: inquiry.inquiryBody,
+        items: inquiry.items,
+        letterhead: inquiry.letterhead || null,
+        createdAt: new Date().toISOString(),
+        username: currentUser,
+      };
+
+      const dbInstance = await initIndexedDB();
+      await new Promise((resolve, reject) => {
+        const transaction = dbInstance.transaction(["inquiries"], "readwrite");
+        const store = transaction.objectStore("inquiries");
+        const request = store.put(inquiryData);
+        request.onsuccess = () => resolve(inquiryData.id);
+        request.onerror = () => reject(request.error);
+      });
+
+      // Update React state with new inquiry in history
+      setInquiryHistory((prev) => [
+        ...prev,
+        {
+          id: inquiry.id,
+          number: inquiry.number,
+          date: inquiry.date,
+          items: inquiry.items,
+          createdAt: new Date().toISOString(),
+          recipientName: inquiry.recipientName,
+          recipientEmail: inquiry.recipientEmail,
+          recipientCompany: inquiry.recipientCompany,
+          inquiryBody: inquiry.inquiryBody,
+          letterhead: inquiry.letterhead || null,
+        },
+      ]);
+
+      // ALSO save to Firestore so recipient can receive it
+      if (db && inquiry.recipientEmail) {
+        try {
+          const sentInquiriesRef = collection(db, "sentInquiries");
+          await addDoc(sentInquiriesRef, {
+            ...inquiryData,
+            senderEmail: currentUser,
+            recipientEmail: inquiry.recipientEmail,
+            status: "sent",
+            sentAt: new Date().toISOString(),
+          });
+          console.log(`Inquiry sent to Firestore for ${inquiry.recipientEmail}`);
+        } catch (error) {
+          console.warn("Could not save to Firestore:", error);
+          // Don't fail if Firestore save fails - local save is enough
+        }
+      }
+
+      // Show success message
+      alert(`Inquiry ${inquiry.number} saved successfully!`);
+      console.log(`Inquiry saved: ${inquiry.number}`);
+    } catch (error) {
+      console.error("Error saving inquiry:", error);
+      alert(
+        `Error saving inquiry: ${error instanceof Error ? error.message : "Unknown error"}`,
+      );
+      throw error;
+    }
+  };
+
+  // Load incoming inquiries from Firestore
+  const loadIncomingInquiries = async (userEmail?: string) => {
+    try {
+      const email = userEmail || currentUser;
+      if (!db || !email) return [];
+
+      const sentInquiriesRef = collection(db, "sentInquiries");
+      const incomingQuery = query(
+        sentInquiriesRef,
+        where("recipientEmail", "==", email),
+        orderBy("sentAt", "desc"),
+      );
+      const snapshot = await getDocs(incomingQuery);
+      const inquiries = snapshot.docs.map((doc) => ({
+        ...doc.data(),
+        firestoreId: doc.id,
+      }));
+      console.log(`Loaded ${inquiries.length} incoming inquiries for ${email}`);
+      return inquiries;
+    } catch (error) {
+      console.error("Error loading incoming inquiries:", error);
+      return [];
     }
   };
 
@@ -7405,34 +7510,380 @@ export default function App() {
               )}
 
               {activeWarehouseTab === "inquiries" && (
-                <Inquiries
-                  items={inquiries}
-                  history={inquiryHistory}
-                  letterhead={inquiryLetterhead}
-                  preFillRecipient={preFillRecipient || undefined}
-                  onGeneratePDF={async (inquiry, letterRef) => {
-                    if (inquiry && letterRef) {
-                      await generateInquiryPDFFromLetter(inquiry, letterRef);
-                    } else {
-                      alert("Please compose an inquiry first");
-                    }
-                  }}
-                  onSendEmail={() => {
-                    alert("Email feature coming soon!");
-                  }}
-                  onDeleteHistory={async (id) => {
-                    if (id === "clear-current") {
-                      setInquiries([]);
-                    } else {
-                      // Delete from state
-                      setInquiryHistory(
-                        inquiryHistory.filter((i) => i.id !== id),
-                      );
-                      // Delete from IndexedDB
-                      await deleteInquiryFromIndexedDB(id);
-                    }
-                  }}
-                />
+                <div>
+                  <div style={{ marginBottom: "28px" }}>
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: "12px",
+                        marginBottom: "18px",
+                      }}
+                    >
+                      <button
+                        onClick={() => {
+                          setActiveInquiriesView("incoming");
+                        }}
+                        style={{
+                          padding: "10px 16px",
+                          borderRadius: "6px",
+                          border:
+                            activeInquiriesView === "incoming"
+                              ? "2px solid #0284c7"
+                              : "1px solid #d0dce6",
+                          background:
+                            activeInquiriesView === "incoming"
+                              ? "#0284c7"
+                              : "#ffffff",
+                          color:
+                            activeInquiriesView === "incoming"
+                              ? "white"
+                              : "#1a365d",
+                          cursor: "pointer",
+                          fontSize: "14px",
+                          fontWeight: "600",
+                          transition: "all 0.25s ease",
+                          boxShadow:
+                            activeInquiriesView === "incoming"
+                              ? "0 4px 8px rgba(2, 132, 199, 0.2)"
+                              : "0 2px 4px rgba(0, 0, 0, 0.04)",
+                        }}
+                        onMouseEnter={(e) => {
+                          if (activeInquiriesView !== "incoming") {
+                            e.currentTarget.style.background = "#f0f9ff";
+                            e.currentTarget.style.borderColor = "#0284c7";
+                          }
+                        }}
+                        onMouseLeave={(e) => {
+                          if (activeInquiriesView !== "incoming") {
+                            e.currentTarget.style.background = "#ffffff";
+                            e.currentTarget.style.borderColor = "#d0dce6";
+                          }
+                        }}
+                      >
+                        Incoming Inquiries ({incomingInquiries.length})
+                      </button>
+                      <button
+                        onClick={() => {
+                          setActiveInquiriesView("outgoing");
+                        }}
+                        style={{
+                          padding: "10px 16px",
+                          borderRadius: "6px",
+                          border:
+                            activeInquiriesView === "outgoing"
+                              ? "2px solid #0284c7"
+                              : "1px solid #d0dce6",
+                          background:
+                            activeInquiriesView === "outgoing"
+                              ? "#0284c7"
+                              : "#ffffff",
+                          color:
+                            activeInquiriesView === "outgoing"
+                              ? "white"
+                              : "#1a365d",
+                          cursor: "pointer",
+                          fontSize: "14px",
+                          fontWeight: "600",
+                          transition: "all 0.25s ease",
+                          boxShadow:
+                            activeInquiriesView === "outgoing"
+                              ? "0 4px 8px rgba(2, 132, 199, 0.2)"
+                              : "0 2px 4px rgba(0, 0, 0, 0.04)",
+                        }}
+                        onMouseEnter={(e) => {
+                          if (activeInquiriesView !== "outgoing") {
+                            e.currentTarget.style.background = "#f0f9ff";
+                            e.currentTarget.style.borderColor = "#0284c7";
+                          }
+                        }}
+                        onMouseLeave={(e) => {
+                          if (activeInquiriesView !== "outgoing") {
+                            e.currentTarget.style.background = "#ffffff";
+                            e.currentTarget.style.borderColor = "#d0dce6";
+                          }
+                        }}
+                      >
+                        Outgoing Inquiries ({inquiryHistory.length})
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Incoming Inquiries */}
+                  {activeInquiriesView === "incoming" && (
+                    <div>
+                      {incomingInquiries.length === 0 ? (
+                        <div
+                          style={{
+                            background: "#f8fafc",
+                            border: "2px dashed #cbd5e1",
+                            borderRadius: "8px",
+                            padding: "48px 32px",
+                            textAlign: "center",
+                          }}
+                        >
+                          <p
+                            style={{
+                              fontSize: "16px",
+                              color: "#64748b",
+                              margin: "0",
+                            }}
+                          >
+                            No incoming inquiries yet. When other users send
+                            inquiries to you, they will appear here.
+                          </p>
+                        </div>
+                      ) : (
+                        <div
+                          style={{
+                            overflowX: "auto",
+                            borderRadius: "8px",
+                            boxShadow: "0 2px 8px rgba(0, 0, 0, 0.08)",
+                          }}
+                        >
+                          <table
+                            style={{
+                              width: "100%",
+                              borderCollapse: "collapse",
+                              background: "#ffffff",
+                            }}
+                          >
+                            <thead>
+                              <tr
+                                style={{
+                                  background: "#f1f5f9",
+                                  borderBottom: "2px solid #e2e8f0",
+                                }}
+                              >
+                                <th
+                                  style={{
+                                    padding: "16px",
+                                    textAlign: "left",
+                                    fontWeight: "700",
+                                    color: "#5b7c99",
+                                    fontSize: "13px",
+                                    textTransform: "uppercase",
+                                    letterSpacing: "0.3px",
+                                  }}
+                                >
+                                  Inquiry #
+                                </th>
+                                <th
+                                  style={{
+                                    padding: "16px",
+                                    textAlign: "left",
+                                    fontWeight: "700",
+                                    color: "#5b7c99",
+                                    fontSize: "13px",
+                                    textTransform: "uppercase",
+                                    letterSpacing: "0.3px",
+                                  }}
+                                >
+                                  From
+                                </th>
+                                <th
+                                  style={{
+                                    padding: "16px",
+                                    textAlign: "left",
+                                    fontWeight: "700",
+                                    color: "#5b7c99",
+                                    fontSize: "13px",
+                                    textTransform: "uppercase",
+                                    letterSpacing: "0.3px",
+                                  }}
+                                >
+                                  Company
+                                </th>
+                                <th
+                                  style={{
+                                    padding: "16px",
+                                    textAlign: "left",
+                                    fontWeight: "700",
+                                    color: "#5b7c99",
+                                    fontSize: "13px",
+                                    textTransform: "uppercase",
+                                    letterSpacing: "0.3px",
+                                  }}
+                                >
+                                  Date
+                                </th>
+                                <th
+                                  style={{
+                                    padding: "16px",
+                                    textAlign: "center",
+                                    fontWeight: "700",
+                                    color: "#5b7c99",
+                                    fontSize: "13px",
+                                    textTransform: "uppercase",
+                                    letterSpacing: "0.3px",
+                                  }}
+                                >
+                                  Items
+                                </th>
+                                <th
+                                  style={{
+                                    padding: "16px",
+                                    textAlign: "center",
+                                    fontWeight: "700",
+                                    color: "#5b7c99",
+                                    fontSize: "13px",
+                                    textTransform: "uppercase",
+                                    letterSpacing: "0.3px",
+                                  }}
+                                >
+                                  Actions
+                                </th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {incomingInquiries.map((inquiry, index) => (
+                                <tr
+                                  key={inquiry.firestoreId}
+                                  style={{
+                                    borderBottom: "1px solid #e2e8f0",
+                                    background:
+                                      index % 2 === 0
+                                        ? "#ffffff"
+                                        : "#f9fafb",
+                                  }}
+                                >
+                                  <td
+                                    style={{
+                                      padding: "14px 16px",
+                                      fontWeight: "600",
+                                      color: "#1a365d",
+                                    }}
+                                  >
+                                    {inquiry.number}
+                                  </td>
+                                  <td
+                                    style={{
+                                      padding: "14px 16px",
+                                      color: "#475569",
+                                    }}
+                                  >
+                                    {inquiry.senderEmail}
+                                  </td>
+                                  <td
+                                    style={{
+                                      padding: "14px 16px",
+                                      color: "#64748b",
+                                    }}
+                                  >
+                                    {inquiry.recipientCompany || "N/A"}
+                                  </td>
+                                  <td
+                                    style={{
+                                      padding: "14px 16px",
+                                      color: "#64748b",
+                                      fontSize: "13px",
+                                    }}
+                                  >
+                                    {new Date(
+                                      inquiry.sentAt
+                                    ).toLocaleDateString()}
+                                  </td>
+                                  <td
+                                    style={{
+                                      padding: "14px 16px",
+                                      textAlign: "center",
+                                      color: "#1a365d",
+                                      fontWeight: "600",
+                                    }}
+                                  >
+                                    {inquiry.items?.length || 0}
+                                  </td>
+                                  <td
+                                    style={{
+                                      padding: "14px 16px",
+                                      textAlign: "center",
+                                    }}
+                                  >
+                                    <button
+                                      onClick={() => {
+                                        setSelectedInquiryForPreview(inquiry);
+                                        setShowInquiryPreview(true);
+                                      }}
+                                      style={{
+                                        padding: "6px 12px",
+                                        background: "#0284c7",
+                                        color: "white",
+                                        border: "none",
+                                        borderRadius: "4px",
+                                        cursor: "pointer",
+                                        fontSize: "12px",
+                                        fontWeight: "600",
+                                        marginRight: "8px",
+                                      }}
+                                    >
+                                      View
+                                    </button>
+                                    <button
+                                      onClick={() => {
+                                        // Create a quotation reply linked to this inquiry
+                                        setActiveWarehouseTab("quotations");
+                                        alert(
+                                          "Quotation builder opened. Link this quotation to inquiry " +
+                                            inquiry.number,
+                                        );
+                                      }}
+                                      style={{
+                                        padding: "6px 12px",
+                                        background: "#16a34a",
+                                        color: "white",
+                                        border: "none",
+                                        borderRadius: "4px",
+                                        cursor: "pointer",
+                                        fontSize: "12px",
+                                        fontWeight: "600",
+                                      }}
+                                    >
+                                      Reply Quote
+                                    </button>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Outgoing Inquiries */}
+                  {activeInquiriesView === "outgoing" && (
+                    <Inquiries
+                      items={inquiries}
+                      history={inquiryHistory}
+                      letterhead={inquiryLetterhead}
+                      preFillRecipient={preFillRecipient || undefined}
+                      onGeneratePDF={async (inquiry, letterRef) => {
+                        if (inquiry && letterRef) {
+                          await generateInquiryPDFFromLetter(inquiry, letterRef);
+                        } else {
+                          alert("Please compose an inquiry first");
+                        }
+                      }}
+                      onSaveInquiry={async (inquiry) => {
+                        await saveInquiryToHistory(inquiry);
+                      }}
+                      onSendEmail={() => {
+                        alert("Email feature coming soon!");
+                      }}
+                      onDeleteHistory={async (id) => {
+                        if (id === "clear-current") {
+                          setInquiries([]);
+                        } else {
+                          // Delete from state
+                          setInquiryHistory(
+                            inquiryHistory.filter((i) => i.id !== id),
+                          );
+                          // Delete from IndexedDB
+                          await deleteInquiryFromIndexedDB(id);
+                        }
+                      }}
+                    />
+                  )}
+                </div>
               )}
 
               {activeWarehouseTab === "orders" && (

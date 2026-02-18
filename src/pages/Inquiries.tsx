@@ -40,6 +40,7 @@ interface InquiriesProps {
     inquiry: any,
     letterRef: HTMLDivElement | null,
   ) => Promise<void>;
+  onSaveInquiry?: (inquiry: any) => Promise<void>;
   onSendEmail?: () => void;
   onDeleteHistory?: (id: string) => void;
   preFillRecipient?: {
@@ -54,6 +55,7 @@ export default function Inquiries({
   history = [],
   letterhead = null,
   onGeneratePDF,
+  onSaveInquiry,
   onSendEmail,
   onDeleteHistory,
   preFillRecipient,
@@ -63,6 +65,14 @@ export default function Inquiries({
   >(null);
   const [previewId, setPreviewId] = React.useState<string | null>(null);
   const [showCompositor, setShowCompositor] = React.useState(false);
+  const [showAddProduct, setShowAddProduct] = React.useState(false);
+  const [localItems, setLocalItems] = React.useState<Product[]>(items);
+  const [newProduct, setNewProduct] = React.useState({
+    name: "",
+    partNumber: "",
+    qty: 1,
+    price: 0,
+  });
   const [compositorData, setCompositorData] = React.useState({
     recipientName: preFillRecipient?.name || "",
     recipientEmail: preFillRecipient?.email || "",
@@ -90,7 +100,9 @@ export default function Inquiries({
     if (preFillRecipient && !showCompositor) {
       setShowCompositor(true);
     }
-  }, [preFillRecipient]);
+    // Sync items from parent with local state
+    setLocalItems(items);
+  }, [preFillRecipient, items]);
 
   React.useEffect(() => {
     // Update compositor data when preFillRecipient changes
@@ -120,9 +132,13 @@ export default function Inquiries({
     return `${symbol}${value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   };
 
-  const handleCompositorSubmit = () => {
+  const handleCompositorSubmit = async () => {
     if (!compositorData.recipientName || !compositorData.inquiryBody) {
       alert("Please fill in recipient name and inquiry message");
+      return;
+    }
+    if (localItems.length === 0) {
+      alert("Please add at least one item to the inquiry");
       return;
     }
     // Create an inquiry metadata
@@ -138,13 +154,47 @@ export default function Inquiries({
       recipientEmail: compositorData.recipientEmail,
       recipientCompany: compositorData.recipientCompany,
       inquiryBody: compositorData.inquiryBody,
-      items: [...items],
+      items: [...localItems],
       letterhead: letterhead || null,
     };
 
     setCurrentInquiry(composedInquiry);
     setShowCompositor(false);
-    // Don't reset compositor data yet - let user see the preview
+    
+    // Save inquiry to IndexedDB and history
+    if (onSaveInquiry) {
+      try {
+        await onSaveInquiry(composedInquiry);
+      } catch (error) {
+        console.error("Error saving inquiry:", error);
+        alert("Failed to save inquiry");
+      }
+    }
+  };
+
+  const handleAddManualProduct = () => {
+    if (!newProduct.name.trim()) {
+      alert("Please enter a product name");
+      return;
+    }
+
+    const product: Product = {
+      id: "manual-" + Date.now(),
+      name: newProduct.name,
+      partNumber: newProduct.partNumber || "N/A",
+      price: newProduct.price,
+      qty: newProduct.qty,
+      stock: "Manual Entry",
+      currency: "USD",
+    };
+
+    setLocalItems([...localItems, product]);
+    setNewProduct({ name: "", partNumber: "", qty: 1, price: 0 });
+    setShowAddProduct(false);
+  };
+
+  const handleRemoveProduct = (productId: string) => {
+    setLocalItems(localItems.filter((p) => p.id !== productId));
   };
 
   const handleGeneratePDF = async () => {
@@ -295,7 +345,7 @@ export default function Inquiries({
               </button>
             </>
           )}
-          {(items.length > 0 || history.length > 0) && (
+          {(localItems.length > 0 || history.length > 0) && (
             <button
               onClick={() => {
                 if (window.confirm("Delete this inquiry?")) {
@@ -330,6 +380,337 @@ export default function Inquiries({
 
       {/* Content */}
       <div style={{ flex: 1, padding: "32px", overflow: "auto" }}>
+        {/* Products Section */}
+        <div style={{ marginBottom: "32px" }}>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              marginBottom: "16px",
+            }}
+          >
+            <h3
+              style={{
+                margin: "0",
+                fontSize: "16px",
+                fontWeight: "700",
+                color: "#1a365d",
+              }}
+            >
+              Inquiry Items ({localItems.length})
+            </h3>
+            <button
+              onClick={() => setShowAddProduct(!showAddProduct)}
+              style={{
+                padding: "8px 16px",
+                background: "#2563eb",
+                color: "white",
+                border: "none",
+                borderRadius: "6px",
+                cursor: "pointer",
+                fontSize: "13px",
+                fontWeight: "600",
+                transition: "all 0.25s ease",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = "#1d4ed8";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = "#2563eb";
+              }}
+            >
+              + Add Product
+            </button>
+          </div>
+
+          {/* Add Product Form */}
+          {showAddProduct && (
+            <div
+              style={{
+                background: "#eff6ff",
+                border: "1px solid #bfdbfe",
+                borderRadius: "8px",
+                padding: "16px",
+                marginBottom: "16px",
+              }}
+            >
+              <h4
+                style={{
+                  margin: "0 0 12px 0",
+                  fontSize: "13px",
+                  fontWeight: "600",
+                  color: "#1a365d",
+                }}
+              >
+                Add Product Manually
+              </h4>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "2fr 1fr 1fr 1fr",
+                  gap: "12px",
+                  marginBottom: "12px",
+                }}
+              >
+                <input
+                  type="text"
+                  placeholder="Product Name"
+                  value={newProduct.name}
+                  onChange={(e) =>
+                    setNewProduct({ ...newProduct, name: e.target.value })
+                  }
+                  style={{
+                    padding: "8px 12px",
+                    border: "1px solid #cbd5e1",
+                    borderRadius: "4px",
+                    fontSize: "13px",
+                    fontFamily: "inherit",
+                  }}
+                />
+                <input
+                  type="text"
+                  placeholder="Part #"
+                  value={newProduct.partNumber}
+                  onChange={(e) =>
+                    setNewProduct({ ...newProduct, partNumber: e.target.value })
+                  }
+                  style={{
+                    padding: "8px 12px",
+                    border: "1px solid #cbd5e1",
+                    borderRadius: "4px",
+                    fontSize: "13px",
+                    fontFamily: "inherit",
+                  }}
+                />
+                <input
+                  type="number"
+                  placeholder="Qty"
+                  min="1"
+                  value={newProduct.qty}
+                  onChange={(e) =>
+                    setNewProduct({
+                      ...newProduct,
+                      qty: parseInt(e.target.value) || 1,
+                    })
+                  }
+                  style={{
+                    padding: "8px 12px",
+                    border: "1px solid #cbd5e1",
+                    borderRadius: "4px",
+                    fontSize: "13px",
+                    fontFamily: "inherit",
+                  }}
+                />
+                <input
+                  type="number"
+                  placeholder="Price (optional)"
+                  step="0.01"
+                  value={newProduct.price}
+                  onChange={(e) =>
+                    setNewProduct({
+                      ...newProduct,
+                      price: parseFloat(e.target.value) || 0,
+                    })
+                  }
+                  style={{
+                    padding: "8px 12px",
+                    border: "1px solid #cbd5e1",
+                    borderRadius: "4px",
+                    fontSize: "13px",
+                    fontFamily: "inherit",
+                  }}
+                />
+              </div>
+              <div style={{ display: "flex", gap: "8px" }}>
+                <button
+                  onClick={handleAddManualProduct}
+                  style={{
+                    padding: "8px 16px",
+                    background: "#10b981",
+                    color: "white",
+                    border: "none",
+                    borderRadius: "4px",
+                    cursor: "pointer",
+                    fontSize: "12px",
+                    fontWeight: "600",
+                  }}
+                >
+                  Add
+                </button>
+                <button
+                  onClick={() => setShowAddProduct(false)}
+                  style={{
+                    padding: "8px 16px",
+                    background: "#e2e8f0",
+                    color: "#1a365d",
+                    border: "none",
+                    borderRadius: "4px",
+                    cursor: "pointer",
+                    fontSize: "12px",
+                    fontWeight: "600",
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Products List */}
+          {localItems.length > 0 && (
+            <div
+              style={{
+                background: "#ffffff",
+                border: "1px solid #e2e8f0",
+                borderRadius: "8px",
+                overflow: "hidden",
+              }}
+            >
+              <table
+                style={{
+                  width: "100%",
+                  borderCollapse: "collapse",
+                  fontSize: "13px",
+                }}
+              >
+                <thead>
+                  <tr style={{ background: "#f1f5f9", borderBottom: "1px solid #e2e8f0" }}>
+                    <th
+                      style={{
+                        padding: "12px",
+                        textAlign: "left",
+                        fontWeight: "600",
+                        color: "#1a365d",
+                        fontSize: "12px",
+                      }}
+                    >
+                      Product
+                    </th>
+                    <th
+                      style={{
+                        padding: "12px",
+                        textAlign: "center",
+                        fontWeight: "600",
+                        color: "#1a365d",
+                        fontSize: "12px",
+                      }}
+                    >
+                      Part #
+                    </th>
+                    <th
+                      style={{
+                        padding: "12px",
+                        textAlign: "center",
+                        fontWeight: "600",
+                        color: "#1a365d",
+                        fontSize: "12px",
+                      }}
+                    >
+                      Qty
+                    </th>
+                    <th
+                      style={{
+                        padding: "12px",
+                        textAlign: "center",
+                        fontWeight: "600",
+                        color: "#1a365d",
+                        fontSize: "12px",
+                      }}
+                    >
+                      Action
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {localItems.map((item, index) => (
+                    <tr
+                      key={item.id}
+                      style={{
+                        borderBottom: "1px solid #e2e8f0",
+                        background: index % 2 === 0 ? "#ffffff" : "#f9fafb",
+                      }}
+                    >
+                      <td
+                        style={{
+                          padding: "12px",
+                          color: "#1a365d",
+                          fontWeight: "500",
+                        }}
+                      >
+                        {item.name}
+                      </td>
+                      <td
+                        style={{
+                          padding: "12px",
+                          textAlign: "center",
+                          color: "#64748b",
+                        }}
+                      >
+                        {item.partNumber}
+                      </td>
+                      <td
+                        style={{
+                          padding: "12px",
+                          textAlign: "center",
+                          color: "#1a365d",
+                          fontWeight: "600",
+                        }}
+                      >
+                        {item.qty}
+                      </td>
+                      <td
+                        style={{
+                          padding: "12px",
+                          textAlign: "center",
+                        }}
+                      >
+                        <button
+                          onClick={() => handleRemoveProduct(item.id)}
+                          style={{
+                            padding: "4px 8px",
+                            background: "#fee2e2",
+                            color: "#991b1b",
+                            border: "none",
+                            borderRadius: "4px",
+                            cursor: "pointer",
+                            fontSize: "12px",
+                            fontWeight: "600",
+                          }}
+                        >
+                          Remove
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {localItems.length === 0 && (
+            <div
+              style={{
+                padding: "24px",
+                textAlign: "center",
+                background: "#f9fafb",
+                borderRadius: "8px",
+                border: "1px dashed #cbd5e1",
+              }}
+            >
+              <p
+                style={{
+                  margin: "0",
+                  color: "#64748b",
+                  fontSize: "13px",
+                }}
+              >
+                No items added yet. Click "Add Product" to add items to your inquiry.
+              </p>
+            </div>
+          )}
+        </div>
+
         {showCompositor && (
           <div
             style={{
@@ -524,7 +905,7 @@ export default function Inquiries({
           </div>
         )}
 
-        {items.length === 0 && history.length === 0 ? (
+        {localItems.length === 0 && history.length === 0 ? (
           <div
             style={{
               textAlign: "center",
@@ -542,13 +923,12 @@ export default function Inquiries({
               No inquiries yet
             </p>
             <p style={{ fontSize: "13px", margin: "0", color: "#94a3b8" }}>
-              Select products from the inventory and click "Add to Inquiry" to
-              create one
+              Click "Add Product" to add items and create an inquiry
             </p>
           </div>
         ) : (
           <div>
-            {items.length > 0 && (
+            {localItems.length > 0 && (
               <>
                 {/* Formal Inquiry Letter */}
                 <div
@@ -778,7 +1158,7 @@ export default function Inquiries({
                         </tr>
                       </thead>
                       <tbody>
-                        {items.map((item, index) => (
+                        {localItems.map((item, index) => (
                           <tr
                             key={item.id}
                             style={{
