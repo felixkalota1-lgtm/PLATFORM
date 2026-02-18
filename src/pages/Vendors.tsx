@@ -1304,39 +1304,81 @@ export default function Vendors({
                     gap: "16px",
                   }}
                 >
-                  {searchResults.map((company) => (
-                    <div
-                      key={company.id}
-                      style={{
-                        padding: "16px",
-                        border: "1px solid #e2e8f0",
-                        borderRadius: "8px",
-                        background: "#ffffff",
-                        display: "flex",
-                        flexDirection: "column",
-                        justifyContent: "space-between",
-                      }}
-                    >
-                      <div>
-                        <h4
-                          style={{
-                            margin: "0 0 8px 0",
-                            fontSize: "14px",
-                            fontWeight: "700",
-                            color: "#1a365d",
-                          }}
-                        >
-                          {company.name}
-                        </h4>
-                        <p
-                          style={{
-                            margin: "0 0 4px 0",
-                            fontSize: "12px",
-                            color: "#64748b",
-                          }}
-                        >
-                          {company.email}
-                        </p>
+                  {searchResults.map((company) => {
+                    // Determine which field matched the search
+                    const searchLower = searchQuery.toLowerCase();
+                    const matchedField = company.name
+                      ?.toLowerCase()
+                      .includes(searchLower)
+                      ? "Company"
+                      : company.email
+                          ?.toLowerCase()
+                          .includes(searchLower)
+                          ? "Email"
+                          : "Match";
+
+                    return (
+                      <div
+                        key={company.id}
+                        style={{
+                          padding: "16px",
+                          border: "1px solid #e2e8f0",
+                          borderRadius: "8px",
+                          background: "#ffffff",
+                          display: "flex",
+                          flexDirection: "column",
+                          justifyContent: "space-between",
+                        }}
+                      >
+                        <div>
+                          <div
+                            style={{
+                              display: "flex",
+                              justifyContent: "space-between",
+                              alignItems: "flex-start",
+                              marginBottom: "8px",
+                            }}
+                          >
+                            <h4
+                              style={{
+                                margin: "0",
+                                fontSize: "14px",
+                                fontWeight: "700",
+                                color: "#1a365d",
+                                flex: 1,
+                              }}
+                            >
+                              {company.name || "(No Company Name)"}
+                            </h4>
+                            <span
+                              style={{
+                                marginLeft: "8px",
+                                fontSize: "11px",
+                                padding: "2px 8px",
+                                background:
+                                  matchedField === "Company"
+                                    ? "#d4e9f7"
+                                    : "#f0f0f0",
+                                color:
+                                  matchedField === "Company"
+                                    ? "#0369a1"
+                                    : "#64748b",
+                                borderRadius: "3px",
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              {matchedField}
+                            </span>
+                          </div>
+                          <p
+                            style={{
+                              margin: "0 0 4px 0",
+                              fontSize: "12px",
+                              color: "#64748b",
+                            }}
+                          >
+                            {company.email}
+                          </p>
                         {company.phone && (
                           <p
                             style={{
@@ -1386,7 +1428,8 @@ export default function Vendors({
                         Add Connection
                       </button>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
