@@ -814,9 +814,13 @@ export default function App() {
 
   // DIAGNOSTIC: Check what's actually stored in Firestore
   const diagnosticCheckCollections = async (username: string) => {
-    console.log("\n════════════════════════════════════════════════════════════");
+    console.log(
+      "\n════════════════════════════════════════════════════════════",
+    );
     console.log("🔍 DIAGNOSTIC: Checking Firestore collections for:", username);
-    console.log("════════════════════════════════════════════════════════════\n");
+    console.log(
+      "════════════════════════════════════════════════════════════\n",
+    );
 
     try {
       if (!db) {
@@ -835,11 +839,31 @@ export default function App() {
         console.log("  Fields present:", Object.keys(data || {}));
         console.log("  Full data:", data);
         console.log("  username:", data?.username);
-        console.log("  email:", data?.email, "(undefined means blocked by security rules)");
-        console.log("  companyName:", data?.companyName, "(undefined means blocked by security rules)");
-        console.log("  emailSearchable:", data?.emailSearchable, "(undefined means missing)");
-        console.log("  companyNameSearchable:", data?.companyNameSearchable, "(undefined means missing)");
-        console.log("  usernameSearchable:", data?.usernameSearchable, "(undefined means missing)");
+        console.log(
+          "  email:",
+          data?.email,
+          "(undefined means blocked by security rules)",
+        );
+        console.log(
+          "  companyName:",
+          data?.companyName,
+          "(undefined means blocked by security rules)",
+        );
+        console.log(
+          "  emailSearchable:",
+          data?.emailSearchable,
+          "(undefined means missing)",
+        );
+        console.log(
+          "  companyNameSearchable:",
+          data?.companyNameSearchable,
+          "(undefined means missing)",
+        );
+        console.log(
+          "  usernameSearchable:",
+          data?.usernameSearchable,
+          "(undefined means missing)",
+        );
       } else {
         console.log("✗ userSettings/", username, "DOES NOT EXIST");
       }
@@ -857,23 +881,51 @@ export default function App() {
         console.log("  username:", data?.username, "(should be present)");
         console.log("  email:", data?.email, "(should be present)");
         console.log("  companyName:", data?.companyName, "(should be present)");
-        console.log("  emailSearchable:", data?.emailSearchable, "(should be present)");
-        console.log("  companyNameSearchable:", data?.companyNameSearchable, "(should be present)");
-        console.log("  usernameSearchable:", data?.usernameSearchable, "(should be present)");
+        console.log(
+          "  emailSearchable:",
+          data?.emailSearchable,
+          "(should be present)",
+        );
+        console.log(
+          "  companyNameSearchable:",
+          data?.companyNameSearchable,
+          "(should be present)",
+        );
+        console.log(
+          "  usernameSearchable:",
+          data?.usernameSearchable,
+          "(should be present)",
+        );
       } else {
-        console.log("✗ vendorSearchIndex/", username, "DOES NOT EXIST - THIS WILL CAUSE SEARCH TO FAIL");
+        console.log(
+          "✗ vendorSearchIndex/",
+          username,
+          "DOES NOT EXIST - THIS WILL CAUSE SEARCH TO FAIL",
+        );
       }
 
-      console.log("\n════════════════════════════════════════════════════════════");
+      console.log(
+        "\n════════════════════════════════════════════════════════════",
+      );
       console.log("🎯 DIAGNOSIS SUMMARY:");
-      console.log("════════════════════════════════════════════════════════════");
+      console.log(
+        "════════════════════════════════════════════════════════════",
+      );
       console.log("If email/companyName are undefined in userSettings:");
-      console.log("  → Security rules are BLOCKING these fields from being saved");
+      console.log(
+        "  → Security rules are BLOCKING these fields from being saved",
+      );
       console.log("If vendorSearchIndex does NOT exist:");
-      console.log("  → Signup code did not write to vendorSearchIndex successfully");
+      console.log(
+        "  → Signup code did not write to vendorSearchIndex successfully",
+      );
       console.log("If vendorSearchIndex exists with complete data:");
-      console.log("  → We should search this collection instead of userSettings");
-      console.log("════════════════════════════════════════════════════════════\n");
+      console.log(
+        "  → We should search this collection instead of userSettings",
+      );
+      console.log(
+        "════════════════════════════════════════════════════════════\n",
+      );
     } catch (error) {
       console.error("❌ Diagnostic error:", error);
     }
@@ -2678,7 +2730,10 @@ export default function App() {
             createdAt: new Date().toISOString(),
           };
 
-          console.log("📦 SIGNUP: vendorSearchIndex data to save:", searchableData);
+          console.log(
+            "📦 SIGNUP: vendorSearchIndex data to save:",
+            searchableData,
+          );
 
           try {
             await setDoc(
@@ -2686,10 +2741,15 @@ export default function App() {
               searchableData,
             );
             console.log("✅ SIGNUP: Saved to vendorSearchIndex collection");
-            
+
             // Verify vendorSearchIndex write
-            const searchSnap = await getDoc(doc(db, "vendorSearchIndex", signupForm.username));
-            console.log("✓ SIGNUP: vendorSearchIndex verification:", searchSnap.data());
+            const searchSnap = await getDoc(
+              doc(db, "vendorSearchIndex", signupForm.username),
+            );
+            console.log(
+              "✓ SIGNUP: vendorSearchIndex verification:",
+              searchSnap.data(),
+            );
           } catch (searchIndexError) {
             console.error(
               "❌ SIGNUP: Could not save to vendorSearchIndex:",

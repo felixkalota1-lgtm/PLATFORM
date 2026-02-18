@@ -294,7 +294,9 @@ export default function Vendors({
       // PRIORITY 1: Search by company name in vendorSearchIndex (has all email/company data)
       let allDocs: any[] = [];
       try {
-        console.log("📋 Querying vendorSearchIndex by companyNameSearchable...");
+        console.log(
+          "📋 Querying vendorSearchIndex by companyNameSearchable...",
+        );
         const companyQuery = query(
           vendorSearchRef,
           where("companyNameSearchable", ">=", searchLower),
@@ -306,7 +308,10 @@ export default function Vendors({
         );
         allDocs = [...companyDocs.docs];
       } catch (e: any) {
-        console.warn("⚠️ vendorSearchIndex company search failed, trying userSettings...", e?.code);
+        console.warn(
+          "⚠️ vendorSearchIndex company search failed, trying userSettings...",
+          e?.code,
+        );
         // Fallback: Try userSettings if vendorSearchIndex is empty/error
         try {
           const companyQuery = query(
@@ -315,10 +320,15 @@ export default function Vendors({
             where("companyNameSearchable", "<=", searchLower + "\uf8ff"),
           );
           const companyDocs = await getDocs(companyQuery);
-          console.log(`✓ Found ${companyDocs.docs.length} by company name in userSettings`);
+          console.log(
+            `✓ Found ${companyDocs.docs.length} by company name in userSettings`,
+          );
           allDocs = [...companyDocs.docs];
         } catch (e2: any) {
-          console.error("❌ Company name search failed on both collections:", e2?.message);
+          console.error(
+            "❌ Company name search failed on both collections:",
+            e2?.message,
+          );
         }
       }
 
@@ -331,7 +341,9 @@ export default function Vendors({
           where("usernameSearchable", "<=", searchLower + "\uf8ff"),
         );
         const usernameDocs = await getDocs(usernameQuery);
-        console.log(`✓ Found ${usernameDocs.docs.length} by username in vendorSearchIndex`);
+        console.log(
+          `✓ Found ${usernameDocs.docs.length} by username in vendorSearchIndex`,
+        );
         allDocs = [
           ...allDocs,
           ...usernameDocs.docs.filter(
@@ -339,7 +351,10 @@ export default function Vendors({
           ),
         ];
       } catch (e: any) {
-        console.warn("⚠️ vendorSearchIndex username search failed, trying userSettings...", e?.code);
+        console.warn(
+          "⚠️ vendorSearchIndex username search failed, trying userSettings...",
+          e?.code,
+        );
         // Fallback: Try userSettings
         try {
           const usernameQuery = query(
@@ -348,7 +363,9 @@ export default function Vendors({
             where("usernameSearchable", "<=", searchLower + "\uf8ff"),
           );
           const usernameDocs = await getDocs(usernameQuery);
-          console.log(`✓ Found ${usernameDocs.docs.length} by username in userSettings`);
+          console.log(
+            `✓ Found ${usernameDocs.docs.length} by username in userSettings`,
+          );
           allDocs = [
             ...allDocs,
             ...usernameDocs.docs.filter(
@@ -356,7 +373,10 @@ export default function Vendors({
             ),
           ];
         } catch (e2: any) {
-          console.error("❌ Username search failed on both collections:", e2?.message);
+          console.error(
+            "❌ Username search failed on both collections:",
+            e2?.message,
+          );
         }
       }
 
@@ -369,7 +389,9 @@ export default function Vendors({
           where("emailSearchable", "<=", searchLower + "\uf8ff"),
         );
         const emailDocs = await getDocs(emailQuery);
-        console.log(`✓ Found ${emailDocs.docs.length} by email in vendorSearchIndex`);
+        console.log(
+          `✓ Found ${emailDocs.docs.length} by email in vendorSearchIndex`,
+        );
         allDocs = [
           ...allDocs,
           ...emailDocs.docs.filter(
@@ -377,7 +399,10 @@ export default function Vendors({
           ),
         ];
       } catch (e: any) {
-        console.warn("⚠️ vendorSearchIndex email search failed, trying userSettings...", e?.code);
+        console.warn(
+          "⚠️ vendorSearchIndex email search failed, trying userSettings...",
+          e?.code,
+        );
         // Fallback: Try userSettings
         try {
           const emailQuery = query(
@@ -386,7 +411,9 @@ export default function Vendors({
             where("emailSearchable", "<=", searchLower + "\uf8ff"),
           );
           const emailDocs = await getDocs(emailQuery);
-          console.log(`✓ Found ${emailDocs.docs.length} by email in userSettings`);
+          console.log(
+            `✓ Found ${emailDocs.docs.length} by email in userSettings`,
+          );
           allDocs = [
             ...allDocs,
             ...emailDocs.docs.filter(
@@ -394,7 +421,10 @@ export default function Vendors({
             ),
           ];
         } catch (e2: any) {
-          console.error("❌ Email search failed on both collections:", e2?.message);
+          console.error(
+            "❌ Email search failed on both collections:",
+            e2?.message,
+          );
         }
       }
 
@@ -464,7 +494,8 @@ export default function Vendors({
 
       // Process all results from Firestore and apply substring filtering
       for (const doc of allDocs) {
-        if (doc.data().username === currentUser) continue;
+        // NOTE: Show all results including current user (they may search for their own vendor)
+        // if (doc.data().username === currentUser) continue;
 
         // IMPORTANT: Use searchable fields for matching + display (these are always populated)
         // Fall back to base fields if searchable fields don't exist
