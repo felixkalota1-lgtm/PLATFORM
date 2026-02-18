@@ -1,5 +1,6 @@
 import { initializeApp } from 'firebase/app'
 import { getFirestore } from 'firebase/firestore'
+import { getAuth } from 'firebase/auth'
 
 // Firebase configuration
 const firebaseConfig = {
@@ -13,6 +14,7 @@ const firebaseConfig = {
 }
 
 let db: any = null
+let auth: any = null
 
 try {
   // Initialize Firebase
@@ -20,9 +22,12 @@ try {
   
   // Initialize Firestore
   db = getFirestore(app)
+  
+  // Initialize Firebase Authentication
+  auth = getAuth(app)
 } catch (error) {
   console.warn('Firebase initialization failed. Using local fallback:', error)
-  // If Firebase fails, db will be null and we'll use localStorage fallback
+  // If Firebase fails, db and auth will be null and we'll use localStorage fallback
 }
 
-export { db }
+export { db, auth }

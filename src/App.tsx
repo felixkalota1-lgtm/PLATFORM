@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { db } from "./firebase";
+import { db, auth } from "./firebase";
 import {
   collection,
   query,
@@ -14,8 +14,9 @@ import {
   limit,
   startAfter,
 } from "firebase/firestore";
+import { signInWithEmailAndPassword } from "firebase/auth";
 import * as XLSX from "xlsx";
-import bcryptjs from "bcryptjs";
+import { signUpWithEmailAndPassword } from "./firebaseAuth";
 import CryptoJS from "crypto-js";
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
@@ -2715,197 +2716,22 @@ export default function App() {
 
     setIsLoading(true);
     try {
-      // Check if username or email exists
-      const { exists, by } = await checkUserExists(
-        signupForm.username,
-        signupForm.email,
-      );
-      if (exists) {
-        setAuthError(
-          `${by === "username" ? "Username" : "Email"} already taken`,
-        );
-        setIsLoading(false);
-        return;
-      }
-
-      // Optimization #1: Hash password before storing (CRITICAL SECURITY)
-      const hashedPassword = await bcryptjs.hash(signupForm.password, 10);
-
-      // Optimization: Create searchable lowercase fields for all searchable attributes
-      const companyNameSearchable = signupForm.companyName.toLowerCase().trim();
-      const usernameSearchable = signupForm.username.toLowerCase().trim();
-      const emailSearchable = signupForm.email.toLowerCase().trim();
-
-      console.log("📝 SIGNUP: Creating user with searchable fields", {
-        username: signupForm.username,
-        usernameSearchable,
+      const result = await signUpWithEmailAndPassword({
         email: signupForm.email,
-        emailSearchable,
+        password: signupForm.password,
+        username: signupForm.username,
         companyName: signupForm.companyName,
-        companyNameSearchable,
       });
 
-      // Create user in Firestore or localStorage
-      if (db) {
-        const userData = {
-          username: signupForm.username,
-          usernameSearchable: usernameSearchable,
-          email: signupForm.email,
-          emailSearchable: emailSearchable,
-          companyName: signupForm.companyName.trim(),
-          companyNameSearchable: companyNameSearchable,
-          password: hashedPassword,
-          createdAt: new Date().toISOString(),
-        };
-
-        console.log("� SIGNUP: Data object to save:", userData);
-        console.log("📦 SIGNUP: Detailed field breakdown:", {
-          "email (raw string)": signupForm.email,
-          "email (in userData)": userData.email,
-          "companyName (raw string)": signupForm.companyName,
-          "companyName (in userData)": userData.companyName,
-          emailSearchable: userData.emailSearchable,
-          companyNameSearchable: userData.companyNameSearchable,
-        });
-
-        console.log(
-          "💾 SIGNUP: Saving to Firestore collection 'userSettings' with ID:",
-          signupForm.username,
-        );
-
-        // Use merge to ensure we don't lose data, and verify each field
-        try {
-          console.log("📤 SIGNUP: Calling setDoc with merge: false");
-          await setDoc(doc(db, "userSettings", signupForm.username), userData, {
-            merge: false,
-          });
-          console.log("✅ SIGNUP: Successfully saved to Firestore");
-
-          // CRITICAL: Also save to searchable collection (for vendor search - bypasses security rule issues)
-          console.log(
-            "📤 SIGNUP: Also saving to 'vendorSearchIndex' for global search access",
-          );
-          const searchableData = {
-            username: signupForm.username,
-            usernameSearchable: usernameSearchable,
-            email: signupForm.email,
-            emailSearchable: emailSearchable,
-            companyName: signupForm.companyName.trim(),
-            companyNameSearchable: companyNameSearchable,
-            createdAt: new Date().toISOString(),
-          };
-
-          console.log(
-            "📦 SIGNUP: vendorSearchIndex data to save:",
-            searchableData,
-          );
-
-          try {
-            await setDoc(
-              doc(db, "vendorSearchIndex", signupForm.username),
-              searchableData,
-            );
-            console.log("✅ SIGNUP: Saved to vendorSearchIndex collection");
-
-            // Verify vendorSearchIndex write
-            const searchSnap = await getDoc(
-              doc(db, "vendorSearchIndex", signupForm.username),
-            );
-            console.log(
-              "✓ SIGNUP: vendorSearchIndex verification:",
-              searchSnap.data(),
-            );
-          } catch (searchIndexError) {
-            console.error(
-              "❌ SIGNUP: Could not save to vendorDirectory:",
-              searchIndexError,
-            );
-          }
-
-          // CRITICAL: Wait a moment to ensure write is committed
-          await new Promise((resolve) => setTimeout(resolve, 200));
-
-          // Verify the write by reading it back immediately
-          const userDocRef = doc(db, "userSettings", signupForm.username);
-          console.log("📥 SIGNUP: Reading back from Firestore...");
-          const userSnap = await getDoc(userDocRef);
-          if (userSnap.exists()) {
-            const savedData = userSnap.data();
-            console.log(
-              "✓ SIGNUP: Verification - Full data in Firestore:",
-              savedData,
-            );
-            console.log(
-              "✓ SIGNUP: Second read - email value:",
-              savedData?.email,
-              "type:",
-              typeof savedData?.email,
-            );
-            console.log(
-              "✓ SIGNUP: Second read - companyName value:",
-              savedData?.companyName,
-              "type:",
-              typeof savedData?.companyName,
-            );
-            console.log("✓ SIGNUP: All keys:", Object.keys(savedData || {}));
-
-            // CRITICAL: Do another read IMMEDIATELY to ensure consistency
-            console.log("🔄 SIGNUP: Double-checking with third read...");
-            const userSnap2 = await getDoc(userDocRef);
-            if (userSnap2.exists()) {
-              const savedData2 = userSnap2.data();
-              console.log(
-                "✓ SIGNUP: Third read - email:",
-                savedData2?.email,
-                "company:",
-                savedData2?.companyName,
-              );
-            }
-          } else {
-            console.error(
-              "❌ SIGNUP: Verification failed - Document not found!",
-            );
-          }
-        } catch (writeError) {
-          console.error("❌ SIGNUP: Firestore write failed:", writeError);
-          throw writeError;
-        }
-      } else {
-        // Fallback to localStorage
-        const users = JSON.parse(localStorage.getItem("pspm_users") || "{}");
-        users[signupForm.username] = {
-          username: signupForm.username,
-          usernameSearchable: usernameSearchable,
-          email: signupForm.email,
-          emailSearchable: emailSearchable,
-          companyName: signupForm.companyName.trim(),
-          companyNameSearchable: companyNameSearchable,
-          password: hashedPassword,
-          createdAt: new Date().toISOString(),
-        };
-        localStorage.setItem("pspm_users", JSON.stringify(users));
-      }
-
-      // Clear vendor cache on new signup (will be rebuilt on next search)
-      localStorage.removeItem("pspm_vendor_cache");
-
-      // Login immediately after signup
       setProducts([]);
       setActiveWarehouseTab("products");
-      setCurrentUser(signupForm.username);
-      localStorage.setItem("pspm_current_user", signupForm.username);
-      // Cache user for future logins (0 reads next time)
-      cacheUserData(signupForm.username, signupForm.email);
-      // Migration: Ensure searchable fields exist
-      await migrateUserSearchableFields(signupForm.username);
-
-      // Migration: Copy all existing users to vendorDirectory if this is first login
-      await migrateUsersToVendorDirectory();
-
-      // DIAGNOSTIC: Log what was actually saved for new signup
-      await diagnosticCheckCollections(signupForm.username);
-
+      setCurrentUser(result.username);
+      localStorage.setItem("pspm_current_user", result.username);
+      localStorage.setItem("pspm_auth_uid", result.uid);
+      cacheUserData(result.username, result.email);
       setIsLoggedIn(true);
+      localStorage.removeItem("pspm_vendor_cache");
+
       setSignupForm({
         username: "",
         email: "",
@@ -2914,8 +2740,18 @@ export default function App() {
         confirmPassword: "",
       });
       setAuthError("");
-    } catch (error) {
-      setAuthError("Error creating account. Please try again.");
+      console.log("✅ Signup successful");
+    } catch (error: any) {
+      const errorCode = error.message || String(error);
+      if (errorCode.includes("email-already-in-use")) {
+        setAuthError("Email is already registered");
+      } else if (errorCode.includes("username-taken")) {
+        setAuthError("Username is already taken");
+      } else if (errorCode.includes("weak-password")) {
+        setAuthError("Password is too weak");
+      } else {
+        setAuthError("Error creating account: " + errorCode);
+      }
       console.error("Signup error:", error);
     } finally {
       setIsLoading(false);
@@ -2936,92 +2772,97 @@ export default function App() {
 
     setIsLoading(true);
     try {
-      // Check cache first (0 reads - optimization)
-      let user = getCachedUserData(loginForm.emailOrUsername);
+      // Find user by email or username in userProfiles
+      let userEmail: string | null = null;
 
-      // If not in cache, query Firestore (1-2 reads)
-      if (!user) {
-        user = await findUserByEmailOrUsername(loginForm.emailOrUsername);
-        if (!user) {
+      // Check if input is email or username
+      const isEmail = loginForm.emailOrUsername.includes("@");
+
+      if (isEmail) {
+        userEmail = loginForm.emailOrUsername;
+      } else {
+        // Find email by username in userProfiles collection
+        const userDocs = await getDocs(
+          query(
+            collection(db, "userProfiles"),
+            where("usernameSearchable", "==", loginForm.emailOrUsername.toLowerCase()),
+          ),
+        );
+        if (userDocs.docs.length === 0) {
           setAuthError("Invalid email/username or password");
           setIsLoading(false);
           return;
         }
-
-        // Optimization #1: Verify hashed password
-        try {
-          const userDocs = await getDocs(
-            query(
-              collection(db || ({} as any), "userSettings"),
-              where("username", "==", user.username),
-            ),
-          );
-          if (userDocs.docs.length > 0) {
-            const userData = userDocs.docs[0].data();
-            const passwordMatch = await bcryptjs.compare(
-              loginForm.password,
-              userData.password,
-            );
-            if (!passwordMatch) {
-              setAuthError("Invalid email/username or password");
-              setIsLoading(false);
-              return;
-            }
-          }
-        } catch (e) {
-          // Continue with login if password verification fails gracefully
-        }
-
-        // Cache the user for future logins (0 reads next time)
-        cacheUserData(user.username, user.email);
+        userEmail = userDocs.docs[0].data().email;
       }
 
-      // Single batch load (products + history from IndexedDB)
+      if (!userEmail) {
+        setAuthError("Invalid email/username or password");
+        setIsLoading(false);
+        return;
+      }
+
+      // Use Firebase Auth to sign in
+      const userCredential = await signInWithEmailAndPassword(
+        auth,
+        userEmail,
+        loginForm.password,
+      );
+
+      const userData = userCredential.user;
+      const uid = userData.uid;
+
+      // Get username from userProfiles
+      const userProfileDoc = await getDoc(doc(db, "userProfiles", uid));
+      if (!userProfileDoc.exists()) {
+        setAuthError("User profile not found");
+        setIsLoading(false);
+        return;
+      }
+
+      const profileData = userProfileDoc.data();
+      const username = profileData.username;
+
+      // Load user data
       const {
         products: userProducts,
         activeTab: userActiveTab,
         quotationHistory: userQuotationHistory,
         inquiryHistory: userInquiryHistory,
-      } = await loadUserDataOnLogin(user.username);
-
-      // Migration: Ensure searchable fields exist for vendor search
-      await migrateUserSearchableFields(user.username);
-
-      // Migration: Copy all existing users to vendorDirectory (one-time operation on each login)
-      await migrateUsersToVendorDirectory();
-
-      // DIAGNOSTIC: Log what's actually in both collections
-      await diagnosticCheckCollections(user.username);
+      } = await loadUserDataOnLogin(username);
 
       setProducts(userProducts);
-      setActiveSubmenu(
-        "warehouse" as "marketplace" | "warehouse" | "allDocuments",
-      );
+      setActiveSubmenu("warehouse" as "marketplace" | "warehouse" | "allDocuments");
       setActiveWarehouseTab(
         (userActiveTab || "products") as
           | "products"
           | "upload"
           | "quotations"
           | "inquiries"
+          | "orders"
+          | "vendors"
           | "settings",
       );
-      setQuotationHistory(userQuotationHistory);
-      setInquiryHistory(userInquiryHistory);
-      setCurrentUser(user.username);
-      localStorage.setItem("pspm_current_user", user.username);
+      setCurrentUser(username);
+      localStorage.setItem("pspm_current_user", username);
+      localStorage.setItem("pspm_auth_uid", uid);
+      cacheUserData(username, userEmail);
       setIsLoggedIn(true);
       setLoginForm({ emailOrUsername: "", password: "" });
       setAuthError("");
 
-      // Load cart from IndexedDB on login
-      loadCartFromIndexedDB(user.username).then((cartItems) => {
-        setCart(cartItems);
-        setHasLoadedCart(true);
-        console.log(`Login: Loaded ${cartItems.length} cart items`);
-      }); // Optimization #4: Reset inactivity timer on successful login
-      resetInactivityTimer();
-    } catch (error) {
-      setAuthError("Error logging in. Please try again.");
+      console.log("✅ Login successful");
+    } catch (error: any) {
+      const errorCode = error.code || error.message || String(error);
+      if (
+        errorCode.includes("auth/user-not-found") ||
+        errorCode.includes("auth/wrong-password") ||
+        errorCode.includes("FirebaseError")
+      ) {
+        setAuthError("Invalid email/username or password");
+      } else {
+        setAuthError("Login failed: " + errorCode);
+      }
       console.error("Login error:", error);
     } finally {
       setIsLoading(false);
