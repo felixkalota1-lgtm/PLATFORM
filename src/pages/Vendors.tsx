@@ -519,6 +519,10 @@ export default function Vendors({
           doc.data().companyName || doc.data().username || "";
         const displayEmail = doc.data().email || "";
 
+        console.log(
+          `🔍 VENDOR: ${doc.data().username} | companyName: "${displayCompanyName}" | email: "${displayEmail}"`,
+        );
+
         // Check if search term matches ANY field (prefix or substring)
         const matchesCompany =
           companyName.startsWith(searchLower) ||
@@ -1307,13 +1311,15 @@ export default function Vendors({
                   {searchResults.map((company) => {
                     // Determine which field matched the search
                     const searchLower = searchQuery.toLowerCase();
-                    const matchedField = company.name
-                      ?.toLowerCase()
-                      .includes(searchLower)
+                    const nameMatches =
+                      company.name &&
+                      company.name.toLowerCase().includes(searchLower);
+                    const emailMatches =
+                      company.email &&
+                      company.email.toLowerCase().includes(searchLower);
+                    const matchedField = nameMatches
                       ? "Company"
-                      : company.email
-                          ?.toLowerCase()
-                          .includes(searchLower)
+                      : emailMatches
                           ? "Email"
                           : "Match";
 
