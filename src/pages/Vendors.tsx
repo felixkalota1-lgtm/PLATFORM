@@ -15,6 +15,7 @@ import {
 interface Company {
   id: string;
   name: string;
+  username: string;
   email: string;
   phone?: string;
   address?: string;
@@ -122,6 +123,7 @@ export default function Vendors({
             companyId: data.targetUser,
             company: {
               id: data.targetUser,
+              username: data.targetUser,
               name: userData.companyName || data.targetUser,
               email: userData.email || "",
               phone: userData.phone,
@@ -151,6 +153,7 @@ export default function Vendors({
             companyId: data.initiatedByUser,
             company: {
               id: data.initiatedByUser,
+              username: data.initiatedByUser,
               name: userData.companyName || data.initiatedByUser,
               email: userData.email || "",
               phone: userData.phone,
@@ -538,6 +541,7 @@ export default function Vendors({
             results.push({
               id: doc.data().username,
               name: displayCompanyName,
+              username: doc.data().username,
               email: displayEmail,
               phone: doc.data().phone,
               address: doc.data().address,
@@ -1386,6 +1390,16 @@ export default function Vendors({
                               {matchedField}
                             </span>
                           </div>
+                          <p
+                            style={{
+                              margin: "0 0 2px 0",
+                              fontSize: "11px",
+                              color: "#94a3b8",
+                              fontWeight: "500",
+                            }}
+                          >
+                            Name: {company.username}
+                          </p>
                           <p
                             style={{
                               margin: "0 0 4px 0",
