@@ -1318,11 +1318,16 @@ export default function Vendors({
                     const emailMatches =
                       company.email &&
                       company.email.toLowerCase().includes(searchLower);
+                    const usernameMatches =
+                      company.id &&
+                      company.id.toLowerCase().includes(searchLower);
                     const matchedField = nameMatches
                       ? "Company"
                       : emailMatches
                         ? "Email"
-                        : "Match";
+                        : usernameMatches
+                          ? "Username"
+                          : "Match";
 
                     return (
                       <div
@@ -1365,11 +1370,15 @@ export default function Vendors({
                                 background:
                                   matchedField === "Company"
                                     ? "#d4e9f7"
-                                    : "#f0f0f0",
+                                    : matchedField === "Username"
+                                      ? "#fef3c7"
+                                      : "#f0f0f0",
                                 color:
                                   matchedField === "Company"
                                     ? "#0369a1"
-                                    : "#64748b",
+                                    : matchedField === "Username"
+                                      ? "#b45309"
+                                      : "#64748b",
                                 borderRadius: "3px",
                                 whiteSpace: "nowrap",
                               }}
