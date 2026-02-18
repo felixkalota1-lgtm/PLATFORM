@@ -93,6 +93,7 @@ export default function Vendors({
       const sentToMeDocs = await getDocs(sentToMeQuery);
 
       const allConnections: VendorConnection[] = [];
+      const vendorDirectoryRef = collection(db, "vendorDirectory");
       const usersRef = collection(db, "userSettings");
 
       // Optimization: Batch load all user data in one query instead of per-connection
@@ -104,13 +105,33 @@ export default function Vendors({
         allUsernames.add(doc.data().initiatedByUser);
       });
 
-      // Load all users in one batch query
+      // Load all users from vendorDirectory (primary) with fallback to userSettings
       const userDataMap = new Map<string, any>();
       for (const username of allUsernames) {
-        const userQuery = query(usersRef, where("username", "==", username));
-        const userDoc = await getDocs(userQuery);
-        if (userDoc.docs.length > 0) {
-          userDataMap.set(username, userDoc.docs[0].data());
+        try {
+          // Try vendorDirectory first (has complete vendor data)
+          const vendorQuery = query(
+            vendorDirectoryRef,
+            where("username", "==", username),
+          );
+          const vendorDoc = await getDocs(vendorQuery);
+          if (vendorDoc.docs.length > 0) {
+            userDataMap.set(username, vendorDoc.docs[0].data());
+            continue;
+          }
+        } catch (e) {
+          // Fall through to userSettings if vendorDirectory fails
+        }
+
+        // Fallback to userSettings if not in vendorDirectory
+        try {
+          const userQuery = query(usersRef, where("username", "==", username));
+          const userDoc = await getDocs(userQuery);
+          if (userDoc.docs.length > 0) {
+            userDataMap.set(username, userDoc.docs[0].data());
+          }
+        } catch (e2) {
+          console.warn(`Could not load data for user ${username}`);
         }
       }
 
@@ -522,7 +543,8 @@ export default function Vendors({
           doc.data().username ||
           (doc.data().email ? doc.data().email.split("@")[0] : "") ||
           "Unknown Vendor";
-        const displayEmail = doc.data().email || doc.data().emailSearchable || "";
+        const displayEmail =
+          doc.data().email || doc.data().emailSearchable || "";
 
         console.log(
           `🔍 VENDOR: ${doc.data().username} | companyName: "${displayCompanyName}" | email: "${displayEmail}" | rawData: {companyName: "${doc.data().companyName}", email: "${doc.data().email}"}`,
@@ -539,24 +561,25 @@ export default function Vendors({
         if (matchesCompany || matchesUsername || matchesEmail) {
           if (!seenIds.has(doc.id)) {
             seenIds.add(doc.id);
-            
+
             // Calculate relevance score for ranking results
             // Higher score = more relevant and should appear first
             let relevanceScore = 0;
-            
+
             // Bonus for having complete data
             if (displayEmail) relevanceScore += 10;
-            if (displayCompanyName && displayCompanyName !== "Unknown Vendor") relevanceScore += 10;
-            
+            if (displayCompanyName && displayCompanyName !== "Unknown Vendor")
+              relevanceScore += 10;
+
             // Bonus for prefix matches (more specific than substring)
             if (companyName.startsWith(searchLower)) relevanceScore += 5;
             if (username.startsWith(searchLower)) relevanceScore += 4;
-            
+
             // Company matches are more relevant than username/email matches
             if (matchesCompany) relevanceScore += 3;
             if (matchesUsername) relevanceScore += 2;
             if (matchesEmail) relevanceScore += 1;
-            
+
             results.push({
               id: doc.data().username,
               name: displayCompanyName,
@@ -574,9 +597,9 @@ export default function Vendors({
 
       // Sort results by relevance score (highest first)
       results.sort((a, b) => (b.relevanceScore || 0) - (a.relevanceScore || 0));
-      
+
       // Remove the scoring field before setting state
-      const finalResults = results.map(r => {
+      const finalResults = results.map((r) => {
         const { relevanceScore, ...rest } = r;
         return rest;
       });
@@ -835,6 +858,36 @@ export default function Vendors({
         {/* Connected Companies Tab */}
         {activeTab === "connected" && (
           <div>
+            {/* Refresh Button */}
+            <div style={{ marginBottom: "20px" }}>
+              <button
+                onClick={() => {
+                  console.log("🔄 Manual refresh triggered");
+                  loadConnections();
+                }}
+                style={{
+                  padding: "10px 20px",
+                  background: "#0284c7",
+                  color: "white",
+                  border: "none",
+                  borderRadius: "6px",
+                  cursor: "pointer",
+                  fontSize: "14px",
+                  fontWeight: "600",
+                  transition: "all 0.25s ease",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = "#0369a1";
+                  e.currentTarget.style.transform = "translateY(-2px)";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = "#0284c7";
+                  e.currentTarget.style.transform = "translateY(0)";
+                }}
+              >
+                Refresh
+              </button>
+            </div>
             <h3
               style={{
                 margin: "0 0 20px 0",
@@ -961,6 +1014,36 @@ export default function Vendors({
         {/* Pending Requests Tab */}
         {activeTab === "pending" && (
           <div>
+            {/* Refresh Button */}
+            <div style={{ marginBottom: "20px" }}>
+              <button
+                onClick={() => {
+                  console.log("🔄 Manual refresh triggered");
+                  loadConnections();
+                }}
+                style={{
+                  padding: "10px 20px",
+                  background: "#0284c7",
+                  color: "white",
+                  border: "none",
+                  borderRadius: "6px",
+                  cursor: "pointer",
+                  fontSize: "14px",
+                  fontWeight: "600",
+                  transition: "all 0.25s ease",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = "#0369a1";
+                  e.currentTarget.style.transform = "translateY(-2px)";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = "#0284c7";
+                  e.currentTarget.style.transform = "translateY(0)";
+                }}
+              >
+                Refresh
+              </button>
+            </div>
             <h3
               style={{
                 margin: "0 0 20px 0",

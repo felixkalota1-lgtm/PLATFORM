@@ -476,6 +476,11 @@ export default function App() {
     null,
   );
   const [inquiryLetterhead, setInquiryLetterhead] = useState<any | null>(null);
+  const [preFillRecipient, setPreFillRecipient] = useState<{
+    name: string;
+    email: string;
+    company: string;
+  } | null>(null);
   const [quotationHistory, setQuotationHistory] = useState<any[]>([]);
   const [inquiryHistory, setInquiryHistory] = useState<any[]>([]);
   const [activeSubmenuTab, setActiveSubmenuTab] = useState<
@@ -1112,20 +1117,20 @@ export default function App() {
           }
 
           // SYNC EMAIL VERIFICATION STATUS: Update Firestore if Firebase Auth emailVerified changed
-          const firestoreEmailVerified = userProfileDoc.data().emailVerified || false;
+          const firestoreEmailVerified =
+            userProfileDoc.data().emailVerified || false;
           const firebaseEmailVerified = firebaseUser.emailVerified || false;
-          
+
           if (firestoreEmailVerified !== firebaseEmailVerified) {
             console.log(
               `🔄 AUTH: Syncing email verification status - Firebase: ${firebaseEmailVerified}, Firestore: ${firestoreEmailVerified}`,
             );
-            await updateDoc(
-              doc(db, "userProfiles", firebaseUser.uid),
-              {
-                emailVerified: firebaseEmailVerified,
-              },
+            await updateDoc(doc(db, "userProfiles", firebaseUser.uid), {
+              emailVerified: firebaseEmailVerified,
+            });
+            console.log(
+              "✅ AUTH: Email verification status synced to Firestore",
             );
-            console.log("✅ AUTH: Email verification status synced to Firestore");
           }
 
           // User exists & verified - restore session
@@ -3349,7 +3354,7 @@ export default function App() {
               marginBottom: "16px",
             }}
           >
-            ✉️
+            ✓
           </div>
 
           <h2
@@ -4785,7 +4790,7 @@ export default function App() {
                                         "#0284c7";
                                     }}
                                   >
-                                    🛒 Add to Cart
+                                    Add to Cart
                                   </button>
                                   <button
                                     onClick={() => {
@@ -7105,7 +7110,7 @@ export default function App() {
                           }
                         }}
                       >
-                        📧 Incoming Quotations
+                        Incoming Quotations
                       </button>
                       <button
                         onClick={() => {
@@ -7404,6 +7409,7 @@ export default function App() {
                   items={inquiries}
                   history={inquiryHistory}
                   letterhead={inquiryLetterhead}
+                  preFillRecipient={preFillRecipient || undefined}
                   onGeneratePDF={async (inquiry, letterRef) => {
                     if (inquiry && letterRef) {
                       await generateInquiryPDFFromLetter(inquiry, letterRef);
@@ -8172,8 +8178,12 @@ export default function App() {
                   currentUser={currentUser}
                   onSendInquiry={(company) => {
                     // Pre-fill recipient data and navigate to inquiries
+                    setPreFillRecipient({
+                      name: company.username,
+                      email: company.email,
+                      company: company.name,
+                    });
                     setActiveWarehouseTab("inquiries");
-                    // Pass pre-filled data to Inquiries component
                   }}
                   currentUserEmail={currentUser}
                   currentUserCompany={currentUserCompany}
