@@ -1807,13 +1807,18 @@ export default function App() {
       const incomingQuery = query(
         sentInquiriesRef,
         where("recipientEmail", "==", email),
-        orderBy("sentAt", "desc"),
       );
       const snapshot = await getDocs(incomingQuery);
-      const inquiries = snapshot.docs.map((doc) => ({
-        ...doc.data(),
-        firestoreId: doc.id,
-      }));
+      const inquiries = snapshot.docs
+        .map((doc) => ({
+          ...doc.data(),
+          firestoreId: doc.id,
+        }))
+        .sort(
+          (a, b) =>
+            new Date(b.sentAt || 0).getTime() -
+            new Date(a.sentAt || 0).getTime(),
+        );
       console.log(`Loaded ${inquiries.length} incoming inquiries for ${email}`);
       return inquiries;
     } catch (error) {
