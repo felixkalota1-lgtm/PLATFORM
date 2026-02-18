@@ -821,9 +821,15 @@ export default function App() {
         return;
       }
 
-      console.log("\n════════════════════════════════════════════════════════════");
-      console.log("🔄 MIGRATION: Copying all vendors to vendorDirectory collection");
-      console.log("════════════════════════════════════════════════════════════\n");
+      console.log(
+        "\n════════════════════════════════════════════════════════════",
+      );
+      console.log(
+        "🔄 MIGRATION: Copying all vendors to vendorDirectory collection",
+      );
+      console.log(
+        "════════════════════════════════════════════════════════════\n",
+      );
 
       // Fetch all users from userSettings
       const usersRef = collection(db, "userSettings");
@@ -850,7 +856,9 @@ export default function App() {
             email: userData.email || "",
             emailSearchable: (userData.email || "").toLowerCase().trim(),
             companyName: userData.companyName || "",
-            companyNameSearchable: (userData.companyName || "").toLowerCase().trim(),
+            companyNameSearchable: (userData.companyName || "")
+              .toLowerCase()
+              .trim(),
             phone: userData.phone || "",
             address: userData.address || "",
             website: userData.website || "",
@@ -868,11 +876,15 @@ export default function App() {
         }
       }
 
-      console.log("\n════════════════════════════════════════════════════════════");
+      console.log(
+        "\n════════════════════════════════════════════════════════════",
+      );
       console.log(
         `✅ MIGRATION COMPLETE: ${migratedCount} users migrated, ${skippedCount} already present`,
       );
-      console.log("════════════════════════════════════════════════════════════\n");
+      console.log(
+        "════════════════════════════════════════════════════════════\n",
+      );
     } catch (error) {
       console.error("❌ Migration error:", error);
     }
@@ -986,9 +998,7 @@ export default function App() {
         "  → Signup code did not write to vendorDirectory successfully",
       );
       console.log("If vendorDirectory exists with complete data:");
-      console.log(
-        "  → We should search this collection for vendor discovery",
-      );
+      console.log("  → We should search this collection for vendor discovery");
       console.log(
         "════════════════════════════════════════════════════════════\n",
       );
@@ -2699,8 +2709,9 @@ export default function App() {
       return;
     }
 
-    if (signupForm.password.length < 3) {
-      setAuthError("Password must be at least 3 characters");
+    // Firebase Auth requires minimum 6 characters
+    if (signupForm.password.length < 6) {
+      setAuthError("Password must be at least 6 characters");
       return;
     }
 
@@ -2765,8 +2776,8 @@ export default function App() {
       return;
     }
 
-    if (loginForm.password.length < 3) {
-      setAuthError("Invalid credentials");
+    if (loginForm.password.length < 6) {
+      setAuthError("Invalid email/username or password");
       return;
     }
 
@@ -2785,7 +2796,11 @@ export default function App() {
         const userDocs = await getDocs(
           query(
             collection(db, "userProfiles"),
-            where("usernameSearchable", "==", loginForm.emailOrUsername.toLowerCase()),
+            where(
+              "usernameSearchable",
+              "==",
+              loginForm.emailOrUsername.toLowerCase(),
+            ),
           ),
         );
         if (userDocs.docs.length === 0) {
@@ -2832,7 +2847,9 @@ export default function App() {
       } = await loadUserDataOnLogin(username);
 
       setProducts(userProducts);
-      setActiveSubmenu("warehouse" as "marketplace" | "warehouse" | "allDocuments");
+      setActiveSubmenu(
+        "warehouse" as "marketplace" | "warehouse" | "allDocuments",
+      );
       setActiveWarehouseTab(
         (userActiveTab || "products") as
           | "products"
