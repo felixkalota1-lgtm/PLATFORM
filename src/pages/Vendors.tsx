@@ -519,12 +519,12 @@ export default function Vendors({
         const displayCompanyName =
           doc.data().companyName ||
           doc.data().username ||
-          doc.data().email.split("@")[0] ||
+          (doc.data().email ? doc.data().email.split("@")[0] : "") ||
           "Unknown Vendor";
-        const displayEmail = doc.data().email || "No email";
+        const displayEmail = doc.data().email || doc.data().emailSearchable || "";
 
         console.log(
-          `🔍 VENDOR: ${doc.data().username} | companyName: "${displayCompanyName}" | email: "${displayEmail}"`,
+          `🔍 VENDOR: ${doc.data().username} | companyName: "${displayCompanyName}" | email: "${displayEmail}" | rawData: {companyName: "${doc.data().companyName}", email: "${doc.data().email}"}`,
         );
 
         // Check if search term matches ANY field (prefix or substring)
@@ -1407,7 +1407,7 @@ export default function Vendors({
                               color: "#64748b",
                             }}
                           >
-                            {company.email}
+                            {company.email || "(Email not provided)"}
                           </p>
                           {company.phone && (
                             <p
