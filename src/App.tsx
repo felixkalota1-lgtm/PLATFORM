@@ -1051,103 +1051,138 @@ export default function App() {
     }
   };
 
-  // Restore login session on page refresh
+  // CRITICAL SECURITY: Monitor Firebase Auth state (not just localStorage)
+  // When user is deleted from Firebase, this listener will immediately log them out
   useEffect(() => {
-    const savedUser = localStorage.getItem("pspm_current_user");
-    const savedSubmenu =
-      localStorage.getItem(`cache_submenu_${savedUser}`) || "warehouse";
-    const savedTab =
-      localStorage.getItem(`cache_tab_${savedUser}`) || "products";
-    const savedOrdersView =
-      localStorage.getItem(`cache_orders_view_${savedUser}`) || "incoming";
-    const savedUploadType =
-      localStorage.getItem(`cache_upload_type_${savedUser}`) || "single";
-    const savedMarketplaceTab =
-      localStorage.getItem(`cache_marketplace_tab_${savedUser}`) || "all";
-    const savedQuotationsView =
-      localStorage.getItem(`cache_quotations_view_${savedUser}`) || "outgoing";
-    const savedInquiriesView =
-      localStorage.getItem(`cache_inquiries_view_${savedUser}`) || "outgoing";
+    console.log("🔐 AUTH: Setting up Firebase Auth state listener");
 
-    if (savedUser) {
-      // Set user and login state FIRST (before async operations)
-      setCurrentUser(savedUser);
-      setIsLoggedIn(true);
-      // Restore to the module user was on (not hardcoded to warehouse)
-      setActiveSubmenu(
-        (savedSubmenu as "marketplace" | "warehouse" | "allDocuments") ||
-          "warehouse",
+    const unsubscribe = auth.onAuthStateChanged(
+      async (firebaseUser: any) => {
+      if (!firebaseUser) {
+        // Firebase Auth user deleted/logged out
+        console.log("🔐 AUTH: No Firebase Auth user detected");
+        setIsLoggedIn(false);
+        setCurrentUser("");
+        setCurrentUserCompany("");
+        localStorage.removeItem("pspm_current_user");
+        localStorage.removeItem("pspm_auth_uid");
+        setPendingEmailVerification(null);
+        setAuthError(""); // Clear any previous errors
+        return;
+      }
+
+      console.log(
+        "🔐 AUTH: Firebase Auth user found:",
+        firebaseUser.uid,
+        firebaseUser.email,
       );
 
-      // Set active warehouse tab immediately from localStorage
-      setActiveWarehouseTab(
-        (savedTab || "products") as
-          | "products"
-          | "upload"
-          | "quotations"
-          | "inquiries"
-          | "settings",
-      );
+      // User exists in Firebase Auth - verify & restore session
+      const savedUser = localStorage.getItem("pspm_current_user");
+      const savedSubmenu =
+        localStorage.getItem(`cache_submenu_${savedUser}`) || "warehouse";
+      const savedTab =
+        localStorage.getItem(`cache_tab_${savedUser}`) || "products";
+      const savedOrdersView =
+        localStorage.getItem(`cache_orders_view_${savedUser}`) || "incoming";
+      const savedUploadType =
+        localStorage.getItem(`cache_upload_type_${savedUser}`) || "single";
+      const savedMarketplaceTab =
+        localStorage.getItem(`cache_marketplace_tab_${savedUser}`) || "all";
+      const savedQuotationsView =
+        localStorage.getItem(`cache_quotations_view_${savedUser}`) || "outgoing";
+      const savedInquiriesView =
+        localStorage.getItem(`cache_inquiries_view_${savedUser}`) || "outgoing";
 
-      // Set active orders view from localStorage
-      setActiveOrdersView(
-        (savedOrdersView as "incoming" | "outgoing") || "incoming",
-      );
+      if (savedUser) {
+        try {
+          // Verify user still exists in userProfiles
+          const userProfileDoc = await getDoc(
+            doc(db, "userProfiles", firebaseUser.uid),
+          );
+          if (!userProfileDoc.exists()) {
+            console.error(
+              "❌ AUTH: User profile not found in userProfiles collection",
+            );
+            setIsLoggedIn(false);
+            setCurrentUser("");
+            localStorage.removeItem("pspm_current_user");
+            localStorage.removeItem("pspm_auth_uid");
+            return;
+          }
 
-      // Set upload type from localStorage
-      setUploadType((savedUploadType as "single" | "bulk") || "single");
+          // User exists & verified - restore session
+          console.log(
+            "✅ AUTH: User verified in Firestore, restoring session",
+          );
+          setCurrentUser(savedUser);
+          setCurrentUserCompany(userProfileDoc.data().companyName || "");
+          setIsLoggedIn(true);
+          setActiveSubmenu(
+            (savedSubmenu as "marketplace" | "warehouse" | "allDocuments") ||
+              "warehouse",
+          );
+          setActiveWarehouseTab(
+            (savedTab || "products") as
+              | "products"
+              | "upload"
+              | "quotations"
+              | "inquiries"
+              | "orders"
+              | "vendors"
+              | "settings",
+          );
+          setActiveOrdersView(
+            (savedOrdersView as "incoming" | "outgoing") || "incoming",
+          );
+          setUploadType((savedUploadType as "single" | "bulk") || "single");
+          setActiveMarketplaceTab(
+            (savedMarketplaceTab as "all" | "myListings") || "all",
+          );
+          setActiveQuotationsView(
+            (savedQuotationsView as "incoming" | "outgoing") || "outgoing",
+          );
+          setActiveInquiriesView(
+            (savedInquiriesView as "incoming" | "outgoing") || "outgoing",
+          );
 
-      // Set marketplace tab from localStorage
-      setActiveMarketplaceTab(
-        (savedMarketplaceTab as "all" | "myListings") || "all",
-      );
+          // Load user data
+          const data = await loadUserDataOnLogin(savedUser);
+          setProducts(data.products);
+          setQuotationHistory(data.quotationHistory);
+          setInquiryHistory(data.inquiryHistory);
+          console.log(
+            `✅ AUTH: Restored session - ${data.products.length} products loaded`,
+          );
 
-      // Set quotations view from localStorage
-      setActiveQuotationsView(
-        (savedQuotationsView as "incoming" | "outgoing") || "outgoing",
-      );
+          // Load letterhead
+          const letterhead = await loadLetterhead(savedUser);
+          if (letterhead) {
+            setInquiryLetterhead(letterhead);
+          }
 
-      // Set inquiries view from localStorage
-      setActiveInquiriesView(
-        (savedInquiriesView as "incoming" | "outgoing") || "outgoing",
-      );
-
-      // Load user data and history (will also call setQuotationHistory and setInquiryHistory)
-      loadUserDataOnLogin(savedUser).then((data) => {
-        console.log(
-          `Page restore: User ${savedUser}, Module ${savedSubmenu}, Tab ${savedTab}, OrdersView ${savedOrdersView}, UploadType ${savedUploadType}, MarketplaceTab ${savedMarketplaceTab}`,
-        );
-        console.log(
-          `SETTING STATE - data.quotationHistory:`,
-          data.quotationHistory,
-        );
-        console.log(
-          `SETTING STATE - data.inquiryHistory:`,
-          data.inquiryHistory,
-        );
-        setProducts(data.products);
-        setQuotationHistory(data.quotationHistory);
-        setInquiryHistory(data.inquiryHistory);
-        console.log(
-          `Page restore: Loaded ${data.products.length} products, ${data.quotationHistory.length} quotations, ${data.inquiryHistory.length} inquiries`,
-        );
-      });
-
-      // Load letterhead from Firestore
-      loadLetterhead(savedUser).then((letterhead) => {
-        if (letterhead) {
-          setInquiryLetterhead(letterhead);
-          console.log(`Page restore: Loaded letterhead for ${savedUser}`);
+          // Load cart
+          const cartItems = await loadCartFromIndexedDB(savedUser);
+          setCart(cartItems);
+          setHasLoadedCart(true);
+        } catch (error) {
+          console.error("❌ AUTH: Error restoring session:", error);
+          setIsLoggedIn(false);
+          setCurrentUser("");
+          localStorage.removeItem("pspm_current_user");
+          localStorage.removeItem("pspm_auth_uid");
         }
-      });
+      } else {
+        // Firebase Auth has user but localStorage doesn't - reset to login
+        console.log(
+          "⚠️ AUTH: Firebase Auth exists but no saved session - returning to login",
+        );
+        setIsLoggedIn(false);
+      }
+    });
 
-      // Load cart from IndexedDB
-      loadCartFromIndexedDB(savedUser).then((cartItems) => {
-        setCart(cartItems);
-        setHasLoadedCart(true);
-        console.log(`Page restore: Loaded ${cartItems.length} cart items`);
-      });
-    }
+    // Cleanup: Unsubscribe from auth listener
+    return () => unsubscribe();
   }, []);
 
   // Debug: Log when quotationHistory state changes
