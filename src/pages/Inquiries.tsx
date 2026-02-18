@@ -36,6 +36,7 @@ interface InquiriesProps {
   items: Product[];
   history?: HistoryItem[];
   letterhead?: Letterhead | null;
+  allProducts?: Product[];
   vendors?: Array<{
     id: string;
     name: string;
@@ -67,6 +68,7 @@ export default function Inquiries({
   items,
   history = [],
   letterhead = null,
+  allProducts = [],
   vendors = [],
   onGeneratePDF,
   onSaveInquiry,
@@ -83,6 +85,14 @@ export default function Inquiries({
   const [previewId, setPreviewId] = React.useState<string | null>(null);
   const [showCompositor, setShowCompositor] = React.useState(false);
   const [showAddProduct, setShowAddProduct] = React.useState(false);
+  const [showAllProductsModal, setShowAllProductsModal] = React.useState(false);
+  const [selectedProductsForModal, setSelectedProductsForModal] =
+    React.useState<Set<string>>(new Set());
+  const [searchQueryForProducts, setSearchQueryForProducts] =
+    React.useState("");
+  const [productQtyMap, setProductQtyMap] = React.useState<{
+    [key: string]: number;
+  }>({});
   const [showVendorSelectionModal, setShowVendorSelectionModal] =
     React.useState(false);
   const [selectedVendorIds, setSelectedVendorIds] = React.useState<Set<string>>(
@@ -221,6 +231,72 @@ export default function Inquiries({
   const handleRemoveProduct = (productId: string) => {
     setLocalItems(localItems.filter((p) => p.id !== productId));
   };
+
+  const handleToggleProductSelection = (productId: string) => {
+    const newSelected = new Set(selectedProductsForModal);
+    if (newSelected.has(productId)) {
+      newSelected.delete(productId);
+      // Also remove qty for this product
+      const newQtyMap = { ...productQtyMap };
+      delete newQtyMap[productId];
+      setProductQtyMap(newQtyMap);
+    } else {
+      newSelected.add(productId);
+      // Initialize qty to 1 for newly selected product
+      setProductQtyMap({ ...productQtyMap, [productId]: 1 });
+    }
+    setSelectedProductsForModal(newSelected);
+  };
+
+  const handleSetProductQty = (productId: string, qty: number) => {
+    setProductQtyMap({ ...productQtyMap, [productId]: Math.max(1, qty) });
+  };
+
+  const handleAddProductsFromAllProducts = () => {
+    if (selectedProductsForModal.size === 0) {
+      alert("Please select at least one product");
+      return;
+    }
+
+    // Get selected products and add to localItems
+    const productsToAdd: Product[] = [];
+    for (const productId of selectedProductsForModal) {
+      const product = allProducts.find((p) => p.id === productId);
+      if (product) {
+        const qty = productQtyMap[productId] || 1;
+        productsToAdd.push({
+          ...product,
+          qty: qty,
+          id: product.id + "_" + Date.now(), // Create unique id for this inquiry item
+        });
+      }
+    }
+
+    // Add to localItems
+    setLocalItems([...localItems, ...productsToAdd]);
+
+    // Reset modal state
+    setShowAllProductsModal(false);
+    setSelectedProductsForModal(new Set());
+    setProductQtyMap({});
+    setSearchQueryForProducts("");
+  };
+
+  const handleCancelProductsPicker = () => {
+    setShowAllProductsModal(false);
+    setSelectedProductsForModal(new Set());
+    setProductQtyMap({});
+    setSearchQueryForProducts("");
+  };
+
+  // Filter products based on search query
+  const filteredAllProducts = allProducts.filter((product) => {
+    const searchLower = searchQueryForProducts.toLowerCase();
+    return (
+      product.name.toLowerCase().includes(searchLower) ||
+      product.partNumber.toLowerCase().includes(searchLower)
+    );
+  });
 
   const handleGeneratePDF = async () => {
     if (!currentInquiry) {
@@ -425,28 +501,52 @@ export default function Inquiries({
             >
               Inquiry Items ({localItems.length})
             </h3>
-            <button
-              onClick={() => setShowAddProduct(!showAddProduct)}
-              style={{
-                padding: "8px 16px",
-                background: "#2563eb",
-                color: "white",
-                border: "none",
-                borderRadius: "6px",
-                cursor: "pointer",
-                fontSize: "13px",
-                fontWeight: "600",
-                transition: "all 0.25s ease",
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = "#1d4ed8";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = "#2563eb";
-              }}
-            >
-              + Add Product
-            </button>
+            <div style={{ display: "flex", gap: "8px" }}>
+              <button
+                onClick={() => setShowAddProduct(!showAddProduct)}
+                style={{
+                  padding: "8px 16px",
+                  background: "#2563eb",
+                  color: "white",
+                  border: "none",
+                  borderRadius: "6px",
+                  cursor: "pointer",
+                  fontSize: "13px",
+                  fontWeight: "600",
+                  transition: "all 0.25s ease",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = "#1d4ed8";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = "#2563eb";
+                }}
+              >
+                + Add Product
+              </button>
+              <button
+                onClick={() => setShowAllProductsModal(true)}
+                style={{
+                  padding: "8px 16px",
+                  background: "#059669",
+                  color: "white",
+                  border: "none",
+                  borderRadius: "6px",
+                  cursor: "pointer",
+                  fontSize: "13px",
+                  fontWeight: "600",
+                  transition: "all 0.25s ease",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = "#047857";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = "#059669";
+                }}
+              >
+                + Add from Hub
+              </button>
+            </div>
           </div>
 
           {/* Add Product Form */}
@@ -578,6 +678,288 @@ export default function Inquiries({
                 >
                   Cancel
                 </button>
+              </div>
+            </div>
+          )}
+
+          {/* All Products Picker Modal */}
+          {showAllProductsModal && (
+            <div
+              style={{
+                position: "fixed",
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                background: "rgba(0, 0, 0, 0.5)",
+                display: "flex",
+                justifyContent: "center",
+                alignItems: "center",
+                zIndex: 10000,
+              }}
+              onClick={() => handleCancelProductsPicker()}
+            >
+              <div
+                style={{
+                  background: "#ffffff",
+                  borderRadius: "12px",
+                  width: "90%",
+                  maxWidth: "700px",
+                  maxHeight: "90vh",
+                  display: "flex",
+                  flexDirection: "column",
+                  boxShadow: "0 20px 25px rgba(0, 0, 0, 0.15)",
+                  overflow: "hidden",
+                }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                {/* Header */}
+                <div
+                  style={{
+                    padding: "20px",
+                    borderBottom: "1px solid #e2e8f0",
+                    background: "#f8fafc",
+                  }}
+                >
+                  <h3
+                    style={{
+                      margin: "0 0 12px 0",
+                      fontSize: "16px",
+                      fontWeight: "700",
+                      color: "#1a365d",
+                    }}
+                  >
+                    Select Products from Hub
+                  </h3>
+                  <input
+                    type="text"
+                    placeholder="Search products by name or part number..."
+                    value={searchQueryForProducts}
+                    onChange={(e) => setSearchQueryForProducts(e.target.value)}
+                    style={{
+                      width: "100%",
+                      padding: "10px 12px",
+                      border: "1px solid #cbd5e1",
+                      borderRadius: "6px",
+                      fontSize: "13px",
+                      boxSizing: "border-box",
+                    }}
+                  />
+                </div>
+
+                {/* Products List */}
+                <div
+                  style={{
+                    flex: 1,
+                    overflowY: "auto",
+                    padding: "16px",
+                  }}
+                >
+                  {allProducts.length === 0 ? (
+                    <div
+                      style={{
+                        textAlign: "center",
+                        color: "#64748b",
+                        padding: "32px 16px",
+                      }}
+                    >
+                      <p style={{ margin: "0", fontSize: "13px" }}>
+                        No products in your warehouse
+                      </p>
+                    </div>
+                  ) : filteredAllProducts.length === 0 ? (
+                    <div
+                      style={{
+                        textAlign: "center",
+                        color: "#64748b",
+                        padding: "32px 16px",
+                      }}
+                    >
+                      <p style={{ margin: "0", fontSize: "13px" }}>
+                        No products match your search
+                      </p>
+                    </div>
+                  ) : (
+                    <div style={{ display: "grid", gap: "12px" }}>
+                      {filteredAllProducts.map((product) => (
+                        <div
+                          key={product.id}
+                          style={{
+                            padding: "12px",
+                            border: selectedProductsForModal.has(product.id)
+                              ? "2px solid #059669"
+                              : "1px solid #e2e8f0",
+                            borderRadius: "6px",
+                            background: selectedProductsForModal.has(product.id)
+                              ? "#ecfdf5"
+                              : "#ffffff",
+                            cursor: "pointer",
+                            transition: "all 0.2s",
+                          }}
+                        >
+                          <div
+                            style={{
+                              display: "flex",
+                              gap: "12px",
+                              alignItems: "flex-start",
+                            }}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={selectedProductsForModal.has(product.id)}
+                              onChange={() =>
+                                handleToggleProductSelection(product.id)
+                              }
+                              style={{
+                                marginTop: "4px",
+                                cursor: "pointer",
+                              }}
+                            />
+                            <div
+                              style={{
+                                flex: 1,
+                                cursor: "pointer",
+                              }}
+                              onClick={() =>
+                                handleToggleProductSelection(product.id)
+                              }
+                            >
+                              <p
+                                style={{
+                                  margin: "0 0 4px 0",
+                                  fontSize: "13px",
+                                  fontWeight: "600",
+                                  color: "#1a365d",
+                                }}
+                              >
+                                {product.name}
+                              </p>
+                              <p
+                                style={{
+                                  margin: "0 0 4px 0",
+                                  fontSize: "12px",
+                                  color: "#64748b",
+                                }}
+                              >
+                                Part #: {product.partNumber}
+                              </p>
+                              {product.price > 0 && (
+                                <p
+                                  style={{
+                                    margin: "0",
+                                    fontSize: "12px",
+                                    color: "#64748b",
+                                  }}
+                                >
+                                  Price: ${product.price.toFixed(2)}
+                                </p>
+                              )}
+                            </div>
+                            {selectedProductsForModal.has(product.id) && (
+                              <div
+                                style={{
+                                  display: "flex",
+                                  alignItems: "center",
+                                  gap: "8px",
+                                }}
+                              >
+                                <label
+                                  style={{
+                                    fontSize: "12px",
+                                    color: "#1a365d",
+                                    fontWeight: "600",
+                                  }}
+                                >
+                                  Qty:
+                                </label>
+                                <input
+                                  type="number"
+                                  min="1"
+                                  value={productQtyMap[product.id] || 1}
+                                  onChange={(e) =>
+                                    handleSetProductQty(
+                                      product.id,
+                                      parseInt(e.target.value) || 1,
+                                    )
+                                  }
+                                  onClick={(e) => e.stopPropagation()}
+                                  style={{
+                                    width: "60px",
+                                    padding: "6px 8px",
+                                    border: "1px solid #cbd5e1",
+                                    borderRadius: "4px",
+                                    fontSize: "12px",
+                                    textAlign: "center",
+                                  }}
+                                />
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Footer */}
+                <div
+                  style={{
+                    padding: "16px 20px",
+                    borderTop: "1px solid #e2e8f0",
+                    background: "#f8fafc",
+                    display: "flex",
+                    gap: "8px",
+                    justifyContent: "flex-end",
+                  }}
+                >
+                  <button
+                    onClick={() => handleCancelProductsPicker()}
+                    style={{
+                      padding: "8px 16px",
+                      background: "#e2e8f0",
+                      color: "#1a365d",
+                      border: "none",
+                      borderRadius: "6px",
+                      cursor: "pointer",
+                      fontSize: "12px",
+                      fontWeight: "600",
+                      transition: "all 0.2s",
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = "#cbd5e1";
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = "#e2e8f0";
+                    }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => handleAddProductsFromAllProducts()}
+                    style={{
+                      padding: "8px 16px",
+                      background: "#059669",
+                      color: "white",
+                      border: "none",
+                      borderRadius: "6px",
+                      cursor: "pointer",
+                      fontSize: "12px",
+                      fontWeight: "600",
+                      transition: "all 0.2s",
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = "#047857";
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = "#059669";
+                    }}
+                  >
+                    Add{" "}
+                    {selectedProductsForModal.size > 0
+                      ? `(${selectedProductsForModal.size})`
+                      : ""}
+                  </button>
+                </div>
               </div>
             </div>
           )}

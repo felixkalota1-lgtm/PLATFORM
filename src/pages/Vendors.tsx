@@ -775,6 +775,28 @@ export default function Vendors({
     }
   };
 
+  // Helper function to determine connection status with a vendor
+  const getConnectionStatus = (
+    vendorUsername: string,
+  ): "no-connection" | "user-pending" | "vendor-pending" | "accepted" => {
+    const connection = connections.find(
+      (c) => c.company.username === vendorUsername,
+    );
+
+    if (!connection) return "no-connection";
+
+    if (connection.status === "accepted") return "accepted";
+
+    // If connection is pending, check who initiated it
+    if (connection.status === "pending") {
+      return connection.initiatedBy === "you"
+        ? "user-pending"
+        : "vendor-pending";
+    }
+
+    return "no-connection";
+  };
+
   const connectedCompanies = connections.filter((c) => c.status === "accepted");
   const pendingRequests = connections.filter((c) => c.status === "pending");
 
@@ -947,6 +969,16 @@ export default function Vendors({
                       >
                         {connection.company.name}
                       </h4>
+                      <p
+                        style={{
+                          margin: "0 0 2px 0",
+                          fontSize: "11px",
+                          color: "#94a3b8",
+                          fontWeight: "500",
+                        }}
+                      >
+                        Name: {connection.company.username}
+                      </p>
                       <p
                         style={{
                           margin: "0 0 4px 0",
@@ -1544,32 +1576,123 @@ export default function Vendors({
                             </p>
                           )}
                         </div>
-                        <button
-                          onClick={() => handleAddCompanyClick(company)}
-                          style={{
-                            marginTop: "12px",
-                            padding: "10px 16px",
-                            background: "#0284c7",
-                            color: "white",
-                            border: "none",
-                            borderRadius: "6px",
-                            cursor: "pointer",
-                            fontSize: "13px",
-                            fontWeight: "600",
-                            transition: "all 0.25s ease",
-                          }}
-                          onMouseEnter={(e) => {
-                            e.currentTarget.style.background = "#0369a1";
-                            e.currentTarget.style.transform =
-                              "translateY(-2px)";
-                          }}
-                          onMouseLeave={(e) => {
-                            e.currentTarget.style.background = "#0284c7";
-                            e.currentTarget.style.transform = "translateY(0)";
-                          }}
-                        >
-                          Add Connection
-                        </button>
+                        {(() => {
+                          const status = getConnectionStatus(company.username);
+
+                          // Case 1: Already connected - show as text
+                          if (status === "accepted") {
+                            return (
+                              <div
+                                style={{
+                                  marginTop: "12px",
+                                  padding: "10px 16px",
+                                  background: "#ecfdf5",
+                                  color: "#059669",
+                                  border: "1px solid #d1fae5",
+                                  borderRadius: "6px",
+                                  fontSize: "13px",
+                                  fontWeight: "600",
+                                  textAlign: "center",
+                                }}
+                              >
+                                ✓ Already Connected
+                              </div>
+                            );
+                          }
+
+                          // Case 2: Vendor sent pending request - show Accept button
+                          if (status === "vendor-pending") {
+                            return (
+                              <button
+                                onClick={() => {
+                                  const conn = connections.find(
+                                    (c) =>
+                                      c.company.username === company.username,
+                                  );
+                                  if (conn) {
+                                    handleAcceptConnection(conn.id);
+                                  }
+                                }}
+                                style={{
+                                  marginTop: "12px",
+                                  padding: "10px 16px",
+                                  background: "#10b981",
+                                  color: "white",
+                                  border: "none",
+                                  borderRadius: "6px",
+                                  cursor: "pointer",
+                                  fontSize: "13px",
+                                  fontWeight: "600",
+                                  transition: "all 0.25s ease",
+                                }}
+                                onMouseEnter={(e) => {
+                                  e.currentTarget.style.background = "#059669";
+                                  e.currentTarget.style.transform =
+                                    "translateY(-2px)";
+                                }}
+                                onMouseLeave={(e) => {
+                                  e.currentTarget.style.background = "#10b981";
+                                  e.currentTarget.style.transform =
+                                    "translateY(0)";
+                                }}
+                              >
+                                Accept Request
+                              </button>
+                            );
+                          }
+
+                          // Case 3: User sent pending request - show as text
+                          if (status === "user-pending") {
+                            return (
+                              <div
+                                style={{
+                                  marginTop: "12px",
+                                  padding: "10px 16px",
+                                  background: "#fef3c7",
+                                  color: "#b45309",
+                                  border: "1px solid #fcd34d",
+                                  borderRadius: "6px",
+                                  fontSize: "13px",
+                                  fontWeight: "600",
+                                  textAlign: "center",
+                                }}
+                              >
+                                ⏳ Request Pending
+                              </div>
+                            );
+                          }
+
+                          // Case 4: No connection - show Connect button
+                          return (
+                            <button
+                              onClick={() => handleAddCompanyClick(company)}
+                              style={{
+                                marginTop: "12px",
+                                padding: "10px 16px",
+                                background: "#0284c7",
+                                color: "white",
+                                border: "none",
+                                borderRadius: "6px",
+                                cursor: "pointer",
+                                fontSize: "13px",
+                                fontWeight: "600",
+                                transition: "all 0.25s ease",
+                              }}
+                              onMouseEnter={(e) => {
+                                e.currentTarget.style.background = "#0369a1";
+                                e.currentTarget.style.transform =
+                                  "translateY(-2px)";
+                              }}
+                              onMouseLeave={(e) => {
+                                e.currentTarget.style.background = "#0284c7";
+                                e.currentTarget.style.transform =
+                                  "translateY(0)";
+                              }}
+                            >
+                              Connect
+                            </button>
+                          );
+                        })()}
                       </div>
                     );
                   })}

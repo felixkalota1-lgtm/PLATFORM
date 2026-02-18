@@ -1,3 +1,8 @@
+proceeding IN a brand new chat do not change the base logic in this scrip, before you change anything in the script ask me, you are a professional developer and I am the idea guy you might change something that will break the code in a different page it will make something work in one page but break it in the other page, Do not hallucinate worry not clear ask me
+
+We need to add features and modify some features which are already implemented in the script while doing that we don't need to break the logic that is already waking we need to find new work arounds
+
+
 ALL NOTES MUST BE ADDED IN THIS .MD FILE
 
 <!-- format notes-date-time --> 

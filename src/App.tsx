@@ -1899,12 +1899,33 @@ export default function App() {
       console.log(`   📧 Sender: "${normalizedSenderEmail}"`);
       console.log(`   📧 Recipient: "${normalizedRecipientEmail}"`);
 
+      // ✅ RETRIEVE SENDER'S COMPANY from userProfiles
+      let senderCompany = "N/A";
+      try {
+        const userProfilesRef = collection(db, "userProfiles");
+        const userQuery = query(
+          userProfilesRef,
+          where("emailSearchable", "==", normalizedSenderEmail),
+        );
+        const userSnapshot = await getDocs(userQuery);
+        if (!userSnapshot.empty) {
+          const userDoc = userSnapshot.docs[0].data();
+          senderCompany = userDoc.companyName || "N/A";
+          console.log(`   🏢 Sender Company: "${senderCompany}"`);
+        } else {
+          console.log(`   ⚠️ Sender profile not found in userProfiles`);
+        }
+      } catch (error) {
+        console.error(`   ❌ Error retrieving sender company:`, error);
+      }
+
       // Generate formatted HTML for display to recipient
       const formattedHtml = generateInquiryHtml(inquiry);
 
       const docRef = await addDoc(sentInquiriesRef, {
         ...inquiryData,
         senderEmail: normalizedSenderEmail,
+        senderCompany: senderCompany,
         recipientEmail: normalizedRecipientEmail,
         formattedHtml: formattedHtml,
         status: "sent",
@@ -1977,6 +1998,26 @@ export default function App() {
     const normalizedSenderEmail = currentUserEmail.toLowerCase().trim();
     const formattedHtml = generateInquiryHtml(normalizedInquiry);
 
+    // ✅ RETRIEVE SENDER'S COMPANY from userProfiles
+    let senderCompany = "N/A";
+    try {
+      const userProfilesRef = collection(db, "userProfiles");
+      const userQuery = query(
+        userProfilesRef,
+        where("emailSearchable", "==", normalizedSenderEmail),
+      );
+      const userSnapshot = await getDocs(userQuery);
+      if (!userSnapshot.empty) {
+        const userDoc = userSnapshot.docs[0].data();
+        senderCompany = userDoc.companyName || "N/A";
+        console.log(`   🏢 Sender Company: "${senderCompany}"`);
+      } else {
+        console.log(`   ⚠️ Sender profile not found in userProfiles`);
+      }
+    } catch (error) {
+      console.error(`   ❌ Error retrieving sender company:`, error);
+    }
+
     const results = {
       success: [] as string[],
       failed: [] as { vendor: string; error: string }[],
@@ -2004,6 +2045,16 @@ export default function App() {
           `   📧 Sending to: ${vendor.name} (${normalizedVendorEmail})`,
         );
 
+        // ✅ IMPORTANT: Create a clean vendor object without undefined fields
+        // Firebase Firestore rejects undefined values, so we sanitize the object
+        const cleanVendor = {
+          id: vendor.id,
+          name: vendor.name || vendor.id,
+          email: normalizedVendorEmail,
+          company: vendor.company || vendor.id, // Use vendor.id as fallback if company is undefined
+          status: vendor.status || "pending",
+        };
+
         // CRITICAL: Match the original send structure exactly so receiver can query/display correctly
         const firestoreData = {
           // Core inquiry fields (matches saveInquiryToHistory)
@@ -2012,7 +2063,7 @@ export default function App() {
           date: normalizedInquiry.date,
           recipientName: vendor.name,
           recipientEmail: normalizedVendorEmail, // ✅ NORMALIZED - KEY: This is what receiver queries
-          recipientCompany: (vendor.company as string) || vendor.name,
+          recipientCompany: cleanVendor.company, // ✅ Use cleaned company (with fallback)
           inquiryBody: normalizedInquiry.inquiryBody, // ← Always included (not conditional)
           items: normalizedInquiry.items, // ← Always included (not conditional)
           letterhead: normalizedInquiry.letterhead, // ← Always included
@@ -2021,6 +2072,7 @@ export default function App() {
 
           // Firestore metadata (matches saveInquiryToHistory)
           senderEmail: normalizedSenderEmail, // ← For receiver to see who sent (also normalized)
+          senderCompany: senderCompany, // ✅ ADD SENDER'S COMPANY
           formattedHtml: formattedHtml, // ← For beautiful display
           status: "sent" as const,
           sentAt: new Date().toISOString(),
@@ -2028,7 +2080,7 @@ export default function App() {
           // Resend tracking (extra metadata)
           resendFrom: normalizedInquiry.id, // Track original inquiry ID
           originalRecipient: normalizeEmail(normalizedInquiry.recipientEmail), // ✅ NORMALIZED
-          recipientContact: vendor, // Track vendor details
+          recipientContact: cleanVendor, // ✅ Use cleaned vendor object (no undefined values)
         };
 
         console.log(`   📝 FIRESTORE PAYLOAD:`, {
@@ -2163,72 +2215,206 @@ export default function App() {
         vendorDocSnap: any,
         connectionData: any,
       ): Promise<string | null> => {
+        console.log(
+          `   🔍 DEBUG: Searching for email for vendor "${vendorId}"...`,
+        );
+
         // 1. Try userProfiles first (has CAPITAL LETTER emails in some cases)
         try {
           const userProfileSnap = await getDoc(doc(userProfilesRef, vendorId));
           if (userProfileSnap.exists()) {
             const profileData = userProfileSnap.data() as any;
-            if (profileData.email) {
-              const normalizedEmail = normalizeEmail(profileData.email);
+            const rawEmail = profileData.email;
+            console.log(`   └─ userProfiles: exists=true, email="${rawEmail}"`);
+            if (rawEmail) {
+              const normalizedEmail = normalizeEmail(rawEmail);
+              console.log(
+                `      └─ normalized: "${normalizedEmail}", regex test: ${emailRegex.test(normalizedEmail)}`,
+              );
               if (emailRegex.test(normalizedEmail)) {
                 console.log(
-                  `   ✓ Got email from userProfiles: ${profileData.email} → normalized: ${normalizedEmail}`,
+                  `   ✓ Got email from userProfiles: ${rawEmail} → ${normalizedEmail}`,
                 );
                 return normalizedEmail;
               }
             }
+          } else {
+            console.log(`   └─ userProfiles: exists=false`);
           }
         } catch (e) {
-          // Continue to next strategy
+          console.log(`   └─ userProfiles: error - ${(e as Error).message}`);
         }
 
         // 2. Try vendorDirectory
+        console.log(
+          `   └─ checking vendorDirectory: exists=${vendorDocSnap?.exists()}`,
+        );
         if (vendorDocSnap?.exists()) {
           const vendorData = vendorDocSnap.data() as any;
-          if (vendorData.email) {
-            const normalizedEmail = normalizeEmail(vendorData.email);
+          const rawEmail = vendorData.email;
+          console.log(`      └─ vendorDirectory data: email="${rawEmail}"`);
+          if (rawEmail) {
+            const normalizedEmail = normalizeEmail(rawEmail);
+            console.log(
+              `         └─ normalized: "${normalizedEmail}", regex test: ${emailRegex.test(normalizedEmail)}`,
+            );
             if (emailRegex.test(normalizedEmail)) {
               console.log(
-                `   ✓ Got email from vendorDirectory: ${vendorData.email} → normalized: ${normalizedEmail}`,
+                `   ✓ Got email from vendorDirectory: ${rawEmail} → ${normalizedEmail}`,
               );
               return normalizedEmail;
+            } else {
+              console.log(
+                `         ❌ Regex failed for: "${normalizedEmail}" (this might be the blocker!)`,
+              );
             }
+          } else {
+            console.log(`      └─ vendorDirectory.email is empty/null`);
           }
+        } else {
+          console.log(`      └─ vendorDirectory document does NOT exist`);
         }
 
         // 3. Try connection.companyData
-        if (connectionData?.companyData?.email) {
-          const normalizedEmail = normalizeEmail(
-            connectionData.companyData.email,
+        const companyDataEmail = connectionData?.companyData?.email;
+        console.log(
+          `   └─ checking connection.companyData: email="${companyDataEmail}"`,
+        );
+        if (companyDataEmail) {
+          const normalizedEmail = normalizeEmail(companyDataEmail);
+          console.log(
+            `      └─ normalized: "${normalizedEmail}", regex test: ${emailRegex.test(normalizedEmail)}`,
           );
           if (emailRegex.test(normalizedEmail)) {
             console.log(
-              `   ✓ Got email from connection data: ${connectionData.companyData.email} → normalized: ${normalizedEmail}`,
+              `   ✓ Got email from connection data: ${companyDataEmail} → ${normalizedEmail}`,
             );
             return normalizedEmail;
           }
         }
 
-        // 4. Try userSettings (fallback for Firebase auth email)
+        // 4. Try connection.email directly (might be stored at root level)
+        const directEmail = connectionData?.email;
+        console.log(
+          `   └─ checking connection.email directly: "${directEmail}"`,
+        );
+        if (directEmail) {
+          const normalizedEmail = normalizeEmail(directEmail);
+          console.log(
+            `      └─ normalized: "${normalizedEmail}", regex test: ${emailRegex.test(normalizedEmail)}`,
+          );
+          if (emailRegex.test(normalizedEmail)) {
+            console.log(
+              `   ✓ Got email from connection.email: ${directEmail} → ${normalizedEmail}`,
+            );
+            return normalizedEmail;
+          }
+        }
+
+        // 5. Try userSettings (fallback for Firebase auth email)
         try {
           const userDocSnap = await getDoc(doc(userSettingsRef, vendorId));
           if (userDocSnap.exists()) {
             const userData = userDocSnap.data() as any;
-            if (userData.email) {
-              const normalizedEmail = normalizeEmail(userData.email);
+            const rawEmail = userData.email;
+            console.log(`   └─ userSettings: exists=true, email="${rawEmail}"`);
+            if (rawEmail) {
+              const normalizedEmail = normalizeEmail(rawEmail);
+              console.log(
+                `      └─ normalized: "${normalizedEmail}", regex test: ${emailRegex.test(normalizedEmail)}`,
+              );
               if (emailRegex.test(normalizedEmail)) {
                 console.log(
-                  `   ✓ Got email from userSettings: ${userData.email} → normalized: ${normalizedEmail}`,
+                  `   ✓ Got email from userSettings: ${rawEmail} → ${normalizedEmail}`,
                 );
                 return normalizedEmail;
               }
             }
+          } else {
+            console.log(`   └─ userSettings: exists=false`);
           }
         } catch (e) {
-          // Continue
+          console.log(`   └─ userSettings: error - ${(e as Error).message}`);
+        }
+
+        // 6. Try querying vendorDirectory by username field (for vendors who may have username as searchable field)
+        try {
+          console.log(
+            `   └─ Trying query-based search in vendorDirectory by username="${vendorId}"...`,
+          );
+          const usernameQuery = query(
+            vendorDirectoryRef,
+            where("username", "==", vendorId),
+          );
+          const queryResults = await getDocs(usernameQuery);
+          if (queryResults.docs.length > 0) {
+            const vendorData = queryResults.docs[0].data() as any;
+            const rawEmail = vendorData.email;
+            console.log(
+              `      └─ Found in vendorDirectory via query: email="${rawEmail}"`,
+            );
+            if (rawEmail) {
+              const normalizedEmail = normalizeEmail(rawEmail);
+              console.log(
+                `         └─ normalized: "${normalizedEmail}", regex test: ${emailRegex.test(normalizedEmail)}`,
+              );
+              if (emailRegex.test(normalizedEmail)) {
+                console.log(
+                  `   ✓ Got email from vendorDirectory query: ${rawEmail} → ${normalizedEmail}`,
+                );
+                return normalizedEmail;
+              }
+            }
+          } else {
+            console.log(`      └─ No results from vendorDirectory query`);
+          }
+        } catch (e) {
+          console.log(
+            `   └─ vendorDirectory query error - ${(e as Error).message}`,
+          );
+        }
+
+        // 7. Try querying userSettings by username field
+        try {
+          console.log(
+            `   └─ Trying query-based search in userSettings by username="${vendorId}"...`,
+          );
+          const usernameQuery = query(
+            userSettingsRef,
+            where("username", "==", vendorId),
+          );
+          const queryResults = await getDocs(usernameQuery);
+          if (queryResults.docs.length > 0) {
+            const userData = queryResults.docs[0].data() as any;
+            const rawEmail = userData.email;
+            console.log(
+              `      └─ Found in userSettings via query: email="${rawEmail}"`,
+            );
+            if (rawEmail) {
+              const normalizedEmail = normalizeEmail(rawEmail);
+              console.log(
+                `         └─ normalized: "${normalizedEmail}", regex test: ${emailRegex.test(normalizedEmail)}`,
+              );
+              if (emailRegex.test(normalizedEmail)) {
+                console.log(
+                  `   ✓ Got email from userSettings query: ${rawEmail} → ${normalizedEmail}`,
+                );
+                return normalizedEmail;
+              }
+            }
+          } else {
+            console.log(`      └─ No results from userSettings query`);
+          }
+        } catch (e) {
+          console.log(
+            `   └─ userSettings query error - ${(e as Error).message}`,
+          );
         }
 
         // ❌ No valid email found anywhere
+        console.log(
+          `   ❌ FAILED to find valid email for vendor "${vendorId}" in any collection`,
+        );
         return null;
       };
 
@@ -2240,37 +2426,68 @@ export default function App() {
         if (seenIds.has(targetUser)) continue;
         seenIds.add(targetUser);
 
+        console.log(
+          `\n📍 Processing vendor (initiated by me): "${targetUser}"`,
+        );
+        console.log(
+          `   Connection document structure:`,
+          JSON.stringify(
+            {
+              targetUser: connection.targetUser,
+              initiatedByUser: connection.initiatedByUser,
+              status: connection.status,
+              companyData: connection.companyData,
+              hasCompanyData: !!connection.companyData,
+              allKeys: Object.keys(connection),
+            },
+            null,
+            2,
+          ),
+        );
+
         try {
           const vendorDocSnap = await getDoc(
             doc(vendorDirectoryRef, targetUser),
           );
+          console.log(
+            `   vendorDirectory query result: exists=${vendorDocSnap.exists()}`,
+          );
+          if (vendorDocSnap.exists()) {
+            console.log(
+              `   vendorDirectory data keys: ${Object.keys(vendorDocSnap.data()).join(", ")}`,
+            );
+          }
+
           const email = await getVendorEmail(
             targetUser,
             vendorDocSnap,
             connection,
           );
 
-          // Only add vendor if we have a valid email
-          if (!email) {
-            console.warn(
-              `⚠️ SKIPPING vendor "${connection.companyData?.name || targetUser}" - no valid email found. Vendor must update their profile.`,
-            );
-            continue;
-          }
-
+          // ✅ IMPORTANT: Show vendor EVEN if email is missing
+          // This allows users to see and interact with vendors while we try to find their email
           const vendorData = vendorDocSnap.exists()
             ? (vendorDocSnap.data() as any)
             : null;
+
           vendors.push({
             id: targetUser,
             name:
               vendorData?.companyName ||
               connection.companyData?.name ||
               targetUser,
-            email: email, // ✅ NORMALIZED EMAIL
+            email: email || `${targetUser}@pending-email`, // Use fallback email with warning
             company: vendorData?.companyName || connection.companyData?.name,
             status: connection.status || "pending",
           });
+
+          if (email) {
+            console.log(`   ✅ ADDED vendor with email: ${email}`);
+          } else {
+            console.warn(
+              `⚠️ ADDED vendor "${connection.companyData?.name || targetUser}" WITHOUT email (will attempt to retrieve when sending)`,
+            );
+          }
         } catch (error) {
           console.warn(`⚠️ Error loading vendor ${targetUser}:`, error);
         }
@@ -2284,37 +2501,68 @@ export default function App() {
         if (seenIds.has(initiatorUser)) continue;
         seenIds.add(initiatorUser);
 
+        console.log(
+          `\n📍 Processing vendor (initiated by them): "${initiatorUser}"`,
+        );
+        console.log(
+          `   Connection document structure:`,
+          JSON.stringify(
+            {
+              targetUser: connection.targetUser,
+              initiatedByUser: connection.initiatedByUser,
+              status: connection.status,
+              companyData: connection.companyData,
+              hasCompanyData: !!connection.companyData,
+              allKeys: Object.keys(connection),
+            },
+            null,
+            2,
+          ),
+        );
+
         try {
           const vendorDocSnap = await getDoc(
             doc(vendorDirectoryRef, initiatorUser),
           );
+          console.log(
+            `   vendorDirectory query result: exists=${vendorDocSnap.exists()}`,
+          );
+          if (vendorDocSnap.exists()) {
+            console.log(
+              `   vendorDirectory data keys: ${Object.keys(vendorDocSnap.data()).join(", ")}`,
+            );
+          }
+
           const email = await getVendorEmail(
             initiatorUser,
             vendorDocSnap,
             connection,
           );
 
-          // Only add vendor if we have a valid email
-          if (!email) {
-            console.warn(
-              `⚠️ SKIPPING vendor "${connection.companyData?.name || initiatorUser}" - no valid email found. Vendor must update their profile.`,
-            );
-            continue;
-          }
-
+          // ✅ IMPORTANT: Show vendor EVEN if email is missing
+          // This allows users to see and interact with vendors while we try to find their email
           const vendorData = vendorDocSnap.exists()
             ? (vendorDocSnap.data() as any)
             : null;
+
           vendors.push({
             id: initiatorUser,
             name:
               vendorData?.companyName ||
               connection.companyData?.name ||
               initiatorUser,
-            email: email, // ✅ NORMALIZED EMAIL
+            email: email || `${initiatorUser}@pending-email`, // Use fallback email with warning
             company: vendorData?.companyName || connection.companyData?.name,
             status: connection.status || "pending",
           });
+
+          if (email) {
+            console.log(`   ✅ ADDED vendor with email: ${email}`);
+          } else {
+            console.warn(
+              `⚠️ ADDED vendor "${connection.companyData?.name || initiatorUser}" WITHOUT email (will attempt to retrieve when sending)`,
+            );
+          }
         } catch (error) {
           console.warn(`⚠️ Error loading vendor ${initiatorUser}:`, error);
         }
@@ -8359,7 +8607,7 @@ export default function App() {
                                       color: "#64748b",
                                     }}
                                   >
-                                    {inquiry.recipientCompany || "N/A"}
+                                    {inquiry.senderCompany || "N/A"}
                                   </td>
                                   <td
                                     style={{
