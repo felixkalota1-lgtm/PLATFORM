@@ -1726,6 +1726,10 @@ export default function App() {
   // Save inquiry to IndexedDB and history (without PDF generation)
   const saveInquiryToHistory = async (inquiry: any) => {
     try {
+      if (!inquiry.recipientEmail) {
+        throw new Error("Recipient email is required to send an inquiry");
+      }
+
       // Save to IndexedDB
       const inquiryData = {
         id: inquiry.id,
@@ -1750,6 +1754,8 @@ export default function App() {
         request.onerror = () => reject(request.error);
       });
 
+      console.log(`✅ Inquiry saved to IndexedDB: ${inquiry.number}`);
+
       // Update React state with new inquiry in history
       setInquiryHistory((prev) => [
         ...prev,
@@ -1767,31 +1773,37 @@ export default function App() {
         },
       ]);
 
-      // ALSO save to Firestore so recipient can receive it
-      if (db && inquiry.recipientEmail) {
-        try {
-          const sentInquiriesRef = collection(db, "sentInquiries");
-          await addDoc(sentInquiriesRef, {
-            ...inquiryData,
-            senderEmail: currentUser,
-            recipientEmail: inquiry.recipientEmail,
-            status: "sent",
-            sentAt: new Date().toISOString(),
-          });
-          console.log(`Inquiry sent to Firestore for ${inquiry.recipientEmail}`);
-        } catch (error) {
-          console.warn("Could not save to Firestore:", error);
-          // Don't fail if Firestore save fails - local save is enough
-        }
+      // CRITICAL: Save to Firestore so recipient can receive it
+      if (!db) {
+        throw new Error("Firestore not connected. Inquiry saved locally but not sent.");
       }
 
-      // Show success message
-      alert(`Inquiry ${inquiry.number} saved successfully!`);
-      console.log(`Inquiry saved: ${inquiry.number}`);
-    } catch (error) {
-      console.error("Error saving inquiry:", error);
+      console.log(
+        `📤 Sending inquiry to Firestore for recipient: ${inquiry.recipientEmail}`,
+      );
+
+      const sentInquiriesRef = collection(db, "sentInquiries");
+      const docRef = await addDoc(sentInquiriesRef, {
+        ...inquiryData,
+        senderEmail: currentUser,
+        recipientEmail: inquiry.recipientEmail,
+        status: "sent",
+        sentAt: new Date().toISOString(),
+      });
+
+      console.log(
+        `✅ Inquiry sent to Firestore successfully with ID: ${docRef.id}`,
+      );
+
+      // Show comprehensive success message
       alert(
-        `Error saving inquiry: ${error instanceof Error ? error.message : "Unknown error"}`,
+        `✅ Inquiry ${inquiry.number} saved and sent to ${inquiry.recipientEmail}!`,
+      );
+      console.log(`✅ Inquiry sent: ${inquiry.number} → ${inquiry.recipientEmail}`);
+    } catch (error) {
+      console.error("❌ Error saving inquiry:", error);
+      alert(
+        `❌ Error: ${error instanceof Error ? error.message : "Unknown error"}`,
       );
       throw error;
     }
@@ -1813,9 +1825,9 @@ export default function App() {
         .map((doc) => ({
           ...doc.data(),
           firestoreId: doc.id,
-        }))
+        } as any))
         .sort(
-          (a, b) =>
+          (a: any, b: any) =>
             new Date(b.sentAt || 0).getTime() -
             new Date(a.sentAt || 0).getTime(),
         );
