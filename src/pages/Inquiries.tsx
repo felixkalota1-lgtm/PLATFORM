@@ -36,6 +36,13 @@ interface InquiriesProps {
   items: Product[];
   history?: HistoryItem[];
   letterhead?: Letterhead | null;
+  vendors?: Array<{
+    id: string;
+    name: string;
+    email: string;
+    company?: string;
+    status?: "accepted" | "pending";
+  }>;
   onGeneratePDF?: (
     inquiry: any,
     letterRef: HTMLDivElement | null,
@@ -43,6 +50,12 @@ interface InquiriesProps {
   onSaveInquiry?: (inquiry: any) => Promise<void>;
   onSendEmail?: () => void;
   onDeleteHistory?: (id: string) => void;
+  onResendToVendors?: (
+    inquiry: any,
+    vendors: Array<{ id: string; name: string; email: string }>,
+  ) => Promise<any>;
+  onNavigateToVendors?: () => void;
+  onRefreshVendors?: () => Promise<void>;
   preFillRecipient?: {
     name: string;
     email: string;
@@ -54,10 +67,14 @@ export default function Inquiries({
   items,
   history = [],
   letterhead = null,
+  vendors = [],
   onGeneratePDF,
   onSaveInquiry,
   onSendEmail,
   onDeleteHistory,
+  onResendToVendors,
+  onNavigateToVendors,
+  onRefreshVendors,
   preFillRecipient,
 }: InquiriesProps) {
   const [selectedHistoryId, setSelectedHistoryId] = React.useState<
@@ -66,6 +83,14 @@ export default function Inquiries({
   const [previewId, setPreviewId] = React.useState<string | null>(null);
   const [showCompositor, setShowCompositor] = React.useState(false);
   const [showAddProduct, setShowAddProduct] = React.useState(false);
+  const [showVendorSelectionModal, setShowVendorSelectionModal] =
+    React.useState(false);
+  const [selectedVendorIds, setSelectedVendorIds] = React.useState<Set<string>>(
+    new Set(),
+  );
+  const [inquiryForResend, setInquiryForResend] =
+    React.useState<HistoryItem | null>(null);
+  const [isResendingInquiry, setIsResendingInquiry] = React.useState(false);
   const [localItems, setLocalItems] = React.useState<Product[]>(items);
   const [newProduct, setNewProduct] = React.useState({
     name: "",
@@ -160,7 +185,7 @@ export default function Inquiries({
 
     setCurrentInquiry(composedInquiry);
     setShowCompositor(false);
-    
+
     // Save inquiry to IndexedDB and history
     if (onSaveInquiry) {
       try {
@@ -575,7 +600,12 @@ export default function Inquiries({
                 }}
               >
                 <thead>
-                  <tr style={{ background: "#f1f5f9", borderBottom: "1px solid #e2e8f0" }}>
+                  <tr
+                    style={{
+                      background: "#f1f5f9",
+                      borderBottom: "1px solid #e2e8f0",
+                    }}
+                  >
                     <th
                       style={{
                         padding: "12px",
@@ -705,7 +735,8 @@ export default function Inquiries({
                   fontSize: "13px",
                 }}
               >
-                No items added yet. Click "Add Product" to add items to your inquiry.
+                No items added yet. Click "Add Product" to add items to your
+                inquiry.
               </p>
             </div>
           )}
@@ -1344,6 +1375,7 @@ export default function Inquiries({
                             borderTop: "1px solid #e2e8f0",
                             display: "flex",
                             gap: "8px",
+                            flexWrap: "wrap",
                           }}
                         >
                           <button
@@ -1355,6 +1387,7 @@ export default function Inquiries({
                             }}
                             style={{
                               flex: 1,
+                              minWidth: "60px",
                               padding: "6px 12px",
                               background: "#5b7c99",
                               color: "white",
@@ -1370,6 +1403,37 @@ export default function Inquiries({
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
+                              setInquiryForResend(histItem);
+                              setSelectedVendorIds(new Set());
+                              setShowVendorSelectionModal(true);
+                              // Refresh vendors when modal opens
+                              if (onRefreshVendors) {
+                                onRefreshVendors().catch((err) =>
+                                  console.error(
+                                    "Failed to refresh vendors:",
+                                    err,
+                                  ),
+                                );
+                              }
+                            }}
+                            style={{
+                              flex: 1,
+                              minWidth: "60px",
+                              padding: "6px 12px",
+                              background: "#16a34a",
+                              color: "white",
+                              border: "none",
+                              borderRadius: "4px",
+                              cursor: "pointer",
+                              fontSize: "12px",
+                              fontWeight: "600",
+                            }}
+                          >
+                            Send
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
                               if (window.confirm("Delete this inquiry?")) {
                                 if (onDeleteHistory)
                                   onDeleteHistory(histItem.id);
@@ -1377,6 +1441,7 @@ export default function Inquiries({
                             }}
                             style={{
                               flex: 1,
+                              minWidth: "60px",
                               padding: "6px 12px",
                               background: "#dc2626",
                               color: "white",
@@ -1704,6 +1769,516 @@ export default function Inquiries({
                     })()}
                   </div>
                 )}
+              </div>
+            )}
+
+            {/* Vendor Selection Modal */}
+            {showVendorSelectionModal && inquiryForResend && (
+              <div
+                style={{
+                  position: "fixed",
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  background: "rgba(0, 0, 0, 0.5)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  zIndex: 9999,
+                }}
+                onClick={() => {
+                  if (!isResendingInquiry) {
+                    setShowVendorSelectionModal(false);
+                    setInquiryForResend(null);
+                  }
+                }}
+              >
+                <div
+                  onClick={(e) => e.stopPropagation()}
+                  style={{
+                    background: "white",
+                    borderRadius: "12px",
+                    boxShadow: "0 20px 60px rgba(0, 0, 0, 0.3)",
+                    maxWidth: "500px",
+                    width: "90%",
+                    maxHeight: "80vh",
+                    overflow: "auto",
+                  }}
+                >
+                  {/* Modal Header */}
+                  <div
+                    style={{
+                      padding: "24px",
+                      borderBottom: "1px solid #e2e8f0",
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                    }}
+                  >
+                    <h2
+                      style={{
+                        margin: 0,
+                        fontSize: "18px",
+                        fontWeight: "700",
+                        color: "#1a365d",
+                      }}
+                    >
+                      Send "
+                      <span style={{ color: "#5b7c99" }}>
+                        {inquiryForResend.number}
+                      </span>
+                      " to Vendors
+                    </h2>
+                    <button
+                      onClick={() => {
+                        if (!isResendingInquiry) {
+                          setShowVendorSelectionModal(false);
+                          setInquiryForResend(null);
+                        }
+                      }}
+                      style={{
+                        background: "none",
+                        border: "none",
+                        fontSize: "24px",
+                        cursor: "pointer",
+                        color: "#94a3b8",
+                      }}
+                    >
+                      ×
+                    </button>
+                  </div>
+
+                  {/* Modal Body */}
+                  <div style={{ padding: "24px" }}>
+                    {vendors && vendors.length > 0 ? (
+                      <div>
+                        {/* Header */}
+                        <p
+                          style={{
+                            margin: "0 0 16px 0",
+                            fontSize: "14px",
+                            color: "#64748b",
+                            fontWeight: "600",
+                          }}
+                        >
+                          📋 Your Vendor Connections
+                        </p>
+
+                        {/* Accepted Vendors - Selectable */}
+                        {(() => {
+                          const acceptedVendors = vendors.filter(
+                            (v) => v.status === "accepted",
+                          );
+                          if (acceptedVendors.length > 0) {
+                            return (
+                              <div style={{ marginBottom: "24px" }}>
+                                <p
+                                  style={{
+                                    margin: "0 0 12px 0",
+                                    fontSize: "12px",
+                                    fontWeight: "600",
+                                    color: "#16a34a",
+                                    textTransform: "uppercase",
+                                    letterSpacing: "0.5px",
+                                  }}
+                                >
+                                  ✓ Connected Vendors ({acceptedVendors.length})
+                                  - SELECT BELOW TO SEND
+                                </p>
+                                <div style={{ marginBottom: "12px" }}>
+                                  {acceptedVendors.map((vendor) => (
+                                    <label
+                                      key={vendor.id}
+                                      style={{
+                                        display: "flex",
+                                        alignItems: "center",
+                                        padding: "12px",
+                                        marginBottom: "8px",
+                                        border: "2px solid #bbf7d0",
+                                        borderRadius: "6px",
+                                        cursor: "pointer",
+                                        background: selectedVendorIds.has(
+                                          vendor.id,
+                                        )
+                                          ? "#f0fdf4"
+                                          : "#ffffff",
+                                        transition: "all 0.2s ease",
+                                        boxShadow: selectedVendorIds.has(
+                                          vendor.id,
+                                        )
+                                          ? "0 4px 8px rgba(22, 163, 74, 0.1)"
+                                          : "none",
+                                      }}
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        checked={selectedVendorIds.has(
+                                          vendor.id,
+                                        )}
+                                        onChange={(e) => {
+                                          const newSelectedIds = new Set(
+                                            selectedVendorIds,
+                                          );
+                                          if (e.target.checked) {
+                                            newSelectedIds.add(vendor.id);
+                                          } else {
+                                            newSelectedIds.delete(vendor.id);
+                                          }
+                                          setSelectedVendorIds(newSelectedIds);
+                                        }}
+                                        style={{
+                                          marginRight: "12px",
+                                          cursor: "pointer",
+                                          width: "18px",
+                                          height: "18px",
+                                          accentColor: "#16a34a",
+                                        }}
+                                      />
+                                      <div style={{ flex: 1 }}>
+                                        <p
+                                          style={{
+                                            margin: 0,
+                                            fontSize: "14px",
+                                            fontWeight: "600",
+                                            color: "#1a365d",
+                                          }}
+                                        >
+                                          {vendor.name}
+                                        </p>
+                                        <p
+                                          style={{
+                                            margin: "4px 0 0 0",
+                                            fontSize: "12px",
+                                            color: "#64748b",
+                                          }}
+                                        >
+                                          {vendor.email}
+                                        </p>
+                                      </div>
+                                      <span
+                                        style={{
+                                          marginLeft: "12px",
+                                          fontSize: "11px",
+                                          fontWeight: "700",
+                                          color: "#ffffff",
+                                          background: "#16a34a",
+                                          padding: "4px 10px",
+                                          borderRadius: "4px",
+                                          whiteSpace: "nowrap",
+                                        }}
+                                      >
+                                        ✓ Connected
+                                      </span>
+                                    </label>
+                                  ))}
+                                </div>
+                              </div>
+                            );
+                          }
+                          return null;
+                        })()}
+
+                        {/* Pending Vendors - Read Only Reference */}
+                        {(() => {
+                          const pendingVendors = vendors.filter(
+                            (v) => v.status === "pending",
+                          );
+                          if (pendingVendors.length > 0) {
+                            return (
+                              <div>
+                                <p
+                                  style={{
+                                    margin: "0 0 12px 0",
+                                    fontSize: "12px",
+                                    fontWeight: "600",
+                                    color: "#f97316",
+                                    textTransform: "uppercase",
+                                    letterSpacing: "0.5px",
+                                  }}
+                                >
+                                  ⏳ Pending Connections (
+                                  {pendingVendors.length}) - AWAITING ACCEPTANCE
+                                </p>
+                                <div>
+                                  {pendingVendors.map((vendor) => (
+                                    <div
+                                      key={vendor.id}
+                                      style={{
+                                        padding: "12px",
+                                        marginBottom: "8px",
+                                        border: "1px solid #fed7aa",
+                                        borderRadius: "6px",
+                                        background: "#fffbeb",
+                                        display: "flex",
+                                        justifyContent: "space-between",
+                                        alignItems: "center",
+                                      }}
+                                    >
+                                      <div style={{ flex: 1 }}>
+                                        <p
+                                          style={{
+                                            margin: 0,
+                                            fontSize: "13px",
+                                            fontWeight: "600",
+                                            color: "#92400e",
+                                          }}
+                                        >
+                                          {vendor.name}
+                                        </p>
+                                        <p
+                                          style={{
+                                            margin: "4px 0 0 0",
+                                            fontSize: "11px",
+                                            color: "#b45309",
+                                          }}
+                                        >
+                                          {vendor.email}
+                                        </p>
+                                      </div>
+                                      <span
+                                        style={{
+                                          marginLeft: "12px",
+                                          fontSize: "10px",
+                                          fontWeight: "700",
+                                          color: "#f97316",
+                                          background: "#fed7aa",
+                                          padding: "4px 10px",
+                                          borderRadius: "4px",
+                                          whiteSpace: "nowrap",
+                                        }}
+                                      >
+                                        ⏳ Pending
+                                      </span>
+                                    </div>
+                                  ))}
+                                </div>
+                                <p
+                                  style={{
+                                    margin: "12px 0 0 0",
+                                    fontSize: "11px",
+                                    color: "#94a3b8",
+                                    fontStyle: "italic",
+                                  }}
+                                >
+                                  💡 Once these vendors accept your connection
+                                  request, they'll appear in the connected list
+                                  above.
+                                </p>
+                              </div>
+                            );
+                          }
+                          return null;
+                        })()}
+
+                        {/* Selection Summary */}
+                        {selectedVendorIds.size > 0 && (
+                          <div
+                            style={{
+                              padding: "12px",
+                              backgroundColor: "#f0fdf4",
+                              border: "2px solid #86efac",
+                              borderRadius: "6px",
+                              marginTop: "16px",
+                              color: "#166534",
+                              fontSize: "13px",
+                              fontWeight: "600",
+                            }}
+                          >
+                            ✓ {selectedVendorIds.size} vendor
+                            {selectedVendorIds.size !== 1 ? "s" : ""} selected
+                            for sending
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div style={{ textAlign: "center", padding: "32px 0" }}>
+                        <p
+                          style={{
+                            margin: "0 0 12px 0",
+                            fontSize: "32px",
+                          }}
+                        >
+                          📭
+                        </p>
+                        <p
+                          style={{
+                            margin: "0 0 8px 0",
+                            fontSize: "14px",
+                            fontWeight: "600",
+                            color: "#1a365d",
+                          }}
+                        >
+                          No vendors yet
+                        </p>
+                        <p
+                          style={{
+                            margin: "0 0 16px 0",
+                            fontSize: "12px",
+                            color: "#94a3b8",
+                          }}
+                        >
+                          Add vendors in the Vendors section to send inquiries
+                        </p>
+                        <button
+                          onClick={() => {
+                            setShowVendorSelectionModal(false);
+                            setInquiryForResend(null);
+                            if (onNavigateToVendors) {
+                              onNavigateToVendors();
+                            }
+                          }}
+                          style={{
+                            padding: "10px 20px",
+                            background: "#5b7c99",
+                            color: "white",
+                            border: "none",
+                            borderRadius: "6px",
+                            cursor: "pointer",
+                            fontSize: "13px",
+                            fontWeight: "600",
+                          }}
+                        >
+                          Go to Vendors
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Modal Footer */}
+                  {vendors &&
+                    vendors.length > 0 &&
+                    vendors.some((v) => v.status === "accepted") && (
+                      <div
+                        style={{
+                          padding: "16px 24px",
+                          borderTop: "1px solid #e2e8f0",
+                          display: "flex",
+                          gap: "12px",
+                          justifyContent: "flex-end",
+                        }}
+                      >
+                        <button
+                          onClick={() => {
+                            if (!isResendingInquiry) {
+                              setShowVendorSelectionModal(false);
+                              setInquiryForResend(null);
+                              setSelectedVendorIds(new Set());
+                            }
+                          }}
+                          disabled={isResendingInquiry}
+                          style={{
+                            padding: "10px 20px",
+                            background: "#e2e8f0",
+                            color: "#1a365d",
+                            border: "none",
+                            borderRadius: "6px",
+                            cursor: isResendingInquiry
+                              ? "not-allowed"
+                              : "pointer",
+                            fontSize: "13px",
+                            fontWeight: "600",
+                            opacity: isResendingInquiry ? 0.6 : 1,
+                          }}
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          onClick={async () => {
+                            if (selectedVendorIds.size === 0) {
+                              alert("Please select at least one vendor");
+                              return;
+                            }
+
+                            try {
+                              setIsResendingInquiry(true);
+
+                              const acceptedVendors =
+                                vendors?.filter(
+                                  (v) => v.status === "accepted",
+                                ) || [];
+                              const selectedVendorsArray =
+                                acceptedVendors.filter((v) =>
+                                  selectedVendorIds.has(v.id),
+                                );
+
+                              if (onResendToVendors) {
+                                console.log(
+                                  `📤 RESEND: Preparing to send inquiry`,
+                                  {
+                                    inquiryNumber: inquiryForResend?.number,
+                                    inquiryId: inquiryForResend?.id,
+                                    hasBody: !!inquiryForResend?.inquiryBody,
+                                    bodyLength:
+                                      inquiryForResend?.inquiryBody?.length ||
+                                      0,
+                                    itemsCount:
+                                      inquiryForResend?.items?.length || 0,
+                                    vendorCount: selectedVendorsArray.length,
+                                    inquiryKeys: Object.keys(
+                                      inquiryForResend || {},
+                                    ),
+                                  },
+                                );
+
+                                const result = await onResendToVendors(
+                                  inquiryForResend,
+                                  selectedVendorsArray as any,
+                                );
+
+                                if (result.success.length > 0) {
+                                  alert(
+                                    `✅ Inquiry sent to ${result.success.length} vendor(s): ${result.success.join(", ")}${
+                                      result.failed.length > 0
+                                        ? `\n⚠️ Failed for: ${result.failed.map((f: any) => f.vendor).join(", ")}`
+                                        : ""
+                                    }`,
+                                  );
+                                } else if (result.failed.length > 0) {
+                                  alert(
+                                    `❌ Failed to send inquiry. Errors:\n${result.failed.map((f: any) => `${f.vendor}: ${f.error}`).join("\n")}`,
+                                  );
+                                }
+                              }
+
+                              setShowVendorSelectionModal(false);
+                              setInquiryForResend(null);
+                              setSelectedVendorIds(new Set());
+                            } catch (error) {
+                              alert(
+                                `❌ Error: ${error instanceof Error ? error.message : "Unknown error"}`,
+                              );
+                            } finally {
+                              setIsResendingInquiry(false);
+                            }
+                          }}
+                          disabled={
+                            selectedVendorIds.size === 0 || isResendingInquiry
+                          }
+                          style={{
+                            padding: "10px 20px",
+                            background:
+                              selectedVendorIds.size === 0 || isResendingInquiry
+                                ? "#cbd5e1"
+                                : "#16a34a",
+                            color: "white",
+                            border: "none",
+                            borderRadius: "6px",
+                            cursor:
+                              selectedVendorIds.size === 0 || isResendingInquiry
+                                ? "not-allowed"
+                                : "pointer",
+                            fontSize: "13px",
+                            fontWeight: "600",
+                          }}
+                        >
+                          {isResendingInquiry
+                            ? "Sending..."
+                            : `Send to ${selectedVendorIds.size} Vendor${selectedVendorIds.size !== 1 ? "s" : ""}`}
+                        </button>
+                      </div>
+                    )}
+                </div>
               </div>
             )}
           </div>

@@ -27,6 +27,15 @@ import Settings from "./pages/Settings";
 import History from "./pages/History";
 import Vendors from "./pages/Vendors";
 
+// ==========================================
+// EMAIL NORMALIZATION UTILITY
+// ==========================================
+// CRITICAL: Use this for ALL email operations throughout the app
+// Ensures emails are uniform format (lowercase + trimmed) everywhere
+const normalizeEmail = (email: string | undefined | null): string => {
+  return (email || "").toLowerCase().trim();
+};
+
 interface Product {
   id: string;
   name: string;
@@ -139,6 +148,10 @@ const initIndexedDB = async (): Promise<IDBDatabase> => {
     };
   });
 };
+
+// ==========================================
+// UTILITY FUNCTIONS (defined outside component)
+// ==========================================
 
 const saveProductToIndexedDB = async (
   username: string,
@@ -298,6 +311,7 @@ const loadCartFromIndexedDB = async (
 export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
   const [currentUser, setCurrentUser] = useState<string>("");
+  const [currentUserEmail, setCurrentUserEmail] = useState<string>("");
   const [currentUserCompany, setCurrentUserCompany] = useState<string>("");
   const [authMode, setAuthMode] = useState<"login" | "signup">("login");
   const [loginForm, setLoginForm] = useState({
@@ -485,6 +499,10 @@ export default function App() {
   const [quotationHistory, setQuotationHistory] = useState<any[]>([]);
   const [inquiryHistory, setInquiryHistory] = useState<any[]>([]);
   const [incomingInquiries, setIncomingInquiries] = useState<any[]>([]);
+  const [isRefreshingInquiries, setIsRefreshingInquiries] = useState(false);
+  const [acceptedVendorConnections, setAcceptedVendorConnections] = useState<
+    Array<{ id: string; name: string; email: string; company?: string }>
+  >([]);
   const [activeSubmenuTab, setActiveSubmenuTab] = useState<
     "current" | "history"
   >("current");
@@ -733,7 +751,7 @@ export default function App() {
   };
 
   // Load user products from IndexedDB (supports 100k+ items)
-  const loadUserDataOnLogin = async (username: string) => {
+  const loadUserDataOnLogin = async (username: string, userEmail?: string) => {
     try {
       // Load products from IndexedDB
       const products = await loadProductsFromIndexedDB(username);
@@ -744,7 +762,7 @@ export default function App() {
       // Load quotation and inquiry history with username
       const quotationHist = await loadQuotationHistory(username);
       const inquiryHist = await loadInquiryHistory(username);
-      const incomingInqHist = await loadIncomingInquiries(username);
+      const incomingInqHist = await loadIncomingInquiries(userEmail);
 
       console.log(
         `Login: Loaded ${quotationHist?.length || 0} quotations, ${inquiryHist?.length || 0} outgoing inquiries, and ${incomingInqHist?.length || 0} incoming inquiries`,
@@ -1072,6 +1090,7 @@ export default function App() {
         console.log("🔐 AUTH: No Firebase Auth user detected");
         setIsLoggedIn(false);
         setCurrentUser("");
+        setCurrentUserEmail("");
         setCurrentUserCompany("");
         localStorage.removeItem("pspm_current_user");
         localStorage.removeItem("pspm_auth_uid");
@@ -1141,6 +1160,8 @@ export default function App() {
           // User exists & verified - restore session
           console.log("✅ AUTH: User verified in Firestore, restoring session");
           setCurrentUser(savedUser);
+          // ✅ NORMALIZE: Ensure email is stored normalized throughout the app
+          setCurrentUserEmail(normalizeEmail(firebaseUser.email || ""));
           setCurrentUserCompany(userProfileDoc.data().companyName || "");
           setIsLoggedIn(true);
           setActiveSubmenu(
@@ -1172,7 +1193,10 @@ export default function App() {
           );
 
           // Load user data
-          const data = await loadUserDataOnLogin(savedUser);
+          const data = await loadUserDataOnLogin(
+            savedUser,
+            firebaseUser.email || "",
+          );
           setProducts(data.products);
           setQuotationHistory(data.quotationHistory);
           setInquiryHistory(data.inquiryHistory);
@@ -1187,6 +1211,9 @@ export default function App() {
             setInquiryLetterhead(letterhead);
           }
 
+          // Load accepted vendor connections for resending inquiries
+          await loadAcceptedVendorConnections();
+
           // Load cart
           const cartItems = await loadCartFromIndexedDB(savedUser);
           setCart(cartItems);
@@ -1195,6 +1222,7 @@ export default function App() {
           console.error("❌ AUTH: Error restoring session:", error);
           setIsLoggedIn(false);
           setCurrentUser("");
+          setCurrentUserEmail("");
           localStorage.removeItem("pspm_current_user");
           localStorage.removeItem("pspm_auth_uid");
         }
@@ -1701,6 +1729,84 @@ export default function App() {
     }
   };
 
+  // Generate formatted inquiry HTML for display to recipient
+  const generateInquiryHtml = (inquiry: any): string => {
+    const dateObj = new Date(inquiry.date || new Date());
+    const formattedDate = dateObj.toLocaleDateString("en-US", {
+      weekday: "long",
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    });
+
+    const tableRows = (inquiry.items || [])
+      .map(
+        (item: any) => `
+        <tr style="border-bottom: 1px solid #ddd;">
+          <td style="padding: 10px; text-align: left;">${item.name || ""}</td>
+          <td style="padding: 10px; text-align: center;">${item.partNumber || ""}</td>
+          <td style="padding: 10px; text-align: right;">${item.qty || 0}</td>
+        </tr>
+      `,
+      )
+      .join("");
+
+    const letterheadHtml =
+      inquiry.letterhead && inquiry.letterhead.imageBase64
+        ? `<div style="margin-bottom: 30px; text-align: center;">
+          <img src="${inquiry.letterhead.imageBase64}" alt="Letterhead" style="max-width: 100%; height: auto; max-height: 120px;">
+         </div>`
+        : "";
+
+    const html = `
+      <div style="font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; color: #1a365d;">
+        ${letterheadHtml}
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 30px;">
+          <div>
+            <p style="font-size: 12px; color: #64748b; text-transform: uppercase; margin: 0 0 5px 0;">Date Issued</p>
+            <p style="font-size: 16px; font-weight: bold; margin: 0;">${formattedDate}</p>
+          </div>
+          <div style="text-align: right;">
+            <p style="font-size: 12px; color: #64748b; text-transform: uppercase; margin: 0 0 5px 0;">Inquiry Number</p>
+            <p style="font-size: 16px; font-weight: bold; margin: 0;">${inquiry.number || ""}</p>
+          </div>
+        </div>
+
+        <div style="margin-bottom: 30px;">
+          <p style="font-size: 12px; color: #64748b; text-transform: uppercase; margin: 0 0 5px 0;">To:</p>
+          <p style="font-size: 14px; font-weight: bold; margin: 0;">${inquiry.recipientName || ""}</p>
+          <p style="font-size: 13px; margin: 5px 0 0 0;">${inquiry.recipientCompany || ""}</p>
+          <p style="font-size: 13px; margin: 3px 0 0 0; color: #0284c7;">${inquiry.recipientEmail || ""}</p>
+        </div>
+
+        <div style="margin-bottom: 30px;">
+          <p style="font-size: 16px; margin: 0 0 10px 0;">Dear ${inquiry.recipientName || ""},</p>
+          ${inquiry.inquiryBody ? `<p style="font-size: 14px; line-height: 1.6; white-space: pre-wrap; margin: 0 0 20px 0;">${inquiry.inquiryBody}</p>` : ""}
+        </div>
+
+        <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
+          <thead>
+            <tr style="background-color: #f8fafc; border-bottom: 2px solid #0284c7;">
+              <th style="padding: 12px; text-align: left; font-weight: 600; color: #0284c7;">Product Name</th>
+              <th style="padding: 12px; text-align: center; font-weight: 600; color: #0284c7;">Part Number</th>
+              <th style="padding: 12px; text-align: right; font-weight: 600; color: #0284c7;">Qty Required</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${tableRows}
+          </tbody>
+        </table>
+
+        <div style="margin-top: 30px; padding-top: 20px; border-top: 2px solid #e2e8f0;">
+          <p style="font-size: 12px; color: #64748b;">Best regards,</p>
+          <p style="font-size: 14px; font-weight: bold; margin: 10px 0 0 0;">${currentUserCompany || ""}</p>
+        </div>
+      </div>
+    `;
+
+    return html;
+  };
+
   // Delete inquiry from IndexedDB
   const deleteInquiryFromIndexedDB = async (
     inquiryId: string,
@@ -1775,7 +1881,9 @@ export default function App() {
 
       // CRITICAL: Save to Firestore so recipient can receive it
       if (!db) {
-        throw new Error("Firestore not connected. Inquiry saved locally but not sent.");
+        throw new Error(
+          "Firestore not connected. Inquiry saved locally but not sent.",
+        );
       }
 
       console.log(
@@ -1783,10 +1891,22 @@ export default function App() {
       );
 
       const sentInquiriesRef = collection(db, "sentInquiries");
+      // ✅ NORMALIZE: Use utility function for consistency
+      const normalizedSenderEmail = normalizeEmail(currentUserEmail);
+      const normalizedRecipientEmail = normalizeEmail(inquiry.recipientEmail);
+
+      console.log(`📝 NORMALIZED DATA:`);
+      console.log(`   📧 Sender: "${normalizedSenderEmail}"`);
+      console.log(`   📧 Recipient: "${normalizedRecipientEmail}"`);
+
+      // Generate formatted HTML for display to recipient
+      const formattedHtml = generateInquiryHtml(inquiry);
+
       const docRef = await addDoc(sentInquiriesRef, {
         ...inquiryData,
-        senderEmail: currentUser,
-        recipientEmail: inquiry.recipientEmail,
+        senderEmail: normalizedSenderEmail,
+        recipientEmail: normalizedRecipientEmail,
+        formattedHtml: formattedHtml,
         status: "sent",
         sentAt: new Date().toISOString(),
       });
@@ -1799,7 +1919,9 @@ export default function App() {
       alert(
         `✅ Inquiry ${inquiry.number} saved and sent to ${inquiry.recipientEmail}!`,
       );
-      console.log(`✅ Inquiry sent: ${inquiry.number} → ${inquiry.recipientEmail}`);
+      console.log(
+        `✅ Inquiry sent: ${inquiry.number} → ${inquiry.recipientEmail}`,
+      );
     } catch (error) {
       console.error("❌ Error saving inquiry:", error);
       alert(
@@ -1809,12 +1931,154 @@ export default function App() {
     }
   };
 
+  // Resend an inquiry to multiple vendors
+  const resendInquiryToVendors = async (
+    inquiry: any,
+    vendors: Array<{
+      id: string;
+      name: string;
+      email: string;
+      company?: string;
+    }>,
+  ) => {
+    if (!inquiry || vendors.length === 0) {
+      throw new Error("Invalid inquiry or no vendors selected");
+    }
+
+    if (!db) {
+      throw new Error(
+        "Firestore not connected. Cannot send inquiry to vendors.",
+      );
+    }
+
+    // Validate and normalize inquiry data - provide defaults for missing fields
+    const normalizedInquiry = {
+      id: inquiry.id || `INQ-${Date.now()}`,
+      number: inquiry.number || `INQ-${Date.now()}`,
+      date: inquiry.date || new Date().toISOString(),
+      recipientName: inquiry.recipientName || "",
+      recipientEmail: inquiry.recipientEmail || "",
+      recipientCompany: inquiry.recipientCompany || "",
+      inquiryBody: inquiry.inquiryBody || "", // Default to empty string if undefined
+      items: Array.isArray(inquiry.items) ? inquiry.items : [],
+      letterhead: inquiry.letterhead || null,
+      createdAt: inquiry.createdAt || new Date().toISOString(),
+      username: inquiry.username || currentUser,
+    };
+
+    console.log(`📋 VALIDATING INQUIRY DATA:`, {
+      number: normalizedInquiry.number,
+      hasBody: !!normalizedInquiry.inquiryBody,
+      itemsCount: normalizedInquiry.items.length,
+      hasLetterhead: !!normalizedInquiry.letterhead,
+    });
+
+    const sentInquiriesRef = collection(db, "sentInquiries");
+    const normalizedSenderEmail = currentUserEmail.toLowerCase().trim();
+    const formattedHtml = generateInquiryHtml(normalizedInquiry);
+
+    const results = {
+      success: [] as string[],
+      failed: [] as { vendor: string; error: string }[],
+    };
+
+    console.log(
+      `📤 Resending inquiry ${normalizedInquiry.number} to ${vendors.length} vendors`,
+    );
+
+    for (const vendor of vendors) {
+      try {
+        // ✅ NORMALIZE: Use utility function for consistency
+        const normalizedVendorEmail = normalizeEmail(vendor.email);
+
+        // ✅ CRITICAL: Validate vendor email is actually an email address (not username)
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(normalizedVendorEmail)) {
+          const errorMsg = `Invalid vendor email: "${vendor.email}" should be format like "name@domain.com". Vendor profile incomplete or not set up properly.`;
+          console.error(`   ❌ ${errorMsg}`);
+          results.failed.push({ vendor: vendor.name, error: errorMsg });
+          continue; // Skip this vendor
+        }
+
+        console.log(
+          `   📧 Sending to: ${vendor.name} (${normalizedVendorEmail})`,
+        );
+
+        // CRITICAL: Match the original send structure exactly so receiver can query/display correctly
+        const firestoreData = {
+          // Core inquiry fields (matches saveInquiryToHistory)
+          id: `${normalizedInquiry.id}-${vendor.id}-${Date.now()}`,
+          number: normalizedInquiry.number,
+          date: normalizedInquiry.date,
+          recipientName: vendor.name,
+          recipientEmail: normalizedVendorEmail, // ✅ NORMALIZED - KEY: This is what receiver queries
+          recipientCompany: (vendor.company as string) || vendor.name,
+          inquiryBody: normalizedInquiry.inquiryBody, // ← Always included (not conditional)
+          items: normalizedInquiry.items, // ← Always included (not conditional)
+          letterhead: normalizedInquiry.letterhead, // ← Always included
+          createdAt: new Date().toISOString(),
+          username: normalizedInquiry.username,
+
+          // Firestore metadata (matches saveInquiryToHistory)
+          senderEmail: normalizedSenderEmail, // ← For receiver to see who sent (also normalized)
+          formattedHtml: formattedHtml, // ← For beautiful display
+          status: "sent" as const,
+          sentAt: new Date().toISOString(),
+
+          // Resend tracking (extra metadata)
+          resendFrom: normalizedInquiry.id, // Track original inquiry ID
+          originalRecipient: normalizeEmail(normalizedInquiry.recipientEmail), // ✅ NORMALIZED
+          recipientContact: vendor, // Track vendor details
+        };
+
+        console.log(`   📝 FIRESTORE PAYLOAD:`, {
+          recipientEmail: firestoreData.recipientEmail,
+          senderEmail: firestoreData.senderEmail,
+          hasInquiryBody: !!firestoreData.inquiryBody,
+          itemsCount: firestoreData.items.length,
+          keys: Object.keys(firestoreData).sort(),
+        });
+
+        // ✅ Log exactly what will be queried by the receiver
+        console.log(
+          `   🔍 Receiver will query for: recipientEmail == "${firestoreData.recipientEmail}"`,
+        );
+        console.log(
+          `   ✨ This inquiry will appear in receiver's inbox when they have email: "${firestoreData.recipientEmail}"`,
+        );
+
+        const docRef = await addDoc(sentInquiriesRef, firestoreData);
+
+        console.log(
+          `   ✅ Sent to ${vendor.name} - Firestore Doc ID: ${docRef.id}`,
+        );
+        results.success.push(vendor.name);
+      } catch (error) {
+        const errorMsg =
+          error instanceof Error ? error.message : "Unknown error";
+        results.failed.push({ vendor: vendor.name, error: errorMsg });
+        console.error(`   ❌ Failed to send to ${vendor.name}:`, errorMsg);
+      }
+    }
+
+    console.log(
+      `📊 Resend Summary - Success: ${results.success.length}, Failed: ${results.failed.length}`,
+    );
+
+    return results;
+  };
+
   // Load incoming inquiries from Firestore
   const loadIncomingInquiries = async (userEmail?: string) => {
     try {
-      const email = userEmail || currentUser;
-      if (!db || !email) return [];
+      // ✅ NORMALIZE: Use utility function for consistency
+      const email = normalizeEmail(userEmail || currentUserEmail || "");
+      if (!db || !email) {
+        console.warn("⚠️ Cannot load incoming inquiries - no email provided");
+        return [];
+      }
 
+      console.log(`📥 Querying incoming inquiries for email: ${email}`);
       const sentInquiriesRef = collection(db, "sentInquiries");
       const incomingQuery = query(
         sentInquiriesRef,
@@ -1822,20 +2086,267 @@ export default function App() {
       );
       const snapshot = await getDocs(incomingQuery);
       const inquiries = snapshot.docs
-        .map((doc) => ({
-          ...doc.data(),
-          firestoreId: doc.id,
-        } as any))
+        .map(
+          (doc) =>
+            ({
+              ...doc.data(),
+              firestoreId: doc.id,
+            }) as any,
+        )
         .sort(
           (a: any, b: any) =>
             new Date(b.sentAt || 0).getTime() -
             new Date(a.sentAt || 0).getTime(),
         );
-      console.log(`Loaded ${inquiries.length} incoming inquiries for ${email}`);
+      console.log(
+        `✅ Loaded ${inquiries.length} incoming inquiries for email: ${email}`,
+      );
+      if (inquiries.length > 0) {
+        console.log(
+          `📥 Details:`,
+          inquiries.map((i) => ({ from: i.senderEmail, subject: i.number })),
+        );
+      }
       return inquiries;
     } catch (error) {
       console.error("Error loading incoming inquiries:", error);
       return [];
+    }
+  };
+
+  // Load accepted vendor connections for resending inquiries
+  const loadAcceptedVendorConnections = async () => {
+    try {
+      if (!db || !currentUser) {
+        console.warn(
+          "⚠️ Cannot load vendor connections - missing db or currentUser",
+        );
+        return;
+      }
+
+      console.log(`📋 Loading all vendor connections for user: ${currentUser}`);
+
+      const connectionsRef = collection(db, "vendorConnections");
+      const vendorDirectoryRef = collection(db, "vendorDirectory");
+      const userSettingsRef = collection(db, "userSettings");
+      const userProfilesRef = collection(db, "userProfiles");
+
+      // Query for all vendor connections (both directions)
+      const initiatedByMeQuery = query(
+        connectionsRef,
+        where("initiatedByUser", "==", currentUser),
+      );
+
+      const sentToMeQuery = query(
+        connectionsRef,
+        where("targetUser", "==", currentUser),
+      );
+
+      const [initiatedSnapshot, sentToMeSnapshot] = await Promise.all([
+        getDocs(initiatedByMeQuery),
+        getDocs(sentToMeQuery),
+      ]);
+
+      const vendors: Array<{
+        id: string;
+        name: string;
+        email: string;
+        company?: string;
+        status: "accepted" | "pending";
+      }> = [];
+      const seenIds = new Set<string>();
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+      // ✅ CRITICAL: Helper function to get vendor email with proper normalization
+      const getVendorEmail = async (
+        vendorId: string,
+        vendorDocSnap: any,
+        connectionData: any,
+      ): Promise<string | null> => {
+        // 1. Try userProfiles first (has CAPITAL LETTER emails in some cases)
+        try {
+          const userProfileSnap = await getDoc(doc(userProfilesRef, vendorId));
+          if (userProfileSnap.exists()) {
+            const profileData = userProfileSnap.data() as any;
+            if (profileData.email) {
+              const normalizedEmail = normalizeEmail(profileData.email);
+              if (emailRegex.test(normalizedEmail)) {
+                console.log(
+                  `   ✓ Got email from userProfiles: ${profileData.email} → normalized: ${normalizedEmail}`,
+                );
+                return normalizedEmail;
+              }
+            }
+          }
+        } catch (e) {
+          // Continue to next strategy
+        }
+
+        // 2. Try vendorDirectory
+        if (vendorDocSnap?.exists()) {
+          const vendorData = vendorDocSnap.data() as any;
+          if (vendorData.email) {
+            const normalizedEmail = normalizeEmail(vendorData.email);
+            if (emailRegex.test(normalizedEmail)) {
+              console.log(
+                `   ✓ Got email from vendorDirectory: ${vendorData.email} → normalized: ${normalizedEmail}`,
+              );
+              return normalizedEmail;
+            }
+          }
+        }
+
+        // 3. Try connection.companyData
+        if (connectionData?.companyData?.email) {
+          const normalizedEmail = normalizeEmail(
+            connectionData.companyData.email,
+          );
+          if (emailRegex.test(normalizedEmail)) {
+            console.log(
+              `   ✓ Got email from connection data: ${connectionData.companyData.email} → normalized: ${normalizedEmail}`,
+            );
+            return normalizedEmail;
+          }
+        }
+
+        // 4. Try userSettings (fallback for Firebase auth email)
+        try {
+          const userDocSnap = await getDoc(doc(userSettingsRef, vendorId));
+          if (userDocSnap.exists()) {
+            const userData = userDocSnap.data() as any;
+            if (userData.email) {
+              const normalizedEmail = normalizeEmail(userData.email);
+              if (emailRegex.test(normalizedEmail)) {
+                console.log(
+                  `   ✓ Got email from userSettings: ${userData.email} → normalized: ${normalizedEmail}`,
+                );
+                return normalizedEmail;
+              }
+            }
+          }
+        } catch (e) {
+          // Continue
+        }
+
+        // ❌ No valid email found anywhere
+        return null;
+      };
+
+      // Process vendors I initiated connection with
+      for (const docSnap of initiatedSnapshot.docs) {
+        const connection = docSnap.data() as any;
+        const targetUser = connection.targetUser;
+
+        if (seenIds.has(targetUser)) continue;
+        seenIds.add(targetUser);
+
+        try {
+          const vendorDocSnap = await getDoc(
+            doc(vendorDirectoryRef, targetUser),
+          );
+          const email = await getVendorEmail(
+            targetUser,
+            vendorDocSnap,
+            connection,
+          );
+
+          // Only add vendor if we have a valid email
+          if (!email) {
+            console.warn(
+              `⚠️ SKIPPING vendor "${connection.companyData?.name || targetUser}" - no valid email found. Vendor must update their profile.`,
+            );
+            continue;
+          }
+
+          const vendorData = vendorDocSnap.exists()
+            ? (vendorDocSnap.data() as any)
+            : null;
+          vendors.push({
+            id: targetUser,
+            name:
+              vendorData?.companyName ||
+              connection.companyData?.name ||
+              targetUser,
+            email: email, // ✅ NORMALIZED EMAIL
+            company: vendorData?.companyName || connection.companyData?.name,
+            status: connection.status || "pending",
+          });
+        } catch (error) {
+          console.warn(`⚠️ Error loading vendor ${targetUser}:`, error);
+        }
+      }
+
+      // Process vendors who initiated connections with me
+      for (const docSnap of sentToMeSnapshot.docs) {
+        const connection = docSnap.data() as any;
+        const initiatorUser = connection.initiatedByUser;
+
+        if (seenIds.has(initiatorUser)) continue;
+        seenIds.add(initiatorUser);
+
+        try {
+          const vendorDocSnap = await getDoc(
+            doc(vendorDirectoryRef, initiatorUser),
+          );
+          const email = await getVendorEmail(
+            initiatorUser,
+            vendorDocSnap,
+            connection,
+          );
+
+          // Only add vendor if we have a valid email
+          if (!email) {
+            console.warn(
+              `⚠️ SKIPPING vendor "${connection.companyData?.name || initiatorUser}" - no valid email found. Vendor must update their profile.`,
+            );
+            continue;
+          }
+
+          const vendorData = vendorDocSnap.exists()
+            ? (vendorDocSnap.data() as any)
+            : null;
+          vendors.push({
+            id: initiatorUser,
+            name:
+              vendorData?.companyName ||
+              connection.companyData?.name ||
+              initiatorUser,
+            email: email, // ✅ NORMALIZED EMAIL
+            company: vendorData?.companyName || connection.companyData?.name,
+            status: connection.status || "pending",
+          });
+        } catch (error) {
+          console.warn(`⚠️ Error loading vendor ${initiatorUser}:`, error);
+        }
+      }
+
+      setAcceptedVendorConnections(vendors);
+      const acceptedCount = vendors.filter(
+        (v) => v.status === "accepted",
+      ).length;
+      const pendingCount = vendors.filter((v) => v.status === "pending").length;
+      console.log(
+        `✅ Loaded ${vendors.length} vendor connections (${acceptedCount} accepted, ${pendingCount} pending)`,
+      );
+      console.log(
+        `   📍 acceptedVendorConnections state updated with ${vendors.length} vendors`,
+      );
+      if (vendors.length > 0) {
+        console.log(
+          `📋 Vendors:`,
+          vendors.map((v) => ({
+            name: v.name,
+            email: v.email,
+            status: v.status,
+          })),
+        );
+      } else {
+        console.warn(
+          `   ⚠️ WARNING: No vendors with valid emails found. Ensure vendors have updated their profiles with email addresses.`,
+        );
+      }
+    } catch (error) {
+      console.error("❌ Error loading vendor connections:", error);
     }
   };
 
@@ -3075,7 +3586,7 @@ export default function App() {
         activeTab: userActiveTab,
         quotationHistory: userQuotationHistory,
         inquiryHistory: userInquiryHistory,
-      } = await loadUserDataOnLogin(username);
+      } = await loadUserDataOnLogin(username, userEmail);
 
       setProducts(userProducts);
       setActiveSubmenu(
@@ -3092,9 +3603,11 @@ export default function App() {
           | "settings",
       );
       setCurrentUser(username);
+      // ✅ NORMALIZE: Ensure email is stored normalized throughout the app
+      setCurrentUserEmail(normalizeEmail(userEmail));
       localStorage.setItem("pspm_current_user", username);
       localStorage.setItem("pspm_auth_uid", uid);
-      cacheUserData(username, userEmail);
+      cacheUserData(username, normalizeEmail(userEmail));
       setIsLoggedIn(true);
       setLoginForm({ emailOrUsername: "", password: "" });
       setAuthError("");
@@ -3156,6 +3669,7 @@ export default function App() {
   const handleLogout = () => {
     setIsLoggedIn(false);
     setCurrentUser("");
+    setCurrentUserEmail("");
     localStorage.removeItem("pspm_current_user");
     setProducts([]);
     setMarketplaceItems([]);
@@ -7534,93 +8048,154 @@ export default function App() {
                         display: "flex",
                         gap: "12px",
                         marginBottom: "18px",
+                        alignItems: "center",
+                        justifyContent: "space-between",
                       }}
                     >
+                      <div style={{ display: "flex", gap: "12px" }}>
+                        <button
+                          onClick={() => {
+                            setActiveInquiriesView("incoming");
+                          }}
+                          style={{
+                            padding: "10px 16px",
+                            borderRadius: "6px",
+                            border:
+                              activeInquiriesView === "incoming"
+                                ? "2px solid #0284c7"
+                                : "1px solid #d0dce6",
+                            background:
+                              activeInquiriesView === "incoming"
+                                ? "#0284c7"
+                                : "#ffffff",
+                            color:
+                              activeInquiriesView === "incoming"
+                                ? "white"
+                                : "#1a365d",
+                            cursor: "pointer",
+                            fontSize: "14px",
+                            fontWeight: "600",
+                            transition: "all 0.25s ease",
+                            boxShadow:
+                              activeInquiriesView === "incoming"
+                                ? "0 4px 8px rgba(2, 132, 199, 0.2)"
+                                : "0 2px 4px rgba(0, 0, 0, 0.04)",
+                          }}
+                          onMouseEnter={(e) => {
+                            if (activeInquiriesView !== "incoming") {
+                              e.currentTarget.style.background = "#f0f9ff";
+                              e.currentTarget.style.borderColor = "#0284c7";
+                            }
+                          }}
+                          onMouseLeave={(e) => {
+                            if (activeInquiriesView !== "incoming") {
+                              e.currentTarget.style.background = "#ffffff";
+                              e.currentTarget.style.borderColor = "#d0dce6";
+                            }
+                          }}
+                        >
+                          Incoming Inquiries ({incomingInquiries.length})
+                        </button>
+                        <button
+                          onClick={() => {
+                            setActiveInquiriesView("outgoing");
+                          }}
+                          style={{
+                            padding: "10px 16px",
+                            borderRadius: "6px",
+                            border:
+                              activeInquiriesView === "outgoing"
+                                ? "2px solid #0284c7"
+                                : "1px solid #d0dce6",
+                            background:
+                              activeInquiriesView === "outgoing"
+                                ? "#0284c7"
+                                : "#ffffff",
+                            color:
+                              activeInquiriesView === "outgoing"
+                                ? "white"
+                                : "#1a365d",
+                            cursor: "pointer",
+                            fontSize: "14px",
+                            fontWeight: "600",
+                            transition: "all 0.25s ease",
+                            boxShadow:
+                              activeInquiriesView === "outgoing"
+                                ? "0 4px 8px rgba(2, 132, 199, 0.2)"
+                                : "0 2px 4px rgba(0, 0, 0, 0.04)",
+                          }}
+                          onMouseEnter={(e) => {
+                            if (activeInquiriesView !== "outgoing") {
+                              e.currentTarget.style.background = "#f0f9ff";
+                              e.currentTarget.style.borderColor = "#0284c7";
+                            }
+                          }}
+                          onMouseLeave={(e) => {
+                            if (activeInquiriesView !== "outgoing") {
+                              e.currentTarget.style.background = "#ffffff";
+                              e.currentTarget.style.borderColor = "#d0dce6";
+                            }
+                          }}
+                        >
+                          Outgoing Inquiries ({inquiryHistory.length})
+                        </button>
+                      </div>
                       <button
-                        onClick={() => {
-                          setActiveInquiriesView("incoming");
+                        onClick={async () => {
+                          if (
+                            activeInquiriesView === "incoming" &&
+                            currentUserEmail
+                          ) {
+                            setIsRefreshingInquiries(true);
+                            try {
+                              const inquiries =
+                                await loadIncomingInquiries(currentUserEmail);
+                              setIncomingInquiries(inquiries);
+                              console.log(
+                                `✅ Refreshed incoming inquiries: ${inquiries.length} found`,
+                              );
+                            } catch (error) {
+                              console.error(
+                                "❌ Failed to refresh inquiries:",
+                                error,
+                              );
+                            } finally {
+                              setIsRefreshingInquiries(false);
+                            }
+                          }
                         }}
                         style={{
                           padding: "10px 16px",
                           borderRadius: "6px",
-                          border:
-                            activeInquiriesView === "incoming"
-                              ? "2px solid #0284c7"
-                              : "1px solid #d0dce6",
-                          background:
-                            activeInquiriesView === "incoming"
-                              ? "#0284c7"
-                              : "#ffffff",
-                          color:
-                            activeInquiriesView === "incoming"
-                              ? "white"
-                              : "#1a365d",
-                          cursor: "pointer",
+                          border: "1px solid #d0dce6",
+                          background: isRefreshingInquiries
+                            ? "#e0f2fe"
+                            : "#ffffff",
+                          color: "#1a365d",
+                          cursor: isRefreshingInquiries
+                            ? "not-allowed"
+                            : "pointer",
                           fontSize: "14px",
                           fontWeight: "600",
                           transition: "all 0.25s ease",
-                          boxShadow:
-                            activeInquiriesView === "incoming"
-                              ? "0 4px 8px rgba(2, 132, 199, 0.2)"
-                              : "0 2px 4px rgba(0, 0, 0, 0.04)",
+                          boxShadow: "0 2px 4px rgba(0, 0, 0, 0.04)",
+                          opacity: isRefreshingInquiries ? 0.7 : 1,
                         }}
                         onMouseEnter={(e) => {
-                          if (activeInquiriesView !== "incoming") {
+                          if (!isRefreshingInquiries) {
                             e.currentTarget.style.background = "#f0f9ff";
                             e.currentTarget.style.borderColor = "#0284c7";
                           }
                         }}
                         onMouseLeave={(e) => {
-                          if (activeInquiriesView !== "incoming") {
+                          if (!isRefreshingInquiries) {
                             e.currentTarget.style.background = "#ffffff";
                             e.currentTarget.style.borderColor = "#d0dce6";
                           }
                         }}
+                        disabled={isRefreshingInquiries}
                       >
-                        Incoming Inquiries ({incomingInquiries.length})
-                      </button>
-                      <button
-                        onClick={() => {
-                          setActiveInquiriesView("outgoing");
-                        }}
-                        style={{
-                          padding: "10px 16px",
-                          borderRadius: "6px",
-                          border:
-                            activeInquiriesView === "outgoing"
-                              ? "2px solid #0284c7"
-                              : "1px solid #d0dce6",
-                          background:
-                            activeInquiriesView === "outgoing"
-                              ? "#0284c7"
-                              : "#ffffff",
-                          color:
-                            activeInquiriesView === "outgoing"
-                              ? "white"
-                              : "#1a365d",
-                          cursor: "pointer",
-                          fontSize: "14px",
-                          fontWeight: "600",
-                          transition: "all 0.25s ease",
-                          boxShadow:
-                            activeInquiriesView === "outgoing"
-                              ? "0 4px 8px rgba(2, 132, 199, 0.2)"
-                              : "0 2px 4px rgba(0, 0, 0, 0.04)",
-                        }}
-                        onMouseEnter={(e) => {
-                          if (activeInquiriesView !== "outgoing") {
-                            e.currentTarget.style.background = "#f0f9ff";
-                            e.currentTarget.style.borderColor = "#0284c7";
-                          }
-                        }}
-                        onMouseLeave={(e) => {
-                          if (activeInquiriesView !== "outgoing") {
-                            e.currentTarget.style.background = "#ffffff";
-                            e.currentTarget.style.borderColor = "#d0dce6";
-                          }
-                        }}
-                      >
-                        Outgoing Inquiries ({inquiryHistory.length})
+                        {isRefreshingInquiries ? "Refreshing..." : "Refresh"}
                       </button>
                     </div>
                   </div>
@@ -7758,9 +8333,7 @@ export default function App() {
                                   style={{
                                     borderBottom: "1px solid #e2e8f0",
                                     background:
-                                      index % 2 === 0
-                                        ? "#ffffff"
-                                        : "#f9fafb",
+                                      index % 2 === 0 ? "#ffffff" : "#f9fafb",
                                   }}
                                 >
                                   <td
@@ -7796,7 +8369,7 @@ export default function App() {
                                     }}
                                   >
                                     {new Date(
-                                      inquiry.sentAt
+                                      inquiry.sentAt,
                                     ).toLocaleDateString()}
                                   </td>
                                   <td
@@ -7872,10 +8445,14 @@ export default function App() {
                       items={inquiries}
                       history={inquiryHistory}
                       letterhead={inquiryLetterhead}
+                      vendors={acceptedVendorConnections}
                       preFillRecipient={preFillRecipient || undefined}
                       onGeneratePDF={async (inquiry, letterRef) => {
                         if (inquiry && letterRef) {
-                          await generateInquiryPDFFromLetter(inquiry, letterRef);
+                          await generateInquiryPDFFromLetter(
+                            inquiry,
+                            letterRef,
+                          );
                         } else {
                           alert("Please compose an inquiry first");
                         }
@@ -7897,6 +8474,18 @@ export default function App() {
                           // Delete from IndexedDB
                           await deleteInquiryFromIndexedDB(id);
                         }
+                      }}
+                      onResendToVendors={async (inquiry, vendors) => {
+                        return await resendInquiryToVendors(inquiry, vendors);
+                      }}
+                      onNavigateToVendors={() => {
+                        setActiveWarehouseTab("vendors");
+                      }}
+                      onRefreshVendors={async () => {
+                        console.log(
+                          "🔄 Refreshing vendors for resend modal...",
+                        );
+                        await loadAcceptedVendorConnections();
                       }}
                     />
                   )}
@@ -10765,292 +11354,427 @@ export default function App() {
                 <span>Inquiry Details</span>
               </h2>
 
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "1fr 1fr",
-                  gap: "16px",
-                  marginBottom: "24px",
-                  padding: "16px",
-                  background: "#f8fafc",
-                  borderRadius: "8px",
-                  border: "1px solid #e2e8f0",
-                }}
-              >
-                <div>
-                  <p
-                    style={{
-                      margin: "0 0 4px 0",
-                      fontSize: "12px",
-                      fontWeight: "700",
-                      color: "#5b7c99",
-                      textTransform: "uppercase",
-                      letterSpacing: "0.3px",
-                    }}
-                  >
-                    Inquiry ID
-                  </p>
-                  <p
-                    style={{
-                      margin: "0",
-                      fontSize: "13px",
-                      fontWeight: "600",
-                      color: "#1a365d",
-                      wordBreak: "break-all",
-                    }}
-                  >
-                    {selectedInquiryForPreview.number ||
-                      selectedInquiryForPreview.id.substring(0, 8)}
-                  </p>
-                </div>
-                <div>
-                  <p
-                    style={{
-                      margin: "0 0 4px 0",
-                      fontSize: "12px",
-                      fontWeight: "700",
-                      color: "#5b7c99",
-                      textTransform: "uppercase",
-                      letterSpacing: "0.3px",
-                    }}
-                  >
-                    Total Items
-                  </p>
-                  <p
-                    style={{
-                      margin: "0",
-                      fontSize: "13px",
-                      fontWeight: "600",
-                      color: "#1a365d",
-                    }}
-                  >
-                    {(() => {
-                      const items = selectedInquiryForPreview.items || [];
-                      const totalUnits = items.reduce(
-                        (sum: number, item: any) =>
-                          sum + (item.qty || item.quantity || 0),
-                        0,
-                      );
-                      return `${items.length} product(s), ${totalUnits} unit(s)`;
-                    })()}
-                  </p>
-                </div>
-              </div>
-
-              <h3
-                style={{
-                  margin: "0 0 16px 0",
-                  fontSize: "16px",
-                  fontWeight: "700",
-                  color: "#1a365d",
-                }}
-              >
-                Items in Inquiry
-              </h3>
-
-              <div
-                style={{
-                  marginBottom: "24px",
-                  border: "1px solid #e2e8f0",
-                  borderRadius: "8px",
-                  overflow: "hidden",
-                }}
-              >
-                <table
-                  style={{
-                    width: "100%",
-                    borderCollapse: "collapse",
+              {selectedInquiryForPreview.formattedHtml ? (
+                <div
+                  dangerouslySetInnerHTML={{
+                    __html: selectedInquiryForPreview.formattedHtml,
                   }}
-                >
-                  <thead>
-                    <tr
+                  style={{ marginBottom: "24px" }}
+                />
+              ) : (
+                <>
+                  {selectedInquiryForPreview.letterhead && (
+                    <div
                       style={{
+                        marginBottom: "24px",
+                        padding: "16px",
                         background: "#f8fafc",
-                        borderBottom: "1px solid #e2e8f0",
+                        borderRadius: "8px",
+                        border: "1px solid #e2e8f0",
                       }}
                     >
-                      <th
+                      <img
+                        src={selectedInquiryForPreview.letterhead.imageBase64}
+                        alt="Letterhead"
                         style={{
-                          padding: "12px",
-                          textAlign: "left",
-                          fontWeight: "700",
-                          color: "#5b7c99",
-                          fontSize: "12px",
-                          textTransform: "uppercase",
-                          letterSpacing: "0.3px",
+                          maxWidth: "100%",
+                          height: "auto",
+                          borderRadius: "4px",
                         }}
-                      >
-                        Product Name
-                      </th>
-                      <th
-                        style={{
-                          padding: "12px",
-                          textAlign: "center",
-                          fontWeight: "700",
-                          color: "#5b7c99",
-                          fontSize: "12px",
-                          textTransform: "uppercase",
-                          letterSpacing: "0.3px",
-                        }}
-                      >
-                        Qty
-                      </th>
-                      <th
-                        style={{
-                          padding: "12px",
-                          textAlign: "right",
-                          fontWeight: "700",
-                          color: "#5b7c99",
-                          fontSize: "12px",
-                          textTransform: "uppercase",
-                          letterSpacing: "0.3px",
-                        }}
-                      >
-                        Unit Price
-                      </th>
-                      <th
-                        style={{
-                          padding: "12px",
-                          textAlign: "right",
-                          fontWeight: "700",
-                          color: "#5b7c99",
-                          fontSize: "12px",
-                          textTransform: "uppercase",
-                          letterSpacing: "0.3px",
-                        }}
-                      >
-                        Total
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {selectedInquiryForPreview.items &&
-                    selectedInquiryForPreview.items.length > 0 ? (
-                      selectedInquiryForPreview.items.map(
-                        (item: any, index: number) => {
-                          const qty = item.qty || item.quantity || 0;
-                          const price = item.price || 0;
-                          const currency = item.currency || "USD";
-                          return (
-                            <tr
-                              key={index}
-                              style={{
-                                borderBottom: "1px solid #e2e8f0",
-                                background:
-                                  index % 2 === 0 ? "#ffffff" : "#f8fafc",
-                              }}
-                            >
-                              <td
-                                style={{
-                                  padding: "12px",
-                                  color: "#1a365d",
-                                  fontWeight: "600",
-                                  fontSize: "13px",
-                                }}
-                              >
-                                {item.name}
-                              </td>
-                              <td
-                                style={{
-                                  padding: "12px",
-                                  textAlign: "center",
-                                  color: "#64748b",
-                                  fontSize: "13px",
-                                }}
-                              >
-                                {qty}
-                              </td>
-                              <td
-                                style={{
-                                  padding: "12px",
-                                  textAlign: "right",
-                                  color: "#64748b",
-                                  fontSize: "13px",
-                                }}
-                              >
-                                {currency} {formatNumber(price)}
-                              </td>
-                              <td
-                                style={{
-                                  padding: "12px",
-                                  textAlign: "right",
-                                  color: "#1a365d",
-                                  fontWeight: "600",
-                                  fontSize: "13px",
-                                }}
-                              >
-                                {currency} {formatNumber(price * qty)}
-                              </td>
-                            </tr>
-                          );
-                        },
-                      )
-                    ) : (
-                      <tr>
-                        <td
-                          colSpan={4}
-                          style={{
-                            padding: "16px",
-                            textAlign: "center",
-                            color: "#64748b",
-                            fontSize: "13px",
-                          }}
-                        >
-                          No items in this inquiry
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
+                      />
+                    </div>
+                  )}
 
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "flex-end",
-                  padding: "16px",
-                  background: "#f8fafc",
-                  borderTop: "1px solid #e2e8f0",
-                  borderRadius: "0 0 8px 8px",
-                  marginBottom: "24px",
-                }}
-              >
-                <div>
-                  <p
+                  <div
                     style={{
-                      margin: "0 0 8px 0",
-                      fontSize: "12px",
-                      fontWeight: "700",
-                      color: "#5b7c99",
-                      textTransform: "uppercase",
-                      letterSpacing: "0.3px",
+                      display: "grid",
+                      gridTemplateColumns: "1fr 1fr",
+                      gap: "16px",
+                      marginBottom: "24px",
+                      padding: "16px",
+                      background: "#f8fafc",
+                      borderRadius: "8px",
+                      border: "1px solid #e2e8f0",
                     }}
                   >
-                    Total Inquiry Amount
-                  </p>
-                  <p
+                    <div>
+                      <p
+                        style={{
+                          margin: "0 0 4px 0",
+                          fontSize: "12px",
+                          fontWeight: "700",
+                          color: "#5b7c99",
+                          textTransform: "uppercase",
+                          letterSpacing: "0.3px",
+                        }}
+                      >
+                        From
+                      </p>
+                      <p
+                        style={{
+                          margin: "0",
+                          fontSize: "13px",
+                          fontWeight: "600",
+                          color: "#1a365d",
+                        }}
+                      >
+                        {selectedInquiryForPreview.senderEmail || "Unknown"}
+                      </p>
+                    </div>
+                    <div>
+                      <p
+                        style={{
+                          margin: "0 0 4px 0",
+                          fontSize: "12px",
+                          fontWeight: "700",
+                          color: "#5b7c99",
+                          textTransform: "uppercase",
+                          letterSpacing: "0.3px",
+                        }}
+                      >
+                        Date
+                      </p>
+                      <p
+                        style={{
+                          margin: "0",
+                          fontSize: "13px",
+                          fontWeight: "600",
+                          color: "#1a365d",
+                        }}
+                      >
+                        {selectedInquiryForPreview.date || "N/A"}
+                      </p>
+                    </div>
+                  </div>
+
+                  {selectedInquiryForPreview.inquiryBody && (
+                    <div
+                      style={{
+                        marginBottom: "24px",
+                        padding: "16px",
+                        background: "#f8fafc",
+                        borderRadius: "8px",
+                        border: "1px solid #e2e8f0",
+                      }}
+                    >
+                      <p
+                        style={{
+                          margin: "0 0 8px 0",
+                          fontSize: "12px",
+                          fontWeight: "700",
+                          color: "#5b7c99",
+                          textTransform: "uppercase",
+                          letterSpacing: "0.3px",
+                        }}
+                      >
+                        Inquiry Description
+                      </p>
+                      <p
+                        style={{
+                          margin: "0",
+                          fontSize: "14px",
+                          color: "#1a365d",
+                          lineHeight: "1.6",
+                          whiteSpace: "pre-wrap",
+                          wordWrap: "break-word",
+                        }}
+                      >
+                        {selectedInquiryForPreview.inquiryBody}
+                      </p>
+                    </div>
+                  )}
+
+                  <div
                     style={{
-                      margin: "0",
-                      fontSize: "18px",
-                      fontWeight: "800",
+                      display: "grid",
+                      gridTemplateColumns: "1fr 1fr",
+                      gap: "16px",
+                      marginBottom: "24px",
+                      padding: "16px",
+                      background: "#f8fafc",
+                      borderRadius: "8px",
+                      border: "1px solid #e2e8f0",
+                    }}
+                  >
+                    <div>
+                      <p
+                        style={{
+                          margin: "0 0 4px 0",
+                          fontSize: "12px",
+                          fontWeight: "700",
+                          color: "#5b7c99",
+                          textTransform: "uppercase",
+                          letterSpacing: "0.3px",
+                        }}
+                      >
+                        Inquiry ID
+                      </p>
+                      <p
+                        style={{
+                          margin: "0",
+                          fontSize: "13px",
+                          fontWeight: "600",
+                          color: "#1a365d",
+                          wordBreak: "break-all",
+                        }}
+                      >
+                        {selectedInquiryForPreview.number ||
+                          selectedInquiryForPreview.id.substring(0, 8)}
+                      </p>
+                    </div>
+                    <div>
+                      <p
+                        style={{
+                          margin: "0 0 4px 0",
+                          fontSize: "12px",
+                          fontWeight: "700",
+                          color: "#5b7c99",
+                          textTransform: "uppercase",
+                          letterSpacing: "0.3px",
+                        }}
+                      >
+                        Total Items
+                      </p>
+                      <p
+                        style={{
+                          margin: "0",
+                          fontSize: "13px",
+                          fontWeight: "600",
+                          color: "#1a365d",
+                        }}
+                      >
+                        {(() => {
+                          const items = selectedInquiryForPreview.items || [];
+                          const totalUnits = items.reduce(
+                            (sum: number, item: any) =>
+                              sum + (item.qty || item.quantity || 0),
+                            0,
+                          );
+                          return `${items.length} product(s), ${totalUnits} unit(s)`;
+                        })()}
+                      </p>
+                    </div>
+                  </div>
+
+                  <h3
+                    style={{
+                      margin: "0 0 16px 0",
+                      fontSize: "16px",
+                      fontWeight: "700",
                       color: "#1a365d",
                     }}
                   >
-                    {(() => {
-                      const items = selectedInquiryForPreview.items || [];
-                      const totalPrice = items.reduce(
-                        (sum: number, item: any) =>
-                          sum +
-                          (item.price || 0) * (item.qty || item.quantity || 0),
-                        0,
-                      );
-                      const currency =
-                        items.length > 0 ? items[0].currency || "USD" : "USD";
-                      return `${currency} ${formatNumber(totalPrice)}`;
-                    })()}
-                  </p>
-                </div>
-              </div>
+                    Items in Inquiry
+                  </h3>
+
+                  <div
+                    style={{
+                      marginBottom: "24px",
+                      border: "1px solid #e2e8f0",
+                      borderRadius: "8px",
+                      overflow: "hidden",
+                    }}
+                  >
+                    <table
+                      style={{
+                        width: "100%",
+                        borderCollapse: "collapse",
+                      }}
+                    >
+                      <thead>
+                        <tr
+                          style={{
+                            background: "#f8fafc",
+                            borderBottom: "1px solid #e2e8f0",
+                          }}
+                        >
+                          <th
+                            style={{
+                              padding: "12px",
+                              textAlign: "left",
+                              fontWeight: "700",
+                              color: "#5b7c99",
+                              fontSize: "12px",
+                              textTransform: "uppercase",
+                              letterSpacing: "0.3px",
+                            }}
+                          >
+                            Product Name
+                          </th>
+                          <th
+                            style={{
+                              padding: "12px",
+                              textAlign: "center",
+                              fontWeight: "700",
+                              color: "#5b7c99",
+                              fontSize: "12px",
+                              textTransform: "uppercase",
+                              letterSpacing: "0.3px",
+                            }}
+                          >
+                            Qty
+                          </th>
+                          <th
+                            style={{
+                              padding: "12px",
+                              textAlign: "right",
+                              fontWeight: "700",
+                              color: "#5b7c99",
+                              fontSize: "12px",
+                              textTransform: "uppercase",
+                              letterSpacing: "0.3px",
+                            }}
+                          >
+                            Unit Price
+                          </th>
+                          <th
+                            style={{
+                              padding: "12px",
+                              textAlign: "right",
+                              fontWeight: "700",
+                              color: "#5b7c99",
+                              fontSize: "12px",
+                              textTransform: "uppercase",
+                              letterSpacing: "0.3px",
+                            }}
+                          >
+                            Total
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {selectedInquiryForPreview.items &&
+                        selectedInquiryForPreview.items.length > 0 ? (
+                          selectedInquiryForPreview.items.map(
+                            (item: any, index: number) => {
+                              const qty = item.qty || item.quantity || 0;
+                              const price = item.price || 0;
+                              const currency = item.currency || "USD";
+                              return (
+                                <tr
+                                  key={index}
+                                  style={{
+                                    borderBottom: "1px solid #e2e8f0",
+                                    background:
+                                      index % 2 === 0 ? "#ffffff" : "#f8fafc",
+                                  }}
+                                >
+                                  <td
+                                    style={{
+                                      padding: "12px",
+                                      color: "#1a365d",
+                                      fontWeight: "600",
+                                      fontSize: "13px",
+                                    }}
+                                  >
+                                    {item.name}
+                                  </td>
+                                  <td
+                                    style={{
+                                      padding: "12px",
+                                      textAlign: "center",
+                                      color: "#64748b",
+                                      fontSize: "13px",
+                                    }}
+                                  >
+                                    {qty}
+                                  </td>
+                                  <td
+                                    style={{
+                                      padding: "12px",
+                                      textAlign: "right",
+                                      color: "#64748b",
+                                      fontSize: "13px",
+                                    }}
+                                  >
+                                    {currency} {formatNumber(price)}
+                                  </td>
+                                  <td
+                                    style={{
+                                      padding: "12px",
+                                      textAlign: "right",
+                                      color: "#1a365d",
+                                      fontWeight: "600",
+                                      fontSize: "13px",
+                                    }}
+                                  >
+                                    {currency} {formatNumber(price * qty)}
+                                  </td>
+                                </tr>
+                              );
+                            },
+                          )
+                        ) : (
+                          <tr>
+                            <td
+                              colSpan={4}
+                              style={{
+                                padding: "16px",
+                                textAlign: "center",
+                                color: "#64748b",
+                                fontSize: "13px",
+                              }}
+                            >
+                              No items in this inquiry
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "flex-end",
+                      padding: "16px",
+                      background: "#f8fafc",
+                      borderTop: "1px solid #e2e8f0",
+                      borderRadius: "0 0 8px 8px",
+                      marginBottom: "24px",
+                    }}
+                  >
+                    <div>
+                      <p
+                        style={{
+                          margin: "0 0 8px 0",
+                          fontSize: "12px",
+                          fontWeight: "700",
+                          color: "#5b7c99",
+                          textTransform: "uppercase",
+                          letterSpacing: "0.3px",
+                        }}
+                      >
+                        Total Inquiry Amount
+                      </p>
+                      <p
+                        style={{
+                          margin: "0",
+                          fontSize: "18px",
+                          fontWeight: "800",
+                          color: "#1a365d",
+                        }}
+                      >
+                        {(() => {
+                          const items = selectedInquiryForPreview.items || [];
+                          const totalPrice = items.reduce(
+                            (sum: number, item: any) =>
+                              sum +
+                              (item.price || 0) *
+                                (item.qty || item.quantity || 0),
+                            0,
+                          );
+                          const currency =
+                            items.length > 0
+                              ? items[0].currency || "USD"
+                              : "USD";
+                          return `${currency} ${formatNumber(totalPrice)}`;
+                        })()}
+                      </p>
+                    </div>
+                  </div>
+                </>
+              )}
 
               <button
                 onClick={() => {
