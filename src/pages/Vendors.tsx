@@ -294,9 +294,7 @@ export default function Vendors({
       // PRIORITY 1: Search by company name in vendorDirectory (has all email/company data)
       let allDocs: any[] = [];
       try {
-        console.log(
-          "📋 Querying vendorDirectory by companyNameSearchable...",
-        );
+        console.log("📋 Querying vendorDirectory by companyNameSearchable...");
         const companyQuery = query(
           vendorSearchRef,
           where("companyNameSearchable", ">=", searchLower),
@@ -516,8 +514,11 @@ export default function Vendors({
 
         // For display: Use original (non-searchable) values with fallback
         const displayCompanyName =
-          doc.data().companyName || doc.data().username || "";
-        const displayEmail = doc.data().email || "";
+          doc.data().companyName ||
+          doc.data().username ||
+          doc.data().email.split("@")[0] ||
+          "Unknown Vendor";
+        const displayEmail = doc.data().email || "No email";
 
         console.log(
           `🔍 VENDOR: ${doc.data().username} | companyName: "${displayCompanyName}" | email: "${displayEmail}"`,
@@ -1320,8 +1321,8 @@ export default function Vendors({
                     const matchedField = nameMatches
                       ? "Company"
                       : emailMatches
-                          ? "Email"
-                          : "Match";
+                        ? "Email"
+                        : "Match";
 
                     return (
                       <div
@@ -1385,55 +1386,56 @@ export default function Vendors({
                           >
                             {company.email}
                           </p>
-                        {company.phone && (
-                          <p
-                            style={{
-                              margin: "0 0 4px 0",
-                              fontSize: "12px",
-                              color: "#64748b",
-                            }}
-                          >
-                            {company.phone}
-                          </p>
-                        )}
-                        {company.website && (
-                          <p
-                            style={{
-                              margin: "0",
-                              fontSize: "12px",
-                              color: "#64748b",
-                            }}
-                          >
-                            {company.website}
-                          </p>
-                        )}
+                          {company.phone && (
+                            <p
+                              style={{
+                                margin: "0 0 4px 0",
+                                fontSize: "12px",
+                                color: "#64748b",
+                              }}
+                            >
+                              {company.phone}
+                            </p>
+                          )}
+                          {company.website && (
+                            <p
+                              style={{
+                                margin: "0",
+                                fontSize: "12px",
+                                color: "#64748b",
+                              }}
+                            >
+                              {company.website}
+                            </p>
+                          )}
+                        </div>
+                        <button
+                          onClick={() => handleAddCompanyClick(company)}
+                          style={{
+                            marginTop: "12px",
+                            padding: "10px 16px",
+                            background: "#0284c7",
+                            color: "white",
+                            border: "none",
+                            borderRadius: "6px",
+                            cursor: "pointer",
+                            fontSize: "13px",
+                            fontWeight: "600",
+                            transition: "all 0.25s ease",
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.background = "#0369a1";
+                            e.currentTarget.style.transform =
+                              "translateY(-2px)";
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.background = "#0284c7";
+                            e.currentTarget.style.transform = "translateY(0)";
+                          }}
+                        >
+                          Add Connection
+                        </button>
                       </div>
-                      <button
-                        onClick={() => handleAddCompanyClick(company)}
-                        style={{
-                          marginTop: "12px",
-                          padding: "10px 16px",
-                          background: "#0284c7",
-                          color: "white",
-                          border: "none",
-                          borderRadius: "6px",
-                          cursor: "pointer",
-                          fontSize: "13px",
-                          fontWeight: "600",
-                          transition: "all 0.25s ease",
-                        }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.background = "#0369a1";
-                          e.currentTarget.style.transform = "translateY(-2px)";
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.background = "#0284c7";
-                          e.currentTarget.style.transform = "translateY(0)";
-                        }}
-                      >
-                        Add Connection
-                      </button>
-                    </div>
                     );
                   })}
                 </div>
