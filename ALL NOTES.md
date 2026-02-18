@@ -3851,6 +3851,35 @@ User B (Buyer):
 - **Status**:​ Build successful, 503 modules, 35.53s
 - **Next Step**: User to test and share console output, then we'll know exactly where to fix
 
+## 18 Feb 2026 - 10:45 AM - Collection Architecture Refactor
+- **Implemented Proper Multi-Collection Structure**:
+  - `userSettings`: Basic account data (username, password, activeTab, lastUpdated)
+  - `vendorDirectory`: Vendor discovery & communication (email, company, searchable fields, contact info)
+  - `vendorMarketplace`: (Future) Marketplace listings & products (separate from vendor contact data)
+  - `PDFTemplates`: (Existing) Letterhead & document templates (separate from vendor data)
+- **Why Separate Collections**:
+  - userSettings: Account credentials & preferences (private)
+  - vendorDirectory: Business info for vendor discovery (shared for search)
+  - Prevents mixing authentication data with business directory data
+  - Allows different Firestore security rules per collection
+  - Enables independent scaling & backup strategies
+- **New signups** now write to both userSettings + vendorDirectory automatically
+- **Migration Function**: `migrateUsersToVendorDirectory()` copies all existing users from userSettings to vendorDirectory
+  - Runs once per login session (checks if already migrated to avoid duplicates)
+  - Ensures legacy users appear in vendor search
+- **Search Updated**: Now queries vendorDirectory collection first (where all vendor data is stored)
+- **Vendor Search Fields** in vendorDirectory:
+  - username, usernameSearchable
+  - email, emailSearchable
+  - companyName, companyNameSearchable
+  - phone, address, website
+  - createdAt, migratedAt (timestamp when migrated from userSettings)
+- **Build Status**: 14.83s, zero errors
+- **Next Steps**:
+  1. Test vendor search to ensure it finds other users via vendorDirectory
+  2. Verify migration runs and populates vendorDirectory with all existing users
+  3. Test communication workflow with vendors found in search
+
 
 
 

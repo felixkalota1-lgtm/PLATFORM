@@ -812,6 +812,71 @@ export default function App() {
     }
   };
 
+  // MIGRATION: Copy all existing users from userSettings to vendorDirectory for vendor discovery
+  const migrateUsersToVendorDirectory = async () => {
+    try {
+      if (!db) {
+        console.log("⏭️  Migration: Skipped (localStorage mode)");
+        return;
+      }
+
+      console.log("\n════════════════════════════════════════════════════════════");
+      console.log("🔄 MIGRATION: Copying all vendors to vendorDirectory collection");
+      console.log("════════════════════════════════════════════════════════════\n");
+
+      // Fetch all users from userSettings
+      const usersRef = collection(db, "userSettings");
+      const allUsersDocs = await getDocs(usersRef);
+
+      console.log(`📊 Found ${allUsersDocs.docs.length} users in userSettings`);
+
+      let migratedCount = 0;
+      let skippedCount = 0;
+
+      for (const userDoc of allUsersDocs.docs) {
+        const userData = userDoc.data();
+        const username = userData.username;
+
+        // Check if already exists in vendorDirectory
+        const vendorDocRef = doc(db, "vendorDirectory", username);
+        const vendorSnap = await getDoc(vendorDocRef);
+
+        if (!vendorSnap.exists()) {
+          // Prepare vendor directory entry with searchable fields
+          const vendorData = {
+            username: username,
+            usernameSearchable: (username || "").toLowerCase().trim(),
+            email: userData.email || "",
+            emailSearchable: (userData.email || "").toLowerCase().trim(),
+            companyName: userData.companyName || "",
+            companyNameSearchable: (userData.companyName || "").toLowerCase().trim(),
+            phone: userData.phone || "",
+            address: userData.address || "",
+            website: userData.website || "",
+            createdAt: userData.createdAt || new Date().toISOString(),
+            migratedAt: new Date().toISOString(),
+          };
+
+          // Copy to vendorDirectory
+          await setDoc(vendorDocRef, vendorData);
+          console.log(`✅ Migrated: ${username}`);
+          migratedCount++;
+        } else {
+          console.log(`⏭️  Already exists: ${username}`);
+          skippedCount++;
+        }
+      }
+
+      console.log("\n════════════════════════════════════════════════════════════");
+      console.log(
+        `✅ MIGRATION COMPLETE: ${migratedCount} users migrated, ${skippedCount} already present`,
+      );
+      console.log("════════════════════════════════════════════════════════════\n");
+    } catch (error) {
+      console.error("❌ Migration error:", error);
+    }
+  };
+
   // DIAGNOSTIC: Check what's actually stored in Firestore
   const diagnosticCheckCollections = async (username: string) => {
     console.log(
@@ -868,14 +933,14 @@ export default function App() {
         console.log("✗ userSettings/", username, "DOES NOT EXIST");
       }
 
-      // Check vendorSearchIndex collection
-      console.log("\n📋 Checking vendorSearchIndex collection...");
-      const vendorSearchRef = doc(db, "vendorSearchIndex", username);
-      const vendorSearchSnap = await getDoc(vendorSearchRef);
+      // Check vendorDirectory collection
+      console.log("\n📋 Checking vendorDirectory collection...");
+      const vendorDirRef = doc(db, "vendorDirectory", username);
+      const vendorDirSnap = await getDoc(vendorDirRef);
 
-      if (vendorSearchSnap.exists()) {
-        const data = vendorSearchSnap.data();
-        console.log("✓ vendorSearchIndex/", username, "exists");
+      if (vendorDirSnap.exists()) {
+        const data = vendorDirSnap.data();
+        console.log("✓ vendorDirectory/", username, "exists");
         console.log("  Fields present:", Object.keys(data || {}));
         console.log("  Full data:", data);
         console.log("  username:", data?.username, "(should be present)");
@@ -898,7 +963,7 @@ export default function App() {
         );
       } else {
         console.log(
-          "✗ vendorSearchIndex/",
+          "✗ vendorDirectory/",
           username,
           "DOES NOT EXIST - THIS WILL CAUSE SEARCH TO FAIL",
         );
@@ -915,13 +980,13 @@ export default function App() {
       console.log(
         "  → Security rules are BLOCKING these fields from being saved",
       );
-      console.log("If vendorSearchIndex does NOT exist:");
+      console.log("If vendorDirectory does NOT exist:");
       console.log(
-        "  → Signup code did not write to vendorSearchIndex successfully",
+        "  → Signup code did not write to vendorDirectory successfully",
       );
-      console.log("If vendorSearchIndex exists with complete data:");
+      console.log("If vendorDirectory exists with complete data:");
       console.log(
-        "  → We should search this collection instead of userSettings",
+        "  → We should search this collection for vendor discovery",
       );
       console.log(
         "════════════════════════════════════════════════════════════\n",
@@ -2752,7 +2817,7 @@ export default function App() {
             );
           } catch (searchIndexError) {
             console.error(
-              "❌ SIGNUP: Could not save to vendorSearchIndex:",
+              "❌ SIGNUP: Could not save to vendorDirectory:",
               searchIndexError,
             );
           }
@@ -2833,6 +2898,9 @@ export default function App() {
       cacheUserData(signupForm.username, signupForm.email);
       // Migration: Ensure searchable fields exist
       await migrateUserSearchableFields(signupForm.username);
+
+      // Migration: Copy all existing users to vendorDirectory if this is first login
+      await migrateUsersToVendorDirectory();
 
       // DIAGNOSTIC: Log what was actually saved for new signup
       await diagnosticCheckCollections(signupForm.username);
@@ -2918,6 +2986,9 @@ export default function App() {
 
       // Migration: Ensure searchable fields exist for vendor search
       await migrateUserSearchableFields(user.username);
+
+      // Migration: Copy all existing users to vendorDirectory (one-time operation on each login)
+      await migrateUsersToVendorDirectory();
 
       // DIAGNOSTIC: Log what's actually in both collections
       await diagnosticCheckCollections(user.username);
