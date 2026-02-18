@@ -21,6 +21,7 @@ interface Company {
   address?: string;
   website?: string;
   addedAt: string;
+  relevanceScore?: number;
 }
 
 interface VendorConnection {
@@ -538,6 +539,24 @@ export default function Vendors({
         if (matchesCompany || matchesUsername || matchesEmail) {
           if (!seenIds.has(doc.id)) {
             seenIds.add(doc.id);
+            
+            // Calculate relevance score for ranking results
+            // Higher score = more relevant and should appear first
+            let relevanceScore = 0;
+            
+            // Bonus for having complete data
+            if (displayEmail) relevanceScore += 10;
+            if (displayCompanyName && displayCompanyName !== "Unknown Vendor") relevanceScore += 10;
+            
+            // Bonus for prefix matches (more specific than substring)
+            if (companyName.startsWith(searchLower)) relevanceScore += 5;
+            if (username.startsWith(searchLower)) relevanceScore += 4;
+            
+            // Company matches are more relevant than username/email matches
+            if (matchesCompany) relevanceScore += 3;
+            if (matchesUsername) relevanceScore += 2;
+            if (matchesEmail) relevanceScore += 1;
+            
             results.push({
               id: doc.data().username,
               name: displayCompanyName,
@@ -547,12 +566,22 @@ export default function Vendors({
               address: doc.data().address,
               website: doc.data().website,
               addedAt: doc.data().createdAt || new Date().toISOString(),
+              relevanceScore: relevanceScore,
             });
           }
         }
       }
 
-      setSearchResults(results);
+      // Sort results by relevance score (highest first)
+      results.sort((a, b) => (b.relevanceScore || 0) - (a.relevanceScore || 0));
+      
+      // Remove the scoring field before setting state
+      const finalResults = results.map(r => {
+        const { relevanceScore, ...rest } = r;
+        return rest;
+      });
+
+      setSearchResults(finalResults);
 
       // CACHE RESULTS for performance on future identical searches
       // (IndexedDB is now secondary - for caching, not for primary search)
