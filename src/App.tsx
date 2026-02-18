@@ -312,6 +312,10 @@ export default function App() {
   });
   const [authError, setAuthError] = useState<string>("");
   const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [pendingEmailVerification, setPendingEmailVerification] = useState<{
+    email: string;
+    username: string;
+  } | null>(null);
 
   const [activeSubmenu, setActiveSubmenu] = useState<
     "marketplace" | "warehouse" | "allDocuments"
@@ -2734,15 +2738,13 @@ export default function App() {
         companyName: signupForm.companyName,
       });
 
-      setProducts([]);
-      setActiveWarehouseTab("products");
-      setCurrentUser(result.username);
-      localStorage.setItem("pspm_current_user", result.username);
-      localStorage.setItem("pspm_auth_uid", result.uid);
-      cacheUserData(result.username, result.email);
-      setIsLoggedIn(true);
-      localStorage.removeItem("pspm_vendor_cache");
+      // DO NOT log in immediately - user must verify email first
+      setPendingEmailVerification({
+        email: result.email,
+        username: result.username,
+      });
 
+      // Reset form
       setSignupForm({
         username: "",
         email: "",
@@ -2826,6 +2828,18 @@ export default function App() {
 
       const userData = userCredential.user;
       const uid = userData.uid;
+
+      // IMPORTANT: Reload user to get latest email verification status
+      await userData.reload();
+
+      // Check if email is verified
+      if (!userData.emailVerified) {
+        setAuthError(
+          `Email not verified. Verification link sent to ${userData.email}. Please check your email and click the verification link.`,
+        );
+        setIsLoading(false);
+        return;
+      }
 
       // Get username from userProfiles
       const userProfileDoc = await getDoc(doc(db, "userProfiles", uid));
@@ -3222,6 +3236,134 @@ export default function App() {
       setUploadProgress(null);
     }
   };
+
+  // If pending email verification, show verification screen
+  if (pendingEmailVerification) {
+    return (
+      <div
+        style={{
+          display: "flex",
+          height: "100vh",
+          alignItems: "center",
+          justifyContent: "center",
+          background: "linear-gradient(180deg, #e8f2f7 0%, #f0f7fa 100%)",
+        }}
+      >
+        <div
+          style={{
+            width: "100%",
+            maxWidth: "450px",
+            padding: "40px",
+            background: "#ffffff",
+            borderRadius: "12px",
+            boxShadow: "0 4px 20px rgba(0, 0, 0, 0.1)",
+            border: "1px solid #e2e8f0",
+            textAlign: "center",
+          }}
+        >
+          <div
+            style={{
+              fontSize: "40px",
+              marginBottom: "16px",
+            }}
+          >
+            ✉️
+          </div>
+          
+          <h2
+            style={{
+              margin: "0 0 12px 0",
+              fontSize: "20px",
+              fontWeight: "700",
+              color: "#0f172a",
+            }}
+          >
+            Verify Your Email
+          </h2>
+
+          <p
+            style={{
+              margin: "0 0 24px 0",
+              fontSize: "14px",
+              color: "#64748b",
+              lineHeight: "1.6",
+            }}
+          >
+            We've sent a verification link to:
+          </p>
+
+          <div
+            style={{
+              background: "#f1f5f9",
+              padding: "12px",
+              borderRadius: "6px",
+              marginBottom: "24px",
+              fontSize: "14px",
+              fontWeight: "600",
+              color: "#0f172a",
+              wordBreak: "break-all",
+            }}
+          >
+            {pendingEmailVerification.email}
+          </div>
+
+          <div
+            style={{
+              background: "#eff6ff",
+              border: "1px solid #bfdbfe",
+              borderRadius: "6px",
+              padding: "14px",
+              marginBottom: "24px",
+              color: "#1e40af",
+              fontSize: "13px",
+              lineHeight: "1.5",
+            }}
+          >
+            <strong>📬 Check your email</strong>
+            <br />
+            Click the verification link in the email we sent. This confirms your email address and completes your signup.
+          </div>
+
+          <button
+            onClick={() => {
+              setPendingEmailVerification(null);
+              setAuthMode("login");
+            }}
+            style={{
+              width: "100%",
+              padding: "10px 16px",
+              background: "#3b82f6",
+              color: "#ffffff",
+              border: "none",
+              borderRadius: "6px",
+              cursor: "pointer",
+              fontSize: "13px",
+              fontWeight: "600",
+              transition: "all 0.2s ease",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = "#2563eb";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = "#3b82f6";
+            }}
+          >
+            Email Verified? Go to Login
+          </button>
+
+          <p
+            style={{
+              margin: "16px 0 0 0",
+              fontSize: "12px",
+              color: "#94a3b8",
+            }}
+          >
+            Didn't receive an email? Check your spam folder or sign up again with a different email.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   // If not logged in, show login/signup screen
   if (!isLoggedIn) {
