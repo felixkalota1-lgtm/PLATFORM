@@ -38,6 +38,9 @@ interface VendorsProps {
   db: Firestore;
   currentUser: string;
   onSendInquiry?: (company: Company) => void;
+  onSendQuotation?: (company: Company) => void;
+  onSendOrder?: (company: Company) => void;
+  onSendInvoice?: (company: Company) => void;
   currentUserEmail?: string;
   currentUserCompany?: string;
 }
@@ -46,6 +49,9 @@ export default function Vendors({
   db,
   currentUser,
   onSendInquiry,
+  onSendQuotation,
+  onSendOrder,
+  onSendInvoice,
   currentUserEmail,
   currentUserCompany,
 }: VendorsProps) {
@@ -775,6 +781,24 @@ export default function Vendors({
     }
   };
 
+  const handleSendQuotation = (company: Company) => {
+    if (onSendQuotation) {
+      onSendQuotation(company);
+    }
+  };
+
+  const handleSendOrder = (company: Company) => {
+    if (onSendOrder) {
+      onSendOrder(company);
+    }
+  };
+
+  const handleSendInvoice = (company: Company) => {
+    if (onSendInvoice) {
+      onSendInvoice(company);
+    }
+  };
+
   // Helper function to determine connection status with a vendor
   const getConnectionStatus = (
     vendorUsername: string,
@@ -1011,31 +1035,103 @@ export default function Vendors({
                         </p>
                       )}
                     </div>
-                    <button
-                      onClick={() => handleSendInquiry(connection.company)}
+                    <div
                       style={{
                         marginTop: "12px",
-                        padding: "10px 16px",
-                        background: "#0284c7",
-                        color: "white",
-                        border: "none",
-                        borderRadius: "6px",
-                        cursor: "pointer",
-                        fontSize: "13px",
-                        fontWeight: "600",
-                        transition: "all 0.25s ease",
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.background = "#0369a1";
-                        e.currentTarget.style.transform = "translateY(-2px)";
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.background = "#0284c7";
-                        e.currentTarget.style.transform = "translateY(0)";
+                        display: "grid",
+                        gridTemplateColumns: "repeat(2, 1fr)",
+                        gap: "8px",
                       }}
                     >
-                      Send Inquiry
-                    </button>
+                      <button
+                        onClick={() => handleSendInquiry(connection.company)}
+                        style={{
+                          padding: "10px 12px",
+                          background: "#f3f4f6",
+                          color: "#000000",
+                          border: "1px solid #bfdbfe",
+                          borderRadius: "6px",
+                          cursor: "pointer",
+                          fontSize: "12px",
+                          fontWeight: "600",
+                          transition: "all 0.25s ease",
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.background = "#e5e7eb";
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background = "#f3f4f6";
+                        }}
+                      >
+                        Inquiry
+                      </button>
+                      <button
+                        onClick={() => handleSendQuotation(connection.company)}
+                        style={{
+                          padding: "10px 12px",
+                          background: "#f3f4f6",
+                          color: "#000000",
+                          border: "1px solid #bfdbfe",
+                          borderRadius: "6px",
+                          cursor: "pointer",
+                          fontSize: "12px",
+                          fontWeight: "600",
+                          transition: "all 0.25s ease",
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.background = "#e5e7eb";
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background = "#f3f4f6";
+                        }}
+                      >
+                        Quotation
+                      </button>
+                      <button
+                        onClick={() => handleSendOrder(connection.company)}
+                        style={{
+                          padding: "10px 12px",
+                          background: "#f3f4f6",
+                          color: "#000000",
+                          border: "1px solid #bfdbfe",
+                          borderRadius: "6px",
+                          cursor: "pointer",
+                          fontSize: "12px",
+                          fontWeight: "600",
+                          transition: "all 0.25s ease",
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.background = "#e5e7eb";
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background = "#f3f4f6";
+                        }}
+                      >
+                        Order
+                      </button>
+                      <button
+                        onClick={() => handleSendInvoice(connection.company)}
+                        style={{
+                          padding: "10px 12px",
+                          background: "#f3f4f6",
+                          color: "#000000",
+                          border: "1px solid #bfdbfe",
+                          borderRadius: "6px",
+                          cursor: "pointer",
+                          fontSize: "12px",
+                          fontWeight: "600",
+                          transition: "all 0.25s ease",
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.background = "#e5e7eb";
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background = "#f3f4f6";
+                        }}
+                      >
+                        Invoice
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>

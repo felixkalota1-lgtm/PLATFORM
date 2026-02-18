@@ -337,13 +337,16 @@ export default function App() {
   >("warehouse");
   const [activeWarehouseTab, setActiveWarehouseTab] = useState<
     | "products"
-    | "upload"
     | "quotations"
     | "inquiries"
     | "orders"
+    | "invoices"
     | "vendors"
     | "settings"
   >("products");
+  const [activeProductsSubTab, setActiveProductsSubTab] = useState<
+    "goods" | "upload"
+  >("goods");
   const [activeMarketplaceTab, setActiveMarketplaceTab] = useState<
     "all" | "myListings"
   >("all");
@@ -454,6 +457,9 @@ export default function App() {
   const [selectedQuotationForPreview, setSelectedQuotationForPreview] =
     useState<any | null>(null);
   const [activeInquiriesView, setActiveInquiriesView] = useState<
+    "incoming" | "outgoing"
+  >("outgoing");
+  const [activeInvoicesView, setActiveInvoicesView] = useState<
     "incoming" | "outgoing"
   >("outgoing");
   const [showInquiryPreview, setShowInquiryPreview] = useState(false);
@@ -1171,10 +1177,10 @@ export default function App() {
           setActiveWarehouseTab(
             (savedTab || "products") as
               | "products"
-              | "upload"
               | "quotations"
               | "inquiries"
               | "orders"
+              | "invoices"
               | "vendors"
               | "settings",
           );
@@ -2052,7 +2058,6 @@ export default function App() {
           name: vendor.name || vendor.id,
           email: normalizedVendorEmail,
           company: vendor.company || vendor.id, // Use vendor.id as fallback if company is undefined
-          status: vendor.status || "pending",
         };
 
         // CRITICAL: Match the original send structure exactly so receiver can query/display correctly
@@ -3843,10 +3848,10 @@ export default function App() {
       setActiveWarehouseTab(
         (userActiveTab || "products") as
           | "products"
-          | "upload"
           | "quotations"
           | "inquiries"
           | "orders"
+          | "invoices"
           | "vendors"
           | "settings",
       );
@@ -5142,35 +5147,36 @@ export default function App() {
             </button>
 
             <button
-              onClick={() => setActiveWarehouseTab("upload")}
+              onClick={() => setActiveWarehouseTab("inquiries")}
               style={{
                 background: "transparent",
                 border: "none",
                 borderBottom:
-                  activeWarehouseTab === "upload"
+                  activeWarehouseTab === "inquiries"
                     ? "3px solid #5b7c99"
                     : "2px solid transparent",
                 padding: "18px 22px",
                 cursor: "pointer",
-                color: activeWarehouseTab === "upload" ? "#5b7c99" : "#64748b",
-                fontWeight: activeWarehouseTab === "upload" ? "700" : "600",
+                color:
+                  activeWarehouseTab === "inquiries" ? "#5b7c99" : "#64748b",
+                fontWeight: activeWarehouseTab === "inquiries" ? "700" : "600",
                 fontSize: "13px",
                 transition: "all 0.25s ease",
                 textTransform: "uppercase",
                 letterSpacing: "0.3px",
               }}
               onMouseEnter={(e) => {
-                if (activeWarehouseTab !== "upload") {
+                if (activeWarehouseTab !== "inquiries") {
                   e.currentTarget.style.color = "#5b7c99";
                 }
               }}
               onMouseLeave={(e) => {
-                if (activeWarehouseTab !== "upload") {
+                if (activeWarehouseTab !== "inquiries") {
                   e.currentTarget.style.color = "#64748b";
                 }
               }}
             >
-              Upload Portal
+              Inquiries
             </button>
 
             <button
@@ -5207,39 +5213,6 @@ export default function App() {
             </button>
 
             <button
-              onClick={() => setActiveWarehouseTab("inquiries")}
-              style={{
-                background: "transparent",
-                border: "none",
-                borderBottom:
-                  activeWarehouseTab === "inquiries"
-                    ? "3px solid #5b7c99"
-                    : "2px solid transparent",
-                padding: "18px 22px",
-                cursor: "pointer",
-                color:
-                  activeWarehouseTab === "inquiries" ? "#5b7c99" : "#64748b",
-                fontWeight: activeWarehouseTab === "inquiries" ? "700" : "600",
-                fontSize: "13px",
-                transition: "all 0.25s ease",
-                textTransform: "uppercase",
-                letterSpacing: "0.3px",
-              }}
-              onMouseEnter={(e) => {
-                if (activeWarehouseTab !== "inquiries") {
-                  e.currentTarget.style.color = "#5b7c99";
-                }
-              }}
-              onMouseLeave={(e) => {
-                if (activeWarehouseTab !== "inquiries") {
-                  e.currentTarget.style.color = "#64748b";
-                }
-              }}
-            >
-              Inquiries
-            </button>
-
-            <button
               onClick={() => setActiveWarehouseTab("orders")}
               style={{
                 background: "transparent",
@@ -5269,6 +5242,39 @@ export default function App() {
               }}
             >
               Orders
+            </button>
+
+            <button
+              onClick={() => setActiveWarehouseTab("invoices")}
+              style={{
+                background: "transparent",
+                border: "none",
+                borderBottom:
+                  activeWarehouseTab === "invoices"
+                    ? "3px solid #5b7c99"
+                    : "2px solid transparent",
+                padding: "18px 22px",
+                cursor: "pointer",
+                color:
+                  activeWarehouseTab === "invoices" ? "#5b7c99" : "#64748b",
+                fontWeight: activeWarehouseTab === "invoices" ? "700" : "600",
+                fontSize: "13px",
+                transition: "all 0.25s ease",
+                textTransform: "uppercase",
+                letterSpacing: "0.3px",
+              }}
+              onMouseEnter={(e) => {
+                if (activeWarehouseTab !== "invoices") {
+                  e.currentTarget.style.color = "#5b7c99";
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (activeWarehouseTab !== "invoices") {
+                  e.currentTarget.style.color = "#64748b";
+                }
+              }}
+            >
+              Invoices
             </button>
 
             <button
@@ -9477,18 +9483,172 @@ export default function App() {
                 </div>
               )}
 
+              {activeWarehouseTab === "invoices" && (
+                <div>
+                  <div style={{ marginBottom: "28px" }}>
+                    <h2
+                      style={{
+                        margin: "0 0 20px 0",
+                        fontSize: "24px",
+                        fontWeight: "800",
+                        color: "#5b7c99",
+                        letterSpacing: "-0.5px",
+                        textTransform: "uppercase",
+                      }}
+                    >
+                      Invoices
+                    </h2>
+
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: "12px",
+                        borderBottom: "2px solid #e2e8f0",
+                        marginBottom: "28px",
+                      }}
+                    >
+                      <button
+                        onClick={() => setActiveInvoicesView("incoming")}
+                        style={{
+                          padding: "12px 18px",
+                          background: "transparent",
+                          border: "none",
+                          borderBottom:
+                            activeInvoicesView === "incoming"
+                              ? "3px solid #5b7c99"
+                              : "transparent",
+                          color:
+                            activeInvoicesView === "incoming"
+                              ? "#5b7c99"
+                              : "#64748b",
+                          fontWeight:
+                            activeInvoicesView === "incoming" ? "700" : "600",
+                          fontSize: "13px",
+                          cursor: "pointer",
+                          transition: "all 0.25s ease",
+                          textTransform: "uppercase",
+                          letterSpacing: "0.3px",
+                          marginBottom: "-2px",
+                        }}
+                      >
+                        Incoming Invoices (0)
+                      </button>
+                      <button
+                        onClick={() => setActiveInvoicesView("outgoing")}
+                        style={{
+                          padding: "12px 18px",
+                          background: "transparent",
+                          border: "none",
+                          borderBottom:
+                            activeInvoicesView === "outgoing"
+                              ? "3px solid #5b7c99"
+                              : "transparent",
+                          color:
+                            activeInvoicesView === "outgoing"
+                              ? "#5b7c99"
+                              : "#64748b",
+                          fontWeight:
+                            activeInvoicesView === "outgoing" ? "700" : "600",
+                          fontSize: "13px",
+                          cursor: "pointer",
+                          transition: "all 0.25s ease",
+                          textTransform: "uppercase",
+                          letterSpacing: "0.3px",
+                          marginBottom: "-2px",
+                        }}
+                      >
+                        Outgoing Invoices (0)
+                      </button>
+                    </div>
+                  </div>
+
+                  {activeInvoicesView === "incoming" && (
+                    <div
+                      style={{
+                        padding: "32px",
+                        textAlign: "center",
+                        background: "#f8fafc",
+                        borderRadius: "8px",
+                        border: "2px dashed #cbd5e1",
+                      }}
+                    >
+                      <p
+                        style={{
+                          margin: "0",
+                          fontSize: "16px",
+                          color: "#64748b",
+                        }}
+                      >
+                        No incoming invoices yet
+                      </p>
+                    </div>
+                  )}
+
+                  {activeInvoicesView === "outgoing" && (
+                    <div
+                      style={{
+                        padding: "32px",
+                        textAlign: "center",
+                        background: "#f8fafc",
+                        borderRadius: "8px",
+                        border: "2px dashed #cbd5e1",
+                      }}
+                    >
+                      <p
+                        style={{
+                          margin: "0",
+                          fontSize: "16px",
+                          color: "#64748b",
+                        }}
+                      >
+                        No outgoing invoices yet
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {activeWarehouseTab === "vendors" && (
                 <Vendors
                   db={db}
                   currentUser={currentUser}
                   onSendInquiry={(company) => {
-                    // Pre-fill recipient data and navigate to inquiries
+                    // Pre-fill recipient data and navigate to inquiries (outgoing)
                     setPreFillRecipient({
                       name: company.username,
                       email: company.email,
                       company: company.name,
                     });
                     setActiveWarehouseTab("inquiries");
+                    setActiveInquiriesView("outgoing");
+                  }}
+                  onSendQuotation={(company) => {
+                    // Pre-fill recipient data and navigate to quotations
+                    setPreFillRecipient({
+                      name: company.username,
+                      email: company.email,
+                      company: company.name,
+                    });
+                    setActiveWarehouseTab("quotations");
+                  }}
+                  onSendOrder={(company) => {
+                    // Pre-fill recipient data and navigate to orders
+                    setPreFillRecipient({
+                      name: company.username,
+                      email: company.email,
+                      company: company.name,
+                    });
+                    setActiveWarehouseTab("orders");
+                  }}
+                  onSendInvoice={(company) => {
+                    // Pre-fill recipient data and navigate to invoices
+                    setPreFillRecipient({
+                      name: company.username,
+                      email: company.email,
+                      company: company.name,
+                    });
+                    setActiveWarehouseTab("invoices");
+                    setActiveInvoicesView("outgoing");
                   }}
                   currentUserEmail={currentUser}
                   currentUserCompany={currentUserCompany}
@@ -9522,7 +9682,7 @@ export default function App() {
                 />
               )}
 
-              {activeWarehouseTab === "upload" && (
+              {false && (
                 <div>
                   <h2
                     style={{
