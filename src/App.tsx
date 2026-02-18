@@ -1056,8 +1056,7 @@ export default function App() {
   useEffect(() => {
     console.log("🔐 AUTH: Setting up Firebase Auth state listener");
 
-    const unsubscribe = auth.onAuthStateChanged(
-      async (firebaseUser: any) => {
+    const unsubscribe = auth.onAuthStateChanged(async (firebaseUser: any) => {
       if (!firebaseUser) {
         // Firebase Auth user deleted/logged out
         console.log("🔐 AUTH: No Firebase Auth user detected");
@@ -1090,7 +1089,8 @@ export default function App() {
       const savedMarketplaceTab =
         localStorage.getItem(`cache_marketplace_tab_${savedUser}`) || "all";
       const savedQuotationsView =
-        localStorage.getItem(`cache_quotations_view_${savedUser}`) || "outgoing";
+        localStorage.getItem(`cache_quotations_view_${savedUser}`) ||
+        "outgoing";
       const savedInquiriesView =
         localStorage.getItem(`cache_inquiries_view_${savedUser}`) || "outgoing";
 
@@ -1111,10 +1111,25 @@ export default function App() {
             return;
           }
 
+          // SYNC EMAIL VERIFICATION STATUS: Update Firestore if Firebase Auth emailVerified changed
+          const firestoreEmailVerified = userProfileDoc.data().emailVerified || false;
+          const firebaseEmailVerified = firebaseUser.emailVerified || false;
+          
+          if (firestoreEmailVerified !== firebaseEmailVerified) {
+            console.log(
+              `🔄 AUTH: Syncing email verification status - Firebase: ${firebaseEmailVerified}, Firestore: ${firestoreEmailVerified}`,
+            );
+            await updateDoc(
+              doc(db, "userProfiles", firebaseUser.uid),
+              {
+                emailVerified: firebaseEmailVerified,
+              },
+            );
+            console.log("✅ AUTH: Email verification status synced to Firestore");
+          }
+
           // User exists & verified - restore session
-          console.log(
-            "✅ AUTH: User verified in Firestore, restoring session",
-          );
+          console.log("✅ AUTH: User verified in Firestore, restoring session");
           setCurrentUser(savedUser);
           setCurrentUserCompany(userProfileDoc.data().companyName || "");
           setIsLoggedIn(true);
@@ -2822,14 +2837,34 @@ export default function App() {
     try {
       // Find user by email or username in userProfiles
       let userEmail: string | null = null;
+      let userFound = false;
 
       // Check if input is email or username
       const isEmail = loginForm.emailOrUsername.includes("@");
 
       if (isEmail) {
-        userEmail = loginForm.emailOrUsername;
+        // Input is an email - search by emailSearchable
+        const userDocs = await getDocs(
+          query(
+            collection(db, "userProfiles"),
+            where(
+              "emailSearchable",
+              "==",
+              loginForm.emailOrUsername.toLowerCase(),
+            ),
+          ),
+        );
+        if (userDocs.docs.length > 0) {
+          userEmail = userDocs.docs[0].data().email;
+          userFound = true;
+        } else {
+          // Email not found in our system
+          setAuthError("Email not registered");
+          setIsLoading(false);
+          return;
+        }
       } else {
-        // Find email by username in userProfiles collection
+        // Input is a username - search by usernameSearchable
         const userDocs = await getDocs(
           query(
             collection(db, "userProfiles"),
@@ -2841,25 +2876,45 @@ export default function App() {
           ),
         );
         if (userDocs.docs.length === 0) {
-          setAuthError("Invalid email/username or password");
+          setAuthError("Username not registered");
           setIsLoading(false);
           return;
         }
         userEmail = userDocs.docs[0].data().email;
+        userFound = true;
       }
 
-      if (!userEmail) {
-        setAuthError("Invalid email/username or password");
+      if (!userEmail || !userFound) {
+        setAuthError("User not registered");
         setIsLoading(false);
         return;
       }
 
-      // Use Firebase Auth to sign in
-      const userCredential = await signInWithEmailAndPassword(
-        auth,
-        userEmail,
-        loginForm.password,
-      );
+      // User found in Firestore - now try Firebase Auth
+      let userCredential;
+      try {
+        userCredential = await signInWithEmailAndPassword(
+          auth,
+          userEmail,
+          loginForm.password,
+        );
+      } catch (authError: any) {
+        // Firebase Auth error - likely wrong password
+        const errorCode = authError.code || "";
+        if (
+          errorCode.includes("wrong-password") ||
+          errorCode.includes("invalid-login-credentials")
+        ) {
+          setAuthError("Incorrect password");
+        } else if (errorCode.includes("user-not-found")) {
+          // This shouldn't happen since we verified in Firestore, but handle it
+          setAuthError("Email not registered");
+        } else {
+          setAuthError("Login failed. Please try again.");
+        }
+        setIsLoading(false);
+        return;
+      }
 
       const userData = userCredential.user;
       const uid = userData.uid;
@@ -2919,17 +2974,9 @@ export default function App() {
 
       console.log("✅ Login successful");
     } catch (error: any) {
-      const errorCode = error.code || error.message || String(error);
-      if (
-        errorCode.includes("auth/user-not-found") ||
-        errorCode.includes("auth/wrong-password") ||
-        errorCode.includes("FirebaseError")
-      ) {
-        setAuthError("Invalid email/username or password");
-      } else {
-        setAuthError("Login failed: " + errorCode);
-      }
-      console.error("Login error:", error);
+      // Catch any unexpected errors not handled above
+      console.error("❌ Login error:", error);
+      setAuthError("Login failed. Please try again.");
     } finally {
       setIsLoading(false);
     }
@@ -3304,7 +3351,7 @@ export default function App() {
           >
             ✉️
           </div>
-          
+
           <h2
             style={{
               margin: "0 0 12px 0",
@@ -3356,7 +3403,8 @@ export default function App() {
           >
             <strong>📬 Check your email</strong>
             <br />
-            Click the verification link in the email we sent. This confirms your email address and completes your signup.
+            Click the verification link in the email we sent. This confirms your
+            email address and completes your signup.
           </div>
 
           <button
@@ -3393,7 +3441,8 @@ export default function App() {
               color: "#94a3b8",
             }}
           >
-            Didn't receive an email? Check your spam folder or sign up again with a different email.
+            Didn't receive an email? Check your spam folder or sign up again
+            with a different email.
           </p>
         </div>
       </div>
