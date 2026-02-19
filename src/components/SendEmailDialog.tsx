@@ -1,13 +1,13 @@
-import React, { useState, useEffect } from 'react';
-import { X, Send, Loader } from 'lucide-react';
-import GmailOAuthService, { EmailAccount } from '../services/GmailOAuthService';
-import EmailSendingService from '../services/EmailSendingService';
+import React, { useState, useEffect } from "react";
+import { X, Send, Loader } from "lucide-react";
+import GmailOAuthService, { EmailAccount } from "../services/GmailOAuthService";
+import EmailSendingService from "../services/EmailSendingService";
 
 export interface SendEmailDialogProps {
   isOpen: boolean;
   onClose: () => void;
   documentTitle: string;
-  documentType: 'quotation' | 'invoice' | 'order';
+  documentType: "quotation" | "invoice" | "order";
   documentElement?: HTMLElement;
   defaultRecipientEmail?: string;
   onEmailSent?: (result: { messageId: string; threadId: string }) => void;
@@ -21,17 +21,21 @@ const SendEmailDialog: React.FC<SendEmailDialogProps> = ({
   documentTitle,
   documentType,
   documentElement,
-  defaultRecipientEmail = '',
+  defaultRecipientEmail = "",
   onEmailSent,
   onEmailError,
-  gmailService
+  gmailService,
 }) => {
   const [recipientEmail, setRecipientEmail] = useState(defaultRecipientEmail);
-  const [recipientName, setRecipientName] = useState('');
-  const [subject, setSubject] = useState(`${documentTitle} - ${documentType.toLowerCase()}`);
-  const [message, setMessage] = useState('');
+  const [recipientName, setRecipientName] = useState("");
+  const [subject, setSubject] = useState(
+    `${documentTitle} - ${documentType.toLowerCase()}`,
+  );
+  const [message, setMessage] = useState("");
   const [emailAccounts, setEmailAccounts] = useState<EmailAccount[]>([]);
-  const [selectedAccount, setSelectedAccount] = useState<EmailAccount | null>(null);
+  const [selectedAccount, setSelectedAccount] = useState<EmailAccount | null>(
+    null,
+  );
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
@@ -46,7 +50,8 @@ const SendEmailDialog: React.FC<SendEmailDialogProps> = ({
   // Set default account when accounts load
   useEffect(() => {
     if (emailAccounts.length > 0 && !selectedAccount) {
-      const defaultAccount = emailAccounts.find(acc => acc.isDefault) || emailAccounts[0];
+      const defaultAccount =
+        emailAccounts.find((acc) => acc.isDefault) || emailAccounts[0];
       setSelectedAccount(defaultAccount);
     }
   }, [emailAccounts]);
@@ -55,12 +60,15 @@ const SendEmailDialog: React.FC<SendEmailDialogProps> = ({
     try {
       const accounts = await gmailService.getEmailAccounts();
       setEmailAccounts(accounts);
-      
+
       if (accounts.length === 0) {
-        setError('No email accounts connected. Please connect a Gmail account first.');
+        setError(
+          "No email accounts connected. Please connect a Gmail account first.",
+        );
       }
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to load email accounts';
+      const errorMessage =
+        err instanceof Error ? err.message : "Failed to load email accounts";
       setError(errorMessage);
     }
   };
@@ -72,20 +80,21 @@ const SendEmailDialog: React.FC<SendEmailDialogProps> = ({
 
       // Validate inputs
       if (!recipientEmail) {
-        throw new Error('Recipient email is required');
+        throw new Error("Recipient email is required");
       }
       if (!EmailSendingService.validateEmail(recipientEmail)) {
-        throw new Error('Invalid recipient email address');
+        throw new Error("Invalid recipient email address");
       }
       if (!selectedAccount) {
-        throw new Error('No email account selected');
+        throw new Error("No email account selected");
       }
 
       // Generate HTML version of document
       let htmlBody = message || `<p>Please see attached ${documentType}.</p>`;
-      
+
       if (documentElement) {
-        const documentHtml = await EmailSendingService.convertDocumentToHtml(documentElement);
+        const documentHtml =
+          await EmailSendingService.convertDocumentToHtml(documentElement);
         htmlBody = `
           <p>${message || `Please see the ${documentType} below:`}</p>
           <hr style="margin: 20px 0; border: none; border-top: 1px solid #ddd;">
@@ -95,13 +104,12 @@ const SendEmailDialog: React.FC<SendEmailDialogProps> = ({
         `;
       }
 
-      // Send email
+      // Send email via Cloud Function
       const result = await EmailSendingService.sendEmailViaGmail(
-        selectedAccount.accessToken,
+        selectedAccount,
         recipientEmail,
         subject,
         htmlBody,
-        selectedAccount.email
       );
 
       // Log to email history
@@ -112,7 +120,7 @@ const SendEmailDialog: React.FC<SendEmailDialogProps> = ({
         senderEmail: selectedAccount.email,
         subject,
         timestamp: Date.now(),
-        status: 'sent'
+        status: "sent",
       });
 
       setSuccess(true);
@@ -120,14 +128,15 @@ const SendEmailDialog: React.FC<SendEmailDialogProps> = ({
 
       // Reset form
       setTimeout(() => {
-        setRecipientEmail('');
-        setRecipientName('');
-        setMessage('');
+        setRecipientEmail("");
+        setRecipientName("");
+        setMessage("");
         setSuccess(false);
         onClose();
       }, 2000);
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Unknown error occurred';
+      const errorMessage =
+        err instanceof Error ? err.message : "Unknown error occurred";
       setError(errorMessage);
       onEmailError?.(err instanceof Error ? err : new Error(errorMessage));
     } finally {
@@ -142,7 +151,9 @@ const SendEmailDialog: React.FC<SendEmailDialogProps> = ({
       <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-gray-200">
-          <h2 className="text-xl font-semibold text-gray-900">Send {documentType.toUpperCase()}</h2>
+          <h2 className="text-xl font-semibold text-gray-900">
+            Send {documentType.toUpperCase()}
+          </h2>
           <button
             onClick={onClose}
             className="text-gray-400 hover:text-gray-600 transition"
@@ -172,17 +183,19 @@ const SendEmailDialog: React.FC<SendEmailDialogProps> = ({
                 From Account
               </label>
               <select
-                value={selectedAccount?.id || ''}
+                value={selectedAccount?.id || ""}
                 onChange={(e) => {
-                  const account = emailAccounts.find(acc => acc.id === e.target.value);
+                  const account = emailAccounts.find(
+                    (acc) => acc.id === e.target.value,
+                  );
                   setSelectedAccount(account || null);
                 }}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               >
                 <option value="">Select an account</option>
-                {emailAccounts.map(account => (
+                {emailAccounts.map((account) => (
                   <option key={account.id} value={account.id}>
-                    {account.email} {account.isDefault ? '(Default)' : ''}
+                    {account.email} {account.isDefault ? "(Default)" : ""}
                   </option>
                 ))}
               </select>
@@ -252,7 +265,8 @@ const SendEmailDialog: React.FC<SendEmailDialogProps> = ({
           {/* Info */}
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-700">
             <p>
-              The {documentType} will be included in the email with all formatting and images.
+              The {documentType} will be included in the email with all
+              formatting and images.
             </p>
           </div>
         </div>

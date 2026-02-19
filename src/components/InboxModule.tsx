@@ -1,6 +1,16 @@
-import React, { useState, useEffect } from 'react';
-import { Mail, Archive, Trash2, ExternalLink, Loader, MessageSquare, Clock, User } from 'lucide-react';
-import GmailOAuthService, { InboxEmail } from '../services/GmailOAuthService';
+import React, { useState, useEffect } from "react";
+import {
+  Mail,
+  Archive,
+  Trash2,
+  ExternalLink,
+  Loader,
+  MessageSquare,
+  Clock,
+  User,
+} from "lucide-react";
+import GmailOAuthService, { InboxEmail } from "../services/GmailOAuthService";
+import EmailSendingService from "../services/EmailSendingService";
 
 export interface InboxModuleProps {
   gmailService: GmailOAuthService;
@@ -11,12 +21,12 @@ export interface InboxModuleProps {
 const InboxModule: React.FC<InboxModuleProps> = ({
   gmailService,
   unreadCount = 0,
-  onUnreadCountChange
+  onUnreadCountChange,
 }) => {
   const [emails, setEmails] = useState<InboxEmail[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [selectedEmail, setSelectedEmail] = useState<InboxEmail | null>(null);
-  const [filter, setFilter] = useState<'all' | 'unread'>('all');
+  const [filter, setFilter] = useState<"all" | "unread">("all");
   const [error, setError] = useState<string | null>(null);
 
   // Load emails on mount and set up polling
@@ -24,9 +34,12 @@ const InboxModule: React.FC<InboxModuleProps> = ({
     loadEmails();
 
     // Poll for new emails every 5 minutes
-    const interval = setInterval(() => {
-      loadEmails();
-    }, 5 * 60 * 1000);
+    const interval = setInterval(
+      () => {
+        loadEmails();
+      },
+      5 * 60 * 1000,
+    );
 
     return () => clearInterval(interval);
   }, []);
@@ -36,41 +49,51 @@ const InboxModule: React.FC<InboxModuleProps> = ({
       setIsLoading(true);
       setError(null);
 
-      // TODO: Implement email fetching from Gmail API
-      // This should be done via a Cloud Function to keep access tokens secure
-      // For now, we'll use placeholder data
-      
-      const mockEmails: InboxEmail[] = [
-        {
-          id: '1',
-          messageId: 'msg-001',
-          from: 'client@example.com',
-          to: 'sales@mtrx.com',
-          subject: 'Re: Quotation for Project A',
-          body: 'Thank you for the quotation. We would like to proceed with the project.',
-          timestamp: Date.now() - 3600000,
-          isRead: true,
-          hasAttachments: false,
-          attachmentCount: 0
-        },
-        {
-          id: '2',
-          messageId: 'msg-002',
-          from: 'vendor@supplier.com',
-          to: 'procurement@mtrx.com',
-          subject: 'New Product Catalog Available',
-          body: 'Our latest product catalog is ready for review...',
-          timestamp: Date.now() - 7200000,
-          isRead: false,
-          hasAttachments: true,
-          attachmentCount: 1
-        }
-      ];
+      // Get email accounts
+      const accounts = await gmailService.getEmailAccounts();
 
-      setEmails(mockEmails);
+      if (accounts.length === 0) {
+        setError("No email accounts connected. Please connect a Gmail account.");
+        setEmails([]);
+        return;
+      }
+
+      // Fetch emails from all accounts via Cloud Function
+      const allEmails: InboxEmail[] = [];
+
+      for (const account of accounts) {
+        try {
+          const fetchedEmails =
+            await EmailSendingService.fetchInboxEmails(account);
+
+          // Map Cloud Function response to InboxEmail structure
+          const mappedEmails: InboxEmail[] = fetchedEmails.map((email: any) => ({
+            id: email.id,
+            messageId: email.messageId,
+            from: email.from,
+            to: "", // Not provided by Cloud Function, set to empty
+            subject: email.subject,
+            body: email.body,
+            timestamp: new Date(email.date).getTime(),
+            isRead: email.isRead,
+            hasAttachments: false, // Cloud Function doesn't include attachment info yet
+            attachmentCount: 0,
+          }));
+
+          allEmails.push(...mappedEmails);
+        } catch (err) {
+          console.error(
+            `Failed to fetch emails from account ${account.email}:`,
+            err,
+          );
+          // Continue with other accounts even if one fails
+        }
+      }
+
+      setEmails(allEmails);
 
       // Update unread count
-      const unreadEmails = mockEmails.filter(e => !e.isRead).length;
+      const unreadEmails = allEmails.filter((e) => !e.isRead).length;
       if (onUnreadCountChange) {
         onUnreadCountChange(unreadEmails);
       }
@@ -78,7 +101,8 @@ const InboxModule: React.FC<InboxModuleProps> = ({
       // Update inbox metadata in database
       await gmailService.updateInboxMetadata(unreadEmails, Date.now());
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to load emails';
+      const errorMessage =
+        err instanceof Error ? err.message : "Failed to load emails";
       setError(errorMessage);
     } finally {
       setIsLoading(false);
@@ -86,22 +110,44 @@ const InboxModule: React.FC<InboxModuleProps> = ({
   };
 
   const handleMarkAsRead = async (email: InboxEmail) => {
-    // TODO: Implement mark as read functionality
-    const updated = { ...email, isRead: true };
-    setEmails(emails.map(e => e.id === email.id ? updated : e));
-    setSelectedEmail(updated);
+    try {
+      // Get email accounts to find which account owns this email
+      const accounts = await gmailService.getEmailAccounts();
+      if (accounts.length === 0) return;
+
+      // Use the first/default account (in real app, should track which account owns each email)
+      const account = accounts[0];
+
+      // Call Cloud Function to mark as read
+      await EmailSendingService.markEmailAsRead(account, email.messageId);
+
+      // Update local state
+      const updated = { ...email, isRead: true };
+      setEmails(emails.map((e) => (e.id === email.id ? updated : e)));
+      setSelectedEmail(updated);
+    } catch (err) {
+      console.error("Failed to mark email as read:", err);
+    }
   };
 
   const handleMarkAsUnread = async (email: InboxEmail) => {
-    // TODO: Implement mark as unread functionality
-    const updated = { ...email, isRead: false };
-    setEmails(emails.map(e => e.id === email.id ? updated : e));
-    setSelectedEmail(updated);
+    try {
+      // Note: markEmailAsUnread is not yet implemented in Cloud Functions
+      // For now, just update local state
+      const updated = { ...email, isRead: false };
+      setEmails(emails.map((e) => (e.id === email.id ? updated : e)));
+      setSelectedEmail(updated);
+      console.warn(
+        "Mark as unread not yet implemented in Cloud Functions",
+      );
+    } catch (err) {
+      console.error("Failed to mark email as unread:", err);
+    }
   };
 
   const handleArchive = async (emailId: string) => {
     // TODO: Implement archive functionality
-    setEmails(emails.filter(e => e.id !== emailId));
+    setEmails(emails.filter((e) => e.id !== emailId));
     if (selectedEmail?.id === emailId) {
       setSelectedEmail(null);
     }
@@ -109,7 +155,7 @@ const InboxModule: React.FC<InboxModuleProps> = ({
 
   const handleDelete = async (emailId: string) => {
     // TODO: Implement delete functionality
-    setEmails(emails.filter(e => e.id !== emailId));
+    setEmails(emails.filter((e) => e.id !== emailId));
     if (selectedEmail?.id === emailId) {
       setSelectedEmail(null);
     }
@@ -119,18 +165,19 @@ const InboxModule: React.FC<InboxModuleProps> = ({
     const now = Date.now();
     const diff = now - timestamp;
 
-    if (diff < 60000) return 'Just now';
+    if (diff < 60000) return "Just now";
     if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
     if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
     if (diff < 604800000) return `${Math.floor(diff / 86400000)}d ago`;
 
-    return new Date(timestamp).toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric'
+    return new Date(timestamp).toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
     });
   };
 
-  const filteredEmails = filter === 'unread' ? emails.filter(e => !e.isRead) : emails;
+  const filteredEmails =
+    filter === "unread" ? emails.filter((e) => !e.isRead) : emails;
 
   return (
     <div className="flex h-full gap-4">
@@ -163,24 +210,24 @@ const InboxModule: React.FC<InboxModuleProps> = ({
           {/* Filter Tabs */}
           <div className="flex gap-2">
             <button
-              onClick={() => setFilter('all')}
+              onClick={() => setFilter("all")}
               className={`px-3 py-1 text-sm font-medium rounded-lg transition ${
-                filter === 'all'
-                  ? 'bg-blue-100 text-blue-700'
-                  : 'text-gray-600 hover:bg-gray-100'
+                filter === "all"
+                  ? "bg-blue-100 text-blue-700"
+                  : "text-gray-600 hover:bg-gray-100"
               }`}
             >
               All
             </button>
             <button
-              onClick={() => setFilter('unread')}
+              onClick={() => setFilter("unread")}
               className={`px-3 py-1 text-sm font-medium rounded-lg transition ${
-                filter === 'unread'
-                  ? 'bg-blue-100 text-blue-700'
-                  : 'text-gray-600 hover:bg-gray-100'
+                filter === "unread"
+                  ? "bg-blue-100 text-blue-700"
+                  : "text-gray-600 hover:bg-gray-100"
               }`}
             >
-              Unread ({emails.filter(e => !e.isRead).length})
+              Unread ({emails.filter((e) => !e.isRead).length})
             </button>
           </div>
         </div>
@@ -204,25 +251,31 @@ const InboxModule: React.FC<InboxModuleProps> = ({
               <p>No {filter} emails</p>
             </div>
           ) : (
-            filteredEmails.map(email => (
+            filteredEmails.map((email) => (
               <button
                 key={email.id}
                 onClick={() => setSelectedEmail(email)}
                 className={`w-full text-left p-4 border-b border-gray-100 hover:bg-gray-50 transition ${
-                  selectedEmail?.id === email.id ? 'bg-blue-50 border-l-4 border-blue-500' : ''
-                } ${!email.isRead ? 'bg-blue-50/50' : ''}`}
+                  selectedEmail?.id === email.id
+                    ? "bg-blue-50 border-l-4 border-blue-500"
+                    : ""
+                } ${!email.isRead ? "bg-blue-50/50" : ""}`}
               >
                 <div className="flex items-start gap-3">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
-                      <p className={`font-medium ${!email.isRead ? 'font-bold text-gray-900' : 'text-gray-700'}`}>
+                      <p
+                        className={`font-medium ${!email.isRead ? "font-bold text-gray-900" : "text-gray-700"}`}
+                      >
                         {email.from}
                       </p>
                       {!email.isRead && (
                         <span className="inline-block w-2 h-2 bg-blue-600 rounded-full" />
                       )}
                     </div>
-                    <p className={`text-sm truncate ${!email.isRead ? 'font-semibold text-gray-900' : 'text-gray-700'}`}>
+                    <p
+                      className={`text-sm truncate ${!email.isRead ? "font-semibold text-gray-900" : "text-gray-700"}`}
+                    >
                       {email.subject}
                     </p>
                     <p className="text-xs text-gray-500 mt-1 line-clamp-1">
@@ -230,7 +283,9 @@ const InboxModule: React.FC<InboxModuleProps> = ({
                     </p>
                   </div>
                   <div className="flex flex-col items-end gap-2 text-xs text-gray-500">
-                    <span className="whitespace-nowrap">{formatEmailDate(email.timestamp)}</span>
+                    <span className="whitespace-nowrap">
+                      {formatEmailDate(email.timestamp)}
+                    </span>
                     {email.hasAttachments && (
                       <span className="text-gray-600">📎</span>
                     )}
@@ -252,7 +307,9 @@ const InboxModule: React.FC<InboxModuleProps> = ({
                 <h3 className="text-lg font-semibold text-gray-900 break-words">
                   {selectedEmail.subject}
                 </h3>
-                <p className="text-sm text-gray-600 mt-1">{selectedEmail.from}</p>
+                <p className="text-sm text-gray-600 mt-1">
+                  {selectedEmail.from}
+                </p>
               </div>
               <button
                 onClick={() => setSelectedEmail(null)}
@@ -278,7 +335,9 @@ const InboxModule: React.FC<InboxModuleProps> = ({
               </div>
               <div className="flex items-center gap-2">
                 <Clock size={16} />
-                <span>{new Date(selectedEmail.timestamp).toLocaleString()}</span>
+                <span>
+                  {new Date(selectedEmail.timestamp).toLocaleString()}
+                </span>
               </div>
               {selectedEmail.hasAttachments && (
                 <div className="flex items-center gap-2">
