@@ -344,9 +344,17 @@ export default function App() {
   const [showAuthUI, setShowAuthUI] = useState<boolean>(false);
 
   // Email system states
-  const [gmailService, setGmailService] = useState<GmailOAuthService | null>(null);
+  const [gmailService, setGmailService] = useState<GmailOAuthService | null>(
+    null,
+  );
   const [showSendEmailDialog, setShowSendEmailDialog] = useState(false);
   const [inboxUnreadCount, setInboxUnreadCount] = useState(0);
+  const [emailDocumentType, setEmailDocumentType] = useState<
+    "quotation" | "invoice" | "order"
+  >("quotation");
+  const [emailDocumentTitle, setEmailDocumentTitle] = useState<string>("");
+  const [emailDocumentElement, setEmailDocumentElement] =
+    useState<HTMLElement | null>(null);
 
   const [activeSubmenu, setActiveSubmenu] = useState<
     "dashboard" | "marketplace" | "warehouse" | "allDocuments" | "inbox"
@@ -6552,7 +6560,13 @@ export default function App() {
                 onUnreadCountChange={setInboxUnreadCount}
               />
             ) : (
-              <div style={{ padding: "32px", textAlign: "center", color: "#64748b" }}>
+              <div
+                style={{
+                  padding: "32px",
+                  textAlign: "center",
+                  color: "#64748b",
+                }}
+              >
                 <p>Initializing email system...</p>
               </div>
             )
@@ -8620,6 +8634,43 @@ export default function App() {
                                       </button>
                                       <button
                                         onClick={() => {
+                                          const quotationElement =
+                                            document.getElementById(
+                                              `quotation-${quote.id}`,
+                                            );
+                                          setEmailDocumentTitle(
+                                            `Quotation ${quote.number || quote.id.substring(0, 8)}`,
+                                          );
+                                          setEmailDocumentType("quotation");
+                                          setEmailDocumentElement(
+                                            quotationElement,
+                                          );
+                                          setShowSendEmailDialog(true);
+                                        }}
+                                        style={{
+                                          padding: "6px 12px",
+                                          background: "#0ea5e9",
+                                          color: "white",
+                                          border: "none",
+                                          borderRadius: "4px",
+                                          cursor: "pointer",
+                                          fontSize: "12px",
+                                          fontWeight: "600",
+                                          transition: "all 0.25s ease",
+                                        }}
+                                        onMouseEnter={(e) => {
+                                          e.currentTarget.style.background =
+                                            "#0284c7";
+                                        }}
+                                        onMouseLeave={(e) => {
+                                          e.currentTarget.style.background =
+                                            "#0ea5e9";
+                                        }}
+                                      >
+                                        📧 Send Email
+                                      </button>
+                                      <button
+                                        onClick={() => {
                                           setRetractingQuotationId(quote.id);
                                           setShowRetractQuotationConfirm(true);
                                         }}
@@ -9519,6 +9570,43 @@ export default function App() {
                                       >
                                         Preview
                                       </button>
+                                      <button
+                                        onClick={() => {
+                                          const orderElement =
+                                            document.getElementById(
+                                              `order-${order.id}`,
+                                            );
+                                          setEmailDocumentTitle(
+                                            `Order ${order.id.substring(0, 8)}`,
+                                          );
+                                          setEmailDocumentType("order");
+                                          setEmailDocumentElement(
+                                            orderElement,
+                                          );
+                                          setShowSendEmailDialog(true);
+                                        }}
+                                        style={{
+                                          padding: "8px 12px",
+                                          background: "#0ea5e9",
+                                          color: "white",
+                                          border: "none",
+                                          borderRadius: "6px",
+                                          cursor: "pointer",
+                                          fontSize: "12px",
+                                          fontWeight: "600",
+                                          transition: "all 0.25s ease",
+                                        }}
+                                        onMouseEnter={(e) => {
+                                          e.currentTarget.style.background =
+                                            "#0284c7";
+                                        }}
+                                        onMouseLeave={(e) => {
+                                          e.currentTarget.style.background =
+                                            "#0ea5e9";
+                                        }}
+                                      >
+                                        📧 Email
+                                      </button>
                                       <select
                                         value={order.status}
                                         onChange={(e) =>
@@ -9807,6 +9895,43 @@ export default function App() {
                                         }}
                                       >
                                         Preview
+                                      </button>
+                                      <button
+                                        onClick={() => {
+                                          const orderElement =
+                                            document.getElementById(
+                                              `order-${order.id}`,
+                                            );
+                                          setEmailDocumentTitle(
+                                            `Order ${order.id.substring(0, 8)}`,
+                                          );
+                                          setEmailDocumentType("order");
+                                          setEmailDocumentElement(
+                                            orderElement,
+                                          );
+                                          setShowSendEmailDialog(true);
+                                        }}
+                                        style={{
+                                          padding: "8px 12px",
+                                          background: "#0ea5e9",
+                                          color: "white",
+                                          border: "none",
+                                          borderRadius: "6px",
+                                          cursor: "pointer",
+                                          fontSize: "12px",
+                                          fontWeight: "600",
+                                          transition: "all 0.25s ease",
+                                        }}
+                                        onMouseEnter={(e) => {
+                                          e.currentTarget.style.background =
+                                            "#0284c7";
+                                        }}
+                                        onMouseLeave={(e) => {
+                                          e.currentTarget.style.background =
+                                            "#0ea5e9";
+                                        }}
+                                      >
+                                        📧 Email
                                       </button>
                                       <button
                                         onClick={() => {
@@ -13135,6 +13260,28 @@ export default function App() {
               )}
             </div>
           </div>
+        )}
+
+        {/* Send Email Dialog */}
+        {gmailService && (
+          <SendEmailDialog
+            isOpen={showSendEmailDialog}
+            onClose={() => setShowSendEmailDialog(false)}
+            documentTitle={emailDocumentTitle}
+            documentType={emailDocumentType}
+            documentElement={emailDocumentElement || undefined}
+            gmailService={gmailService}
+            onEmailSent={(result) => {
+              console.log("Email sent successfully:", result);
+              setShowSendEmailDialog(false);
+              // Show success message
+              alert("Email sent successfully!");
+            }}
+            onEmailError={(error) => {
+              console.error("Error sending email:", error);
+              alert(`Error sending email: ${error.message}`);
+            }}
+          />
         )}
       </main>
     </div>
