@@ -26,6 +26,14 @@ import Inquiries from "./pages/Inquiries";
 import Settings from "./pages/Settings";
 import History from "./pages/History";
 import Vendors from "./pages/Vendors";
+import MTRXLogo from "./components/MTRXLogo";
+import SplashScreen from "./components/SplashScreen";
+import LandingPage from "./components/LandingPage";
+import HomeDashboard from "./components/HomeDashboard";
+import SendEmailDialog from "./components/SendEmailDialog";
+import EmailAccountsSettings from "./components/EmailAccountsSettings";
+import InboxModule from "./components/InboxModule";
+import GmailOAuthService from "./services/GmailOAuthService";
 
 // ==========================================
 // EMAIL NORMALIZATION UTILITY
@@ -331,11 +339,20 @@ export default function App() {
     email: string;
     username: string;
   } | null>(null);
+  const [showSplash, setShowSplash] = useState<boolean>(true);
+  const [isAppInitializing, setIsAppInitializing] = useState<boolean>(true);
+  const [showAuthUI, setShowAuthUI] = useState<boolean>(false);
+
+  // Email system states
+  const [gmailService, setGmailService] = useState<GmailOAuthService | null>(null);
+  const [showSendEmailDialog, setShowSendEmailDialog] = useState(false);
+  const [inboxUnreadCount, setInboxUnreadCount] = useState(0);
 
   const [activeSubmenu, setActiveSubmenu] = useState<
-    "marketplace" | "warehouse" | "allDocuments"
-  >("warehouse");
+    "dashboard" | "marketplace" | "warehouse" | "allDocuments" | "inbox"
+  >("dashboard");
   const [activeWarehouseTab, setActiveWarehouseTab] = useState<
+    | "home"
     | "products"
     | "quotations"
     | "inquiries"
@@ -1115,8 +1132,7 @@ export default function App() {
       const savedUser = localStorage.getItem("pspm_current_user");
       const savedSubmenu =
         localStorage.getItem(`cache_submenu_${savedUser}`) || "warehouse";
-      const savedTab =
-        localStorage.getItem(`cache_tab_${savedUser}`) || "products";
+      const savedTab = localStorage.getItem(`cache_tab_${savedUser}`) || "home";
       const savedOrdersView =
         localStorage.getItem(`cache_orders_view_${savedUser}`) || "incoming";
       const savedUploadType =
@@ -1171,8 +1187,11 @@ export default function App() {
           setCurrentUserCompany(userProfileDoc.data().companyName || "");
           setIsLoggedIn(true);
           setActiveSubmenu(
-            (savedSubmenu as "marketplace" | "warehouse" | "allDocuments") ||
-              "warehouse",
+            (savedSubmenu as
+              | "dashboard"
+              | "marketplace"
+              | "warehouse"
+              | "allDocuments") || "dashboard",
           );
           setActiveWarehouseTab(
             (savedTab || "products") as
@@ -1224,6 +1243,11 @@ export default function App() {
           const cartItems = await loadCartFromIndexedDB(savedUser);
           setCart(cartItems);
           setHasLoadedCart(true);
+
+          // Initialize Gmail OAuth Service for email features
+          const emailService = new GmailOAuthService(auth);
+          setGmailService(emailService);
+          console.log("✅ EMAIL: Gmail OAuth Service initialized");
         } catch (error) {
           console.error("❌ AUTH: Error restoring session:", error);
           setIsLoggedIn(false);
@@ -1244,6 +1268,17 @@ export default function App() {
     // Cleanup: Unsubscribe from auth listener
     return () => unsubscribe();
   }, []);
+
+  // Hide splash screen after auth check completes
+  useEffect(() => {
+    // Wait a bit for smooth transition
+    const timer = setTimeout(() => {
+      setShowSplash(false);
+      setIsAppInitializing(false);
+    }, 800);
+
+    return () => clearTimeout(timer);
+  }, [isLoggedIn]);
 
   // Debug: Log when quotationHistory state changes
   useEffect(() => {
@@ -4343,8 +4378,22 @@ export default function App() {
     );
   }
 
-  // If not logged in, show login/signup screen
+  // If not logged in, show landing page or auth UI
   if (!isLoggedIn) {
+    // Show landing page with "Get Started" button
+    if (!showAuthUI) {
+      return (
+        <LandingPage
+          onGetStarted={() => {
+            setShowAuthUI(true);
+            setAuthMode("login");
+            setAuthError("");
+          }}
+        />
+      );
+    }
+
+    // Show auth UI (Login/SignUp)
     return (
       <div
         style={{
@@ -4366,6 +4415,41 @@ export default function App() {
             border: "1px solid #e2e8f0",
           }}
         >
+          {/* Back to Landing Page Button */}
+          <button
+            onClick={() => {
+              setShowAuthUI(false);
+              setAuthError("");
+              setLoginForm({ emailOrUsername: "", password: "" });
+              setSignupForm({
+                username: "",
+                email: "",
+                companyName: "",
+                password: "",
+                confirmPassword: "",
+              });
+            }}
+            style={{
+              marginBottom: "20px",
+              padding: "6px 12px",
+              background: "transparent",
+              border: "1px solid #cbd5e1",
+              borderRadius: "4px",
+              cursor: "pointer",
+              fontSize: "12px",
+              color: "#64748b",
+              transition: "all 0.2s ease",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = "#f1f5f9";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = "transparent";
+            }}
+          >
+            ← Back to Landing
+          </button>
+
           <h1
             style={{
               margin: "0 0 8px 0",
@@ -4375,7 +4459,7 @@ export default function App() {
               textAlign: "center",
             }}
           >
-            PSPM
+            Matrix Hub
           </h1>
           <p
             style={{
@@ -4385,7 +4469,7 @@ export default function App() {
               textAlign: "center",
             }}
           >
-            Platform Sales & Procurement
+            Powered by MTRX INC
           </p>
 
           {/* Auth Mode Tabs */}
@@ -4813,18 +4897,29 @@ export default function App() {
         }}
       >
         <div style={{ padding: "0 24px", marginBottom: "48px" }}>
-          <h1
+          <div
+            onClick={() => setActiveWarehouseTab("products")}
             style={{
-              margin: "0",
-              fontSize: "18px",
-              fontWeight: "800",
-              color: "#000000",
-              letterSpacing: "-0.5px",
-              textTransform: "uppercase",
+              display: "flex",
+              alignItems: "center",
+              gap: "8px",
+              cursor: "pointer",
+              marginBottom: "4px",
             }}
           >
-            PSPM
-          </h1>
+            <MTRXLogo size="small" withGlow={false} variant="dark" />
+            <span
+              style={{
+                fontSize: "14px",
+                fontWeight: "700",
+                color: "#1a365d",
+                letterSpacing: "1px",
+                textTransform: "uppercase",
+              }}
+            >
+              Matrix Hub
+            </span>
+          </div>
           <p
             style={{
               margin: "6px 0 0 0",
@@ -4842,6 +4937,48 @@ export default function App() {
         </div>
 
         <nav style={{ flex: 1 }}>
+          <div
+            onClick={() => setActiveSubmenu("dashboard")}
+            style={{
+              padding: "14px 18px",
+              cursor: "pointer",
+              background:
+                activeSubmenu === "dashboard"
+                  ? "rgba(91, 124, 153, 0.12)"
+                  : "rgba(100, 116, 139, 0.08)",
+              borderLeft:
+                activeSubmenu === "dashboard"
+                  ? "4px solid #5b7c99"
+                  : "4px solid transparent",
+              transition: "all 0.3s ease",
+              color: activeSubmenu === "dashboard" ? "#5b7c99" : "#64748b",
+              fontWeight: activeSubmenu === "dashboard" ? "700" : "600",
+              fontSize: "13px",
+              marginLeft: "8px",
+              marginRight: "8px",
+              borderRadius: "0 6px 6px 0",
+              letterSpacing: "0.3px",
+              boxShadow:
+                activeSubmenu === "dashboard"
+                  ? "inset 0 1px 2px rgba(91, 124, 153, 0.08)"
+                  : "inset 0 1px 2px rgba(100, 116, 139, 0.04)",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background =
+                activeSubmenu === "dashboard"
+                  ? "rgba(91, 124, 153, 0.18)"
+                  : "rgba(100, 116, 139, 0.12)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background =
+                activeSubmenu === "dashboard"
+                  ? "rgba(91, 124, 153, 0.12)"
+                  : "rgba(100, 116, 139, 0.08)";
+            }}
+          >
+            Dashboard
+          </div>
+
           <div
             onClick={() => setActiveSubmenu("warehouse")}
             style={{
@@ -4923,6 +5060,47 @@ export default function App() {
             }}
           >
             Marketplace
+          </div>
+          <div
+            onClick={() => setActiveSubmenu("inbox")}
+            style={{
+              padding: "14px 18px",
+              cursor: "pointer",
+              background:
+                activeSubmenu === "inbox"
+                  ? "rgba(91, 124, 153, 0.12)"
+                  : "rgba(100, 116, 139, 0.08)",
+              borderLeft:
+                activeSubmenu === "inbox"
+                  ? "4px solid #5b7c99"
+                  : "4px solid transparent",
+              transition: "all 0.3s ease",
+              color: activeSubmenu === "inbox" ? "#5b7c99" : "#64748b",
+              fontWeight: activeSubmenu === "inbox" ? "700" : "600",
+              fontSize: "13px",
+              marginLeft: "8px",
+              marginRight: "8px",
+              borderRadius: "0 6px 6px 0",
+              letterSpacing: "0.3px",
+              boxShadow:
+                activeSubmenu === "inbox"
+                  ? "inset 0 1px 2px rgba(91, 124, 153, 0.08)"
+                  : "inset 0 1px 2px rgba(100, 116, 139, 0.04)",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background =
+                activeSubmenu === "inbox"
+                  ? "rgba(91, 124, 153, 0.18)"
+                  : "rgba(100, 116, 139, 0.12)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background =
+                activeSubmenu === "inbox"
+                  ? "rgba(91, 124, 153, 0.12)"
+                  : "rgba(100, 116, 139, 0.08)";
+            }}
+          >
+            Inbox {inboxUnreadCount > 0 && `(${inboxUnreadCount})`}
           </div>
           <div
             onClick={() => setActiveSubmenu("allDocuments")}
@@ -5344,6 +5522,86 @@ export default function App() {
           </div>
         )}
 
+        {/* Products Sub-Tab Navigation */}
+        {activeSubmenu === "warehouse" && activeWarehouseTab === "products" && (
+          <div
+            style={{
+              padding: "0 32px",
+              borderBottom: "1px solid #e2e8f0",
+              background: "#ffffff",
+              display: "flex",
+              alignItems: "center",
+              gap: "0",
+              boxShadow: "0 1px 2px rgba(0, 0, 0, 0.02)",
+            }}
+          >
+            <button
+              onClick={() => setActiveProductsSubTab("goods")}
+              style={{
+                background: "transparent",
+                border: "none",
+                borderBottom:
+                  activeProductsSubTab === "goods"
+                    ? "3px solid #5b7c99"
+                    : "2px solid transparent",
+                padding: "18px 22px",
+                cursor: "pointer",
+                color: activeProductsSubTab === "goods" ? "#5b7c99" : "#64748b",
+                fontWeight: activeProductsSubTab === "goods" ? "700" : "600",
+                fontSize: "13px",
+                transition: "all 0.25s ease",
+                textTransform: "uppercase",
+                letterSpacing: "0.3px",
+              }}
+              onMouseEnter={(e) => {
+                if (activeProductsSubTab !== "goods") {
+                  e.currentTarget.style.color = "#5b7c99";
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (activeProductsSubTab !== "goods") {
+                  e.currentTarget.style.color = "#64748b";
+                }
+              }}
+            >
+              Goods and Services
+            </button>
+
+            <button
+              onClick={() => setActiveProductsSubTab("upload")}
+              style={{
+                background: "transparent",
+                border: "none",
+                borderBottom:
+                  activeProductsSubTab === "upload"
+                    ? "3px solid #5b7c99"
+                    : "2px solid transparent",
+                padding: "18px 22px",
+                cursor: "pointer",
+                color:
+                  activeProductsSubTab === "upload" ? "#5b7c99" : "#64748b",
+                fontWeight: activeProductsSubTab === "upload" ? "700" : "600",
+                fontSize: "13px",
+                transition: "all 0.25s ease",
+                textTransform: "uppercase",
+                letterSpacing: "0.3px",
+              }}
+              onMouseEnter={(e) => {
+                if (activeProductsSubTab !== "upload") {
+                  e.currentTarget.style.color = "#5b7c99";
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (activeProductsSubTab !== "upload") {
+                  e.currentTarget.style.color = "#64748b";
+                }
+              }}
+            >
+              Upload Portal
+            </button>
+          </div>
+        )}
+
         {/* Content Area */}
         <div
           style={{
@@ -5354,7 +5612,47 @@ export default function App() {
             flexDirection: "column",
           }}
         >
-          {activeSubmenu === "marketplace" ? (
+          {activeSubmenu === "dashboard" ? (
+            <div style={{ flex: 1, overflow: "auto" }}>
+              <HomeDashboard
+                metrics={{
+                  outgoingQuotations: quotationHistory.length,
+                  outgoingInquiries: inquiryHistory.length,
+                  invoices: 0,
+                  totalOrders: incomingOrders.length + outgoingOrders.length,
+                  totalProducts: products.length,
+                  vendorConnections: acceptedVendorConnections.length,
+                }}
+                userName={currentUser}
+                userCompany={currentUserCompany}
+                setActiveSubmenu={setActiveSubmenu}
+                setActiveWarehouseTab={setActiveWarehouseTab}
+                onNavigate={(section) => {
+                  if (section === "quotations") {
+                    setActiveSubmenu("warehouse");
+                    setActiveWarehouseTab("quotations");
+                  } else if (section === "inquiries") {
+                    setActiveSubmenu("warehouse");
+                    setActiveWarehouseTab("inquiries");
+                  } else if (section === "invoices") {
+                    setActiveSubmenu("warehouse");
+                    setActiveWarehouseTab("invoices");
+                  } else if (section === "orders") {
+                    setActiveSubmenu("warehouse");
+                    setActiveWarehouseTab("orders");
+                  } else if (section === "vendors") {
+                    setActiveSubmenu("warehouse");
+                    setActiveWarehouseTab("vendors");
+                  } else if (section === "inventory") {
+                    setActiveSubmenu("warehouse");
+                    setActiveWarehouseTab("products");
+                  } else if (section === "marketplace") {
+                    setActiveSubmenu("marketplace");
+                  }
+                }}
+              />
+            </div>
+          ) : activeSubmenu === "marketplace" ? (
             <div>
               {/* Marketplace Tabs */}
               <div
@@ -6246,595 +6544,645 @@ export default function App() {
                 </div>
               )}
             </div>
+          ) : activeSubmenu === "inbox" ? (
+            gmailService ? (
+              <InboxModule
+                gmailService={gmailService}
+                unreadCount={inboxUnreadCount}
+                onUnreadCountChange={setInboxUnreadCount}
+              />
+            ) : (
+              <div style={{ padding: "32px", textAlign: "center", color: "#64748b" }}>
+                <p>Initializing email system...</p>
+              </div>
+            )
           ) : activeSubmenu === "warehouse" ? (
             <>
-              {activeWarehouseTab === "products" && (
-                <div>
-                  <div style={{ marginBottom: "28px" }}>
-                    <h2
-                      style={{
-                        margin: "0 0 18px 0",
-                        fontSize: "22px",
-                        fontWeight: "800",
-                        color: "#5b7c99",
-                        letterSpacing: "-0.3px",
-                        textTransform: "uppercase",
-                      }}
-                    >
-                      All Products ({products.length})
-                    </h2>
-                    <input
-                      type="text"
-                      placeholder="Search by product name or part number..."
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      style={{
-                        width: "100%",
-                        maxWidth: "500px",
-                        padding: "12px 16px",
-                        border: "1px solid #d0dce6",
-                        borderRadius: "8px",
-                        fontSize: "14px",
-                        color: "#1a365d",
-                        background: "#ffffff",
-                        boxShadow: "0 2px 4px rgba(0, 0, 0, 0.04)",
-                        transition: "all 0.25s ease",
-                        fontWeight: "500",
-                      }}
-                      onFocus={(e) => {
-                        e.currentTarget.style.borderColor = "#5b7c99";
-                        e.currentTarget.style.boxShadow =
-                          "0 2px 8px rgba(2, 132, 199, 0.12), inset 0 0 0 3px rgba(2, 132, 199, 0.08)";
-                      }}
-                      onBlur={(e) => {
-                        e.currentTarget.style.borderColor = "#d0dce6";
-                        e.currentTarget.style.boxShadow =
-                          "0 2px 4px rgba(0, 0, 0, 0.04)";
-                      }}
-                    />
-                  </div>
+              {activeWarehouseTab === "products" &&
+                activeProductsSubTab === "goods" && (
+                  <div>
+                    <div style={{ marginBottom: "28px" }}>
+                      <h2
+                        style={{
+                          margin: "0 0 18px 0",
+                          fontSize: "22px",
+                          fontWeight: "800",
+                          color: "#5b7c99",
+                          letterSpacing: "-0.3px",
+                          textTransform: "uppercase",
+                        }}
+                      >
+                        All Products ({products.length})
+                      </h2>
+                      <input
+                        type="text"
+                        placeholder="Search by product name or part number..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        style={{
+                          width: "100%",
+                          maxWidth: "500px",
+                          padding: "12px 16px",
+                          border: "1px solid #d0dce6",
+                          borderRadius: "8px",
+                          fontSize: "14px",
+                          color: "#1a365d",
+                          background: "#ffffff",
+                          boxShadow: "0 2px 4px rgba(0, 0, 0, 0.04)",
+                          transition: "all 0.25s ease",
+                          fontWeight: "500",
+                        }}
+                        onFocus={(e) => {
+                          e.currentTarget.style.borderColor = "#5b7c99";
+                          e.currentTarget.style.boxShadow =
+                            "0 2px 8px rgba(2, 132, 199, 0.12), inset 0 0 0 3px rgba(2, 132, 199, 0.08)";
+                        }}
+                        onBlur={(e) => {
+                          e.currentTarget.style.borderColor = "#d0dce6";
+                          e.currentTarget.style.boxShadow =
+                            "0 2px 4px rgba(0, 0, 0, 0.04)";
+                        }}
+                      />
+                    </div>
 
-                  {/* Inventory Summary & Sort Controls */}
-                  {products.length > 0 && (
-                    <div
-                      style={{
-                        marginBottom: "28px",
-                        display: "flex",
-                        gap: "28px",
-                        justifyContent: "space-between",
-                      }}
-                    >
-                      {/* Stock Quantity - Left Side */}
-                      <div style={{ display: "flex" }}>
+                    {/* Inventory Summary & Sort Controls */}
+                    {products.length > 0 && (
+                      <div
+                        style={{
+                          marginBottom: "28px",
+                          display: "flex",
+                          gap: "28px",
+                          justifyContent: "space-between",
+                        }}
+                      >
+                        {/* Stock Quantity - Left Side */}
+                        <div style={{ display: "flex" }}>
+                          <div
+                            style={{
+                              background: "#f8fafc",
+                              border: "1px solid #e2e8f0",
+                              borderRadius: "8px",
+                              padding: "10px 16px",
+                              minWidth: "180px",
+                              display: "flex",
+                              flexDirection: "column",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              textAlign: "center",
+                            }}
+                          >
+                            <div
+                              style={{
+                                fontSize: "11px",
+                                color: "#64748b",
+                                fontWeight: "700",
+                                textTransform: "uppercase",
+                                letterSpacing: "0.3px",
+                                marginBottom: "4px",
+                              }}
+                            >
+                              Total Stock Quantity
+                            </div>
+                            <div
+                              style={{
+                                fontSize: "24px",
+                                fontWeight: "800",
+                                color: "#1a365d",
+                              }}
+                            >
+                              {calculateInventorySummary().totalQty.toLocaleString()}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Currency Valuations & Sort Controls - Right Side */}
                         <div
                           style={{
-                            background: "#f8fafc",
-                            border: "1px solid #e2e8f0",
-                            borderRadius: "8px",
-                            padding: "10px 16px",
-                            minWidth: "180px",
                             display: "flex",
                             flexDirection: "column",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            textAlign: "center",
+                            gap: "12px",
+                            alignItems: "flex-end",
                           }}
                         >
+                          {/* Currency Valuations */}
                           <div
                             style={{
-                              fontSize: "11px",
-                              color: "#64748b",
-                              fontWeight: "700",
-                              textTransform: "uppercase",
-                              letterSpacing: "0.3px",
-                              marginBottom: "4px",
+                              display: "flex",
+                              gap: "12px",
+                              flexWrap: "wrap",
+                              justifyContent: "flex-end",
                             }}
                           >
-                            Total Stock Quantity
+                            {Object.entries(
+                              calculateInventorySummary().currencyTotals,
+                            ).map(([currency, data]) => {
+                              const currencyData = CURRENCY_OPTIONS.find(
+                                (c) => c.code === currency,
+                              );
+                              return (
+                                <div
+                                  key={currency}
+                                  style={{
+                                    background: "#f8fafc",
+                                    border: "1px solid #e2e8f0",
+                                    borderRadius: "8px",
+                                    padding: "10px 16px",
+                                    minWidth: "180px",
+                                  }}
+                                >
+                                  <div
+                                    style={{
+                                      fontSize: "11px",
+                                      color: "#64748b",
+                                      fontWeight: "700",
+                                      textTransform: "uppercase",
+                                      letterSpacing: "0.3px",
+                                      marginBottom: "4px",
+                                    }}
+                                  >
+                                    Total Valuation ({currency})
+                                  </div>
+                                  <div
+                                    style={{
+                                      fontSize: "20px",
+                                      fontWeight: "800",
+                                      color: "#1a365d",
+                                    }}
+                                  >
+                                    {currencyData?.symbol}
+                                    {formatNumber(data.total)}
+                                  </div>
+                                </div>
+                              );
+                            })}
                           </div>
+
+                          {/* Sort Controls */}
                           <div
                             style={{
-                              fontSize: "24px",
-                              fontWeight: "800",
-                              color: "#1a365d",
+                              display: "flex",
+                              gap: "8px",
+                              alignItems: "center",
+                              flexWrap: "wrap",
+                              justifyContent: "flex-end",
                             }}
                           >
-                            {calculateInventorySummary().totalQty.toLocaleString()}
+                            <div
+                              style={{
+                                fontSize: "11px",
+                                color: "#64748b",
+                                fontWeight: "700",
+                                textTransform: "uppercase",
+                                letterSpacing: "0.3px",
+                              }}
+                            >
+                              Sort By:
+                            </div>
+                            {[
+                              "default",
+                              "name",
+                              "price",
+                              "qty",
+                              "partNumber",
+                              "currency",
+                            ].map((option) => (
+                              <button
+                                key={option}
+                                onClick={() => {
+                                  if (sortBy === option) {
+                                    setSortDirection(
+                                      sortDirection === "asc" ? "desc" : "asc",
+                                    );
+                                  } else {
+                                    setSortBy(option as any);
+                                    setSortDirection("asc");
+                                  }
+                                }}
+                                style={{
+                                  padding: "8px 14px",
+                                  background:
+                                    sortBy === option ? "#5b7c99" : "#f0f4f8",
+                                  color:
+                                    sortBy === option ? "#ffffff" : "#64748b",
+                                  border: "none",
+                                  borderRadius: "6px",
+                                  fontSize: "12px",
+                                  fontWeight: sortBy === option ? "700" : "600",
+                                  cursor: "pointer",
+                                  transition: "all 0.2s ease",
+                                  textTransform: "capitalize",
+                                  display: "flex",
+                                  alignItems: "center",
+                                  gap: "6px",
+                                }}
+                                onMouseEnter={(e) => {
+                                  if (sortBy !== option) {
+                                    e.currentTarget.style.background =
+                                      "#e2e8f0";
+                                  }
+                                }}
+                                onMouseLeave={(e) => {
+                                  if (sortBy !== option) {
+                                    e.currentTarget.style.background =
+                                      "#f0f4f8";
+                                  }
+                                }}
+                              >
+                                {option}
+                                {sortBy === option && (
+                                  <span
+                                    style={{
+                                      fontSize: "14px",
+                                      fontWeight: "bold",
+                                    }}
+                                  >
+                                    {sortDirection === "asc" ? "↑" : "↓"}
+                                  </span>
+                                )}
+                              </button>
+                            ))}
                           </div>
                         </div>
                       </div>
+                    )}
 
-                      {/* Currency Valuations & Sort Controls - Right Side */}
+                    {/* Stock Threshold Setting */}
+                    {products.length > 0 && (
                       <div
                         style={{
+                          marginBottom: "28px",
                           display: "flex",
-                          flexDirection: "column",
-                          gap: "12px",
-                          alignItems: "flex-end",
+                          gap: "16px",
+                          alignItems: "center",
+                          background: "#f8fafc",
+                          border: "1px solid #e2e8f0",
+                          borderRadius: "8px",
+                          padding: "16px 20px",
                         }}
                       >
-                        {/* Currency Valuations */}
-                        <div
+                        <label
                           style={{
-                            display: "flex",
-                            gap: "12px",
-                            flexWrap: "wrap",
-                            justifyContent: "flex-end",
+                            fontSize: "12px",
+                            color: "#64748b",
+                            fontWeight: "700",
+                            textTransform: "uppercase",
+                            letterSpacing: "0.3px",
+                            margin: 0,
                           }}
                         >
-                          {Object.entries(
-                            calculateInventorySummary().currencyTotals,
-                          ).map(([currency, data]) => {
-                            const currencyData = CURRENCY_OPTIONS.find(
-                              (c) => c.code === currency,
-                            );
-                            return (
-                              <div
-                                key={currency}
+                          Low Stock Threshold:
+                        </label>
+                        <input
+                          type="number"
+                          value={stockThreshold}
+                          onChange={(e) =>
+                            setStockThreshold(parseInt(e.target.value) || 10)
+                          }
+                          style={{
+                            width: "80px",
+                            padding: "8px 12px",
+                            border: "1px solid #d0dce6",
+                            borderRadius: "6px",
+                            fontSize: "13px",
+                            color: "#1a365d",
+                            fontWeight: "600",
+                          }}
+                          min="0"
+                        />
+                        <span style={{ fontSize: "12px", color: "#64748b" }}>
+                          Products with qty at or below this level will show as
+                          "Low Stock"
+                        </span>
+                      </div>
+                    )}
+
+                    {products.length === 0 ? (
+                      <div
+                        style={{
+                          padding: "48px 32px",
+                          textAlign: "center",
+                          background: "#f8fafc",
+                          borderRadius: "12px",
+                          border: "1px solid #e2e8f0",
+                          boxShadow: "0 1px 2px rgba(0, 0, 0, 0.04)",
+                        }}
+                      >
+                        <p
+                          style={{
+                            color: "#64748b",
+                            margin: "0",
+                            fontSize: "14px",
+                            lineHeight: "1.6",
+                          }}
+                        >
+                          No products uploaded yet. Use the Upload Portal to add
+                          products.
+                        </p>
+                      </div>
+                    ) : filteredProducts.length === 0 ? (
+                      <div
+                        style={{
+                          padding: "40px",
+                          textAlign: "center",
+                          background: "#f9fafb",
+                          borderRadius: "8px",
+                          border: "1px solid #e2e8f0",
+                        }}
+                      >
+                        <p
+                          style={{
+                            color: "#64748b",
+                            margin: "0",
+                            fontSize: "14px",
+                          }}
+                        >
+                          No products match your search. Try different keywords.
+                        </p>
+                      </div>
+                    ) : (
+                      <div>
+                        <div
+                          style={{
+                            background: "#ffffff",
+                            border: "1px solid #e2e8f0",
+                            borderRadius: "10px",
+                            overflow: "hidden",
+                            marginBottom: "24px",
+                            boxShadow: "0 1px 3px rgba(0, 0, 0, 0.06)",
+                          }}
+                        >
+                          <table
+                            style={{
+                              width: "100%",
+                              borderCollapse: "collapse",
+                            }}
+                          >
+                            <thead>
+                              <tr
                                 style={{
                                   background: "#f8fafc",
-                                  border: "1px solid #e2e8f0",
-                                  borderRadius: "8px",
-                                  padding: "10px 16px",
-                                  minWidth: "180px",
+                                  borderBottom: "2px solid #e2e8f0",
                                 }}
                               >
-                                <div
+                                <th
                                   style={{
-                                    fontSize: "11px",
-                                    color: "#64748b",
-                                    fontWeight: "700",
-                                    textTransform: "uppercase",
-                                    letterSpacing: "0.3px",
-                                    marginBottom: "4px",
-                                  }}
-                                >
-                                  Total Valuation ({currency})
-                                </div>
-                                <div
-                                  style={{
-                                    fontSize: "20px",
-                                    fontWeight: "800",
-                                    color: "#1a365d",
-                                  }}
-                                >
-                                  {currencyData?.symbol}
-                                  {formatNumber(data.total)}
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-
-                        {/* Sort Controls */}
-                        <div
-                          style={{
-                            display: "flex",
-                            gap: "8px",
-                            alignItems: "center",
-                            flexWrap: "wrap",
-                            justifyContent: "flex-end",
-                          }}
-                        >
-                          <div
-                            style={{
-                              fontSize: "11px",
-                              color: "#64748b",
-                              fontWeight: "700",
-                              textTransform: "uppercase",
-                              letterSpacing: "0.3px",
-                            }}
-                          >
-                            Sort By:
-                          </div>
-                          {[
-                            "default",
-                            "name",
-                            "price",
-                            "qty",
-                            "partNumber",
-                            "currency",
-                          ].map((option) => (
-                            <button
-                              key={option}
-                              onClick={() => {
-                                if (sortBy === option) {
-                                  setSortDirection(
-                                    sortDirection === "asc" ? "desc" : "asc",
-                                  );
-                                } else {
-                                  setSortBy(option as any);
-                                  setSortDirection("asc");
-                                }
-                              }}
-                              style={{
-                                padding: "8px 14px",
-                                background:
-                                  sortBy === option ? "#5b7c99" : "#f0f4f8",
-                                color:
-                                  sortBy === option ? "#ffffff" : "#64748b",
-                                border: "none",
-                                borderRadius: "6px",
-                                fontSize: "12px",
-                                fontWeight: sortBy === option ? "700" : "600",
-                                cursor: "pointer",
-                                transition: "all 0.2s ease",
-                                textTransform: "capitalize",
-                                display: "flex",
-                                alignItems: "center",
-                                gap: "6px",
-                              }}
-                              onMouseEnter={(e) => {
-                                if (sortBy !== option) {
-                                  e.currentTarget.style.background = "#e2e8f0";
-                                }
-                              }}
-                              onMouseLeave={(e) => {
-                                if (sortBy !== option) {
-                                  e.currentTarget.style.background = "#f0f4f8";
-                                }
-                              }}
-                            >
-                              {option}
-                              {sortBy === option && (
-                                <span
-                                  style={{
-                                    fontSize: "14px",
-                                    fontWeight: "bold",
-                                  }}
-                                >
-                                  {sortDirection === "asc" ? "↑" : "↓"}
-                                </span>
-                              )}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Stock Threshold Setting */}
-                  {products.length > 0 && (
-                    <div
-                      style={{
-                        marginBottom: "28px",
-                        display: "flex",
-                        gap: "16px",
-                        alignItems: "center",
-                        background: "#f8fafc",
-                        border: "1px solid #e2e8f0",
-                        borderRadius: "8px",
-                        padding: "16px 20px",
-                      }}
-                    >
-                      <label
-                        style={{
-                          fontSize: "12px",
-                          color: "#64748b",
-                          fontWeight: "700",
-                          textTransform: "uppercase",
-                          letterSpacing: "0.3px",
-                          margin: 0,
-                        }}
-                      >
-                        Low Stock Threshold:
-                      </label>
-                      <input
-                        type="number"
-                        value={stockThreshold}
-                        onChange={(e) =>
-                          setStockThreshold(parseInt(e.target.value) || 10)
-                        }
-                        style={{
-                          width: "80px",
-                          padding: "8px 12px",
-                          border: "1px solid #d0dce6",
-                          borderRadius: "6px",
-                          fontSize: "13px",
-                          color: "#1a365d",
-                          fontWeight: "600",
-                        }}
-                        min="0"
-                      />
-                      <span style={{ fontSize: "12px", color: "#64748b" }}>
-                        Products with qty at or below this level will show as
-                        "Low Stock"
-                      </span>
-                    </div>
-                  )}
-
-                  {products.length === 0 ? (
-                    <div
-                      style={{
-                        padding: "48px 32px",
-                        textAlign: "center",
-                        background: "#f8fafc",
-                        borderRadius: "12px",
-                        border: "1px solid #e2e8f0",
-                        boxShadow: "0 1px 2px rgba(0, 0, 0, 0.04)",
-                      }}
-                    >
-                      <p
-                        style={{
-                          color: "#64748b",
-                          margin: "0",
-                          fontSize: "14px",
-                          lineHeight: "1.6",
-                        }}
-                      >
-                        No products uploaded yet. Use the Upload Portal to add
-                        products.
-                      </p>
-                    </div>
-                  ) : filteredProducts.length === 0 ? (
-                    <div
-                      style={{
-                        padding: "40px",
-                        textAlign: "center",
-                        background: "#f9fafb",
-                        borderRadius: "8px",
-                        border: "1px solid #e2e8f0",
-                      }}
-                    >
-                      <p
-                        style={{
-                          color: "#64748b",
-                          margin: "0",
-                          fontSize: "14px",
-                        }}
-                      >
-                        No products match your search. Try different keywords.
-                      </p>
-                    </div>
-                  ) : (
-                    <div>
-                      <div
-                        style={{
-                          background: "#ffffff",
-                          border: "1px solid #e2e8f0",
-                          borderRadius: "10px",
-                          overflow: "hidden",
-                          marginBottom: "24px",
-                          boxShadow: "0 1px 3px rgba(0, 0, 0, 0.06)",
-                        }}
-                      >
-                        <table
-                          style={{ width: "100%", borderCollapse: "collapse" }}
-                        >
-                          <thead>
-                            <tr
-                              style={{
-                                background: "#f8fafc",
-                                borderBottom: "2px solid #e2e8f0",
-                              }}
-                            >
-                              <th
-                                style={{
-                                  padding: "14px 16px",
-                                  textAlign: "center",
-                                  fontSize: "12px",
-                                  fontWeight: "700",
-                                  color: "#475569",
-                                  borderRight: "1px solid #e2e8f0",
-                                  width: "40px",
-                                  letterSpacing: "0.3px",
-                                }}
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={
-                                    paginatedProducts.length > 0 &&
-                                    paginatedProducts.every((p) =>
-                                      selectedProducts.has(p.id),
-                                    )
-                                  }
-                                  onChange={() => {
-                                    const newSelected = new Set(
-                                      selectedProducts,
-                                    );
-                                    paginatedProducts.forEach((p) => {
-                                      if (
-                                        paginatedProducts.every((pr) =>
-                                          selectedProducts.has(pr.id),
-                                        )
-                                      ) {
-                                        newSelected.delete(p.id);
-                                      } else {
-                                        newSelected.add(p.id);
-                                      }
-                                    });
-                                    setSelectedProducts(newSelected);
-                                  }}
-                                  style={{ cursor: "pointer" }}
-                                />
-                              </th>
-                              <th
-                                style={{
-                                  padding: "12px 16px",
-                                  textAlign: "center",
-                                  fontSize: "12px",
-                                  fontWeight: "600",
-                                  color: "#64748b",
-                                  borderRight: "1px solid #e2e8f0",
-                                }}
-                              >
-                                Image
-                              </th>
-                              <th
-                                style={{
-                                  padding: "12px 16px",
-                                  textAlign: "center",
-                                  fontSize: "12px",
-                                  fontWeight: "600",
-                                  color: "#64748b",
-                                  borderRight: "1px solid #e2e8f0",
-                                }}
-                              >
-                                Product Name
-                              </th>
-                              <th
-                                style={{
-                                  padding: "12px 16px",
-                                  textAlign: "center",
-                                  fontSize: "12px",
-                                  fontWeight: "600",
-                                  color: "#64748b",
-                                  borderRight: "1px solid #e2e8f0",
-                                }}
-                              >
-                                Part Number
-                              </th>
-                              <th
-                                style={{
-                                  padding: "12px 16px",
-                                  textAlign: "center",
-                                  fontSize: "12px",
-                                  fontWeight: "600",
-                                  color: "#64748b",
-                                  borderRight: "1px solid #e2e8f0",
-                                }}
-                              >
-                                Price
-                              </th>
-                              <th
-                                style={{
-                                  padding: "12px 16px",
-                                  textAlign: "center",
-                                  fontSize: "12px",
-                                  fontWeight: "600",
-                                  color: "#64748b",
-                                  borderRight: "1px solid #e2e8f0",
-                                }}
-                              >
-                                Currency
-                              </th>
-                              <th
-                                style={{
-                                  padding: "12px 16px",
-                                  textAlign: "center",
-                                  fontSize: "12px",
-                                  fontWeight: "600",
-                                  color: "#64748b",
-                                  borderRight: "1px solid #e2e8f0",
-                                }}
-                              >
-                                Qty
-                              </th>
-                              <th
-                                style={{
-                                  padding: "12px 16px",
-                                  textAlign: "center",
-                                  fontSize: "12px",
-                                  fontWeight: "600",
-                                  color: "#64748b",
-                                  borderRight: "1px solid #e2e8f0",
-                                }}
-                              >
-                                Stock
-                              </th>
-                              <th
-                                style={{
-                                  padding: "12px 16px",
-                                  textAlign: "center",
-                                  fontSize: "12px",
-                                  fontWeight: "600",
-                                  color: "#64748b",
-                                }}
-                              >
-                                Actions
-                              </th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {paginatedProducts.map((product, index) => (
-                              <tr
-                                key={product.id}
-                                style={{
-                                  borderBottom:
-                                    index < paginatedProducts.length - 1
-                                      ? "1px solid #f1f5f9"
-                                      : "none",
-                                  background:
-                                    index % 2 === 0 ? "#ffffff" : "#f9fafb",
-                                  opacity: selectedProducts.has(product.id)
-                                    ? 0.7
-                                    : 1,
-                                }}
-                              >
-                                <td
-                                  style={{
-                                    padding: "12px 16px",
+                                    padding: "14px 16px",
                                     textAlign: "center",
+                                    fontSize: "12px",
+                                    fontWeight: "700",
+                                    color: "#475569",
                                     borderRight: "1px solid #e2e8f0",
                                     width: "40px",
+                                    letterSpacing: "0.3px",
                                   }}
                                 >
                                   <input
                                     type="checkbox"
-                                    checked={selectedProducts.has(product.id)}
-                                    onChange={() =>
-                                      handleSelectProduct(product.id)
+                                    checked={
+                                      paginatedProducts.length > 0 &&
+                                      paginatedProducts.every((p) =>
+                                        selectedProducts.has(p.id),
+                                      )
                                     }
+                                    onChange={() => {
+                                      const newSelected = new Set(
+                                        selectedProducts,
+                                      );
+                                      paginatedProducts.forEach((p) => {
+                                        if (
+                                          paginatedProducts.every((pr) =>
+                                            selectedProducts.has(pr.id),
+                                          )
+                                        ) {
+                                          newSelected.delete(p.id);
+                                        } else {
+                                          newSelected.add(p.id);
+                                        }
+                                      });
+                                      setSelectedProducts(newSelected);
+                                    }}
                                     style={{ cursor: "pointer" }}
                                   />
-                                </td>
-                                <td
+                                </th>
+                                <th
                                   style={{
                                     padding: "12px 16px",
                                     textAlign: "center",
+                                    fontSize: "12px",
+                                    fontWeight: "600",
+                                    color: "#64748b",
                                     borderRight: "1px solid #e2e8f0",
                                   }}
                                 >
-                                  {editingProductId === product.id ? (
-                                    <label
-                                      style={{
-                                        cursor: "pointer",
-                                        display: "inline-block",
-                                      }}
-                                    >
-                                      <input
-                                        type="file"
-                                        accept="image/*"
-                                        onChange={(e) => {
-                                          const file = e.target.files?.[0];
-                                          if (file) {
-                                            const reader = new FileReader();
-                                            reader.onload = (event) => {
-                                              setEditingData({
-                                                ...editingData,
-                                                image: event.target
-                                                  ?.result as string,
-                                              });
-                                            };
-                                            reader.readAsDataURL(file);
-                                          }
+                                  Image
+                                </th>
+                                <th
+                                  style={{
+                                    padding: "12px 16px",
+                                    textAlign: "center",
+                                    fontSize: "12px",
+                                    fontWeight: "600",
+                                    color: "#64748b",
+                                    borderRight: "1px solid #e2e8f0",
+                                  }}
+                                >
+                                  Product Name
+                                </th>
+                                <th
+                                  style={{
+                                    padding: "12px 16px",
+                                    textAlign: "center",
+                                    fontSize: "12px",
+                                    fontWeight: "600",
+                                    color: "#64748b",
+                                    borderRight: "1px solid #e2e8f0",
+                                  }}
+                                >
+                                  Part Number
+                                </th>
+                                <th
+                                  style={{
+                                    padding: "12px 16px",
+                                    textAlign: "center",
+                                    fontSize: "12px",
+                                    fontWeight: "600",
+                                    color: "#64748b",
+                                    borderRight: "1px solid #e2e8f0",
+                                  }}
+                                >
+                                  Price
+                                </th>
+                                <th
+                                  style={{
+                                    padding: "12px 16px",
+                                    textAlign: "center",
+                                    fontSize: "12px",
+                                    fontWeight: "600",
+                                    color: "#64748b",
+                                    borderRight: "1px solid #e2e8f0",
+                                  }}
+                                >
+                                  Currency
+                                </th>
+                                <th
+                                  style={{
+                                    padding: "12px 16px",
+                                    textAlign: "center",
+                                    fontSize: "12px",
+                                    fontWeight: "600",
+                                    color: "#64748b",
+                                    borderRight: "1px solid #e2e8f0",
+                                  }}
+                                >
+                                  Qty
+                                </th>
+                                <th
+                                  style={{
+                                    padding: "12px 16px",
+                                    textAlign: "center",
+                                    fontSize: "12px",
+                                    fontWeight: "600",
+                                    color: "#64748b",
+                                    borderRight: "1px solid #e2e8f0",
+                                  }}
+                                >
+                                  Stock
+                                </th>
+                                <th
+                                  style={{
+                                    padding: "12px 16px",
+                                    textAlign: "center",
+                                    fontSize: "12px",
+                                    fontWeight: "600",
+                                    color: "#64748b",
+                                  }}
+                                >
+                                  Actions
+                                </th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {paginatedProducts.map((product, index) => (
+                                <tr
+                                  key={product.id}
+                                  style={{
+                                    borderBottom:
+                                      index < paginatedProducts.length - 1
+                                        ? "1px solid #f1f5f9"
+                                        : "none",
+                                    background:
+                                      index % 2 === 0 ? "#ffffff" : "#f9fafb",
+                                    opacity: selectedProducts.has(product.id)
+                                      ? 0.7
+                                      : 1,
+                                  }}
+                                >
+                                  <td
+                                    style={{
+                                      padding: "12px 16px",
+                                      textAlign: "center",
+                                      borderRight: "1px solid #e2e8f0",
+                                      width: "40px",
+                                    }}
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={selectedProducts.has(product.id)}
+                                      onChange={() =>
+                                        handleSelectProduct(product.id)
+                                      }
+                                      style={{ cursor: "pointer" }}
+                                    />
+                                  </td>
+                                  <td
+                                    style={{
+                                      padding: "12px 16px",
+                                      textAlign: "center",
+                                      borderRight: "1px solid #e2e8f0",
+                                    }}
+                                  >
+                                    {editingProductId === product.id ? (
+                                      <label
+                                        style={{
+                                          cursor: "pointer",
+                                          display: "inline-block",
                                         }}
-                                        style={{ display: "none" }}
-                                      />
+                                      >
+                                        <input
+                                          type="file"
+                                          accept="image/*"
+                                          onChange={(e) => {
+                                            const file = e.target.files?.[0];
+                                            if (file) {
+                                              const reader = new FileReader();
+                                              reader.onload = (event) => {
+                                                setEditingData({
+                                                  ...editingData,
+                                                  image: event.target
+                                                    ?.result as string,
+                                                });
+                                              };
+                                              reader.readAsDataURL(file);
+                                            }
+                                          }}
+                                          style={{ display: "none" }}
+                                        />
+                                        <div
+                                          style={{
+                                            width: "40px",
+                                            height: "40px",
+                                            background:
+                                              editingData.image || product.image
+                                                ? "#f1f5f9"
+                                                : "#e2e8f0",
+                                            borderRadius: "4px",
+                                            display: "flex",
+                                            alignItems: "center",
+                                            justifyContent: "center",
+                                            color: "#5b7c99",
+                                            fontSize: "20px",
+                                            border: "2px solid #5b7c99",
+                                            cursor: "pointer",
+                                            overflow: "hidden",
+                                          }}
+                                        >
+                                          {editingData.image ||
+                                          product.image ? (
+                                            <img
+                                              src={
+                                                editingData.image ||
+                                                product.image
+                                              }
+                                              alt="product"
+                                              style={{
+                                                width: "100%",
+                                                height: "100%",
+                                                objectFit: "cover",
+                                              }}
+                                            />
+                                          ) : (
+                                            <span></span>
+                                          )}
+                                        </div>
+                                      </label>
+                                    ) : (
                                       <div
                                         style={{
                                           width: "40px",
                                           height: "40px",
-                                          background:
-                                            editingData.image || product.image
-                                              ? "#f1f5f9"
-                                              : "#e2e8f0",
+                                          background: "#f1f5f9",
                                           borderRadius: "4px",
                                           display: "flex",
                                           alignItems: "center",
                                           justifyContent: "center",
-                                          color: "#5b7c99",
-                                          fontSize: "20px",
-                                          border: "2px solid #5b7c99",
-                                          cursor: "pointer",
+                                          color: "#cbd5e1",
+                                          fontSize: "12px",
                                           overflow: "hidden",
                                         }}
                                       >
-                                        {editingData.image || product.image ? (
+                                        {product.image ? (
                                           <img
-                                            src={
-                                              editingData.image || product.image
-                                            }
+                                            src={product.image}
                                             alt="product"
                                             style={{
                                               width: "100%",
@@ -6843,100 +7191,29 @@ export default function App() {
                                             }}
                                           />
                                         ) : (
-                                          <span></span>
+                                          "No image"
                                         )}
                                       </div>
-                                    </label>
-                                  ) : (
-                                    <div
-                                      style={{
-                                        width: "40px",
-                                        height: "40px",
-                                        background: "#f1f5f9",
-                                        borderRadius: "4px",
-                                        display: "flex",
-                                        alignItems: "center",
-                                        justifyContent: "center",
-                                        color: "#cbd5e1",
-                                        fontSize: "12px",
-                                        overflow: "hidden",
-                                      }}
-                                    >
-                                      {product.image ? (
-                                        <img
-                                          src={product.image}
-                                          alt="product"
-                                          style={{
-                                            width: "100%",
-                                            height: "100%",
-                                            objectFit: "cover",
-                                          }}
-                                        />
-                                      ) : (
-                                        "No image"
-                                      )}
-                                    </div>
-                                  )}
-                                </td>
-                                <td
-                                  style={{
-                                    padding: "12px 16px",
-                                    fontSize: "13px",
-                                    color: "#1a365d",
-                                    fontWeight: "500",
-                                    borderRight: "1px solid #e2e8f0",
-                                    textAlign: "center",
-                                  }}
-                                >
-                                  {editingProductId === product.id ? (
-                                    <input
-                                      type="text"
-                                      value={editingData.name || product.name}
-                                      onChange={(e) =>
-                                        setEditingData({
-                                          ...editingData,
-                                          name: e.target.value,
-                                        })
-                                      }
-                                      style={{
-                                        width: "100%",
-                                        padding: "6px",
-                                        border: "1px solid #5b7c99",
-                                        borderRadius: "4px",
-                                        fontSize: "13px",
-                                      }}
-                                    />
-                                  ) : (
-                                    product.name
-                                  )}
-                                </td>
-                                <td
-                                  style={{
-                                    padding: "12px 16px",
-                                    fontSize: "13px",
-                                    color: "#64748b",
-                                    borderRight: "1px solid #e2e8f0",
-                                    textAlign: "center",
-                                  }}
-                                >
-                                  {editingProductId === product.id ? (
-                                    <div
-                                      style={{
-                                        display: "flex",
-                                        flexDirection: "column",
-                                        gap: "8px",
-                                      }}
-                                    >
+                                    )}
+                                  </td>
+                                  <td
+                                    style={{
+                                      padding: "12px 16px",
+                                      fontSize: "13px",
+                                      color: "#1a365d",
+                                      fontWeight: "500",
+                                      borderRight: "1px solid #e2e8f0",
+                                      textAlign: "center",
+                                    }}
+                                  >
+                                    {editingProductId === product.id ? (
                                       <input
                                         type="text"
-                                        value={
-                                          editingData.partNumber ||
-                                          product.partNumber
-                                        }
+                                        value={editingData.name || product.name}
                                         onChange={(e) =>
                                           setEditingData({
                                             ...editingData,
-                                            partNumber: e.target.value,
+                                            name: e.target.value,
                                           })
                                         }
                                         style={{
@@ -6947,981 +7224,1068 @@ export default function App() {
                                           fontSize: "13px",
                                         }}
                                       />
-                                      <select
-                                        value={partNumberFormat}
+                                    ) : (
+                                      product.name
+                                    )}
+                                  </td>
+                                  <td
+                                    style={{
+                                      padding: "12px 16px",
+                                      fontSize: "13px",
+                                      color: "#64748b",
+                                      borderRight: "1px solid #e2e8f0",
+                                      textAlign: "center",
+                                    }}
+                                  >
+                                    {editingProductId === product.id ? (
+                                      <div
+                                        style={{
+                                          display: "flex",
+                                          flexDirection: "column",
+                                          gap: "8px",
+                                        }}
+                                      >
+                                        <input
+                                          type="text"
+                                          value={
+                                            editingData.partNumber ||
+                                            product.partNumber
+                                          }
+                                          onChange={(e) =>
+                                            setEditingData({
+                                              ...editingData,
+                                              partNumber: e.target.value,
+                                            })
+                                          }
+                                          style={{
+                                            width: "100%",
+                                            padding: "6px",
+                                            border: "1px solid #5b7c99",
+                                            borderRadius: "4px",
+                                            fontSize: "13px",
+                                          }}
+                                        />
+                                        <select
+                                          value={partNumberFormat}
+                                          onChange={(e) =>
+                                            setPartNumberFormat(
+                                              e.target.value as any,
+                                            )
+                                          }
+                                          style={{
+                                            width: "100%",
+                                            padding: "6px",
+                                            border: "1px solid #d0dce6",
+                                            borderRadius: "4px",
+                                            fontSize: "12px",
+                                            color: "#64748b",
+                                            cursor: "pointer",
+                                          }}
+                                        >
+                                          <option value="default">
+                                            Format: 1234432112
+                                          </option>
+                                          <option value="dash">
+                                            Format: 1234-4321-12
+                                          </option>
+                                          <option value="space">
+                                            Format: 1234 4321 12
+                                          </option>
+                                          <option value="slash">
+                                            Format: 1234/4321/12
+                                          </option>
+                                        </select>
+                                      </div>
+                                    ) : (
+                                      formatPartNumber(
+                                        product.partNumber,
+                                        partNumberFormat,
+                                      )
+                                    )}
+                                  </td>
+                                  <td
+                                    style={{
+                                      padding: "12px 16px",
+                                      textAlign: "center",
+                                      fontSize: "13px",
+                                      color: "#1a365d",
+                                      fontWeight: "500",
+                                      borderRight: "1px solid #e2e8f0",
+                                    }}
+                                  >
+                                    {editingProductId === product.id ? (
+                                      <input
+                                        type="number"
+                                        value={
+                                          editingData.price || product.price
+                                        }
                                         onChange={(e) =>
-                                          setPartNumberFormat(
-                                            e.target.value as any,
-                                          )
+                                          setEditingData({
+                                            ...editingData,
+                                            price: parseFloat(e.target.value),
+                                          })
+                                        }
+                                        style={{
+                                          width: "100px",
+                                          padding: "6px",
+                                          border: "1px solid #5b7c99",
+                                          borderRadius: "4px",
+                                          fontSize: "13px",
+                                        }}
+                                      />
+                                    ) : (
+                                      (() => {
+                                        const currencyData =
+                                          CURRENCY_OPTIONS.find(
+                                            (c) =>
+                                              c.code ===
+                                              (product.currency || "USD"),
+                                          );
+                                        const symbol =
+                                          currencyData?.symbol || "$";
+                                        return `${symbol}${formatNumber(product.price)}`;
+                                      })()
+                                    )}
+                                  </td>
+                                  <td
+                                    style={{
+                                      padding: "12px 16px",
+                                      textAlign: "center",
+                                      fontSize: "13px",
+                                      color: "#1a365d",
+                                      fontWeight: "500",
+                                      borderRight: "1px solid #e2e8f0",
+                                    }}
+                                  >
+                                    {editingProductId === product.id ? (
+                                      <select
+                                        value={
+                                          editingData.currency ||
+                                          product.currency ||
+                                          "USD"
+                                        }
+                                        onChange={(e) =>
+                                          setEditingData({
+                                            ...editingData,
+                                            currency: e.target.value,
+                                          })
                                         }
                                         style={{
                                           width: "100%",
                                           padding: "6px",
-                                          border: "1px solid #d0dce6",
+                                          border: "1px solid #5b7c99",
                                           borderRadius: "4px",
-                                          fontSize: "12px",
-                                          color: "#64748b",
+                                          fontSize: "13px",
                                           cursor: "pointer",
                                         }}
                                       >
-                                        <option value="default">
-                                          Format: 1234432112
-                                        </option>
-                                        <option value="dash">
-                                          Format: 1234-4321-12
-                                        </option>
-                                        <option value="space">
-                                          Format: 1234 4321 12
-                                        </option>
-                                        <option value="slash">
-                                          Format: 1234/4321/12
-                                        </option>
+                                        {CURRENCY_OPTIONS.map((curr) => (
+                                          <option
+                                            key={curr.code}
+                                            value={curr.code}
+                                          >
+                                            {curr.code}
+                                          </option>
+                                        ))}
                                       </select>
-                                    </div>
-                                  ) : (
-                                    formatPartNumber(
-                                      product.partNumber,
-                                      partNumberFormat,
-                                    )
-                                  )}
-                                </td>
-                                <td
-                                  style={{
-                                    padding: "12px 16px",
-                                    textAlign: "center",
-                                    fontSize: "13px",
-                                    color: "#1a365d",
-                                    fontWeight: "500",
-                                    borderRight: "1px solid #e2e8f0",
-                                  }}
-                                >
-                                  {editingProductId === product.id ? (
-                                    <input
-                                      type="number"
-                                      value={editingData.price || product.price}
-                                      onChange={(e) =>
-                                        setEditingData({
-                                          ...editingData,
-                                          price: parseFloat(e.target.value),
-                                        })
-                                      }
-                                      style={{
-                                        width: "100px",
-                                        padding: "6px",
-                                        border: "1px solid #5b7c99",
-                                        borderRadius: "4px",
-                                        fontSize: "13px",
-                                      }}
-                                    />
-                                  ) : (
-                                    (() => {
-                                      const currencyData =
-                                        CURRENCY_OPTIONS.find(
-                                          (c) =>
-                                            c.code ===
-                                            (product.currency || "USD"),
-                                        );
-                                      const symbol =
-                                        currencyData?.symbol || "$";
-                                      return `${symbol}${formatNumber(product.price)}`;
-                                    })()
-                                  )}
-                                </td>
-                                <td
-                                  style={{
-                                    padding: "12px 16px",
-                                    textAlign: "center",
-                                    fontSize: "13px",
-                                    color: "#1a365d",
-                                    fontWeight: "500",
-                                    borderRight: "1px solid #e2e8f0",
-                                  }}
-                                >
-                                  {editingProductId === product.id ? (
-                                    <select
-                                      value={
-                                        editingData.currency ||
-                                        product.currency ||
-                                        "USD"
-                                      }
-                                      onChange={(e) =>
-                                        setEditingData({
-                                          ...editingData,
-                                          currency: e.target.value,
-                                        })
-                                      }
-                                      style={{
-                                        width: "100%",
-                                        padding: "6px",
-                                        border: "1px solid #5b7c99",
-                                        borderRadius: "4px",
-                                        fontSize: "13px",
-                                        cursor: "pointer",
-                                      }}
-                                    >
-                                      {CURRENCY_OPTIONS.map((curr) => (
-                                        <option
-                                          key={curr.code}
-                                          value={curr.code}
-                                        >
-                                          {curr.code}
-                                        </option>
-                                      ))}
-                                    </select>
-                                  ) : (
-                                    product.currency || "USD"
-                                  )}
-                                </td>
-                                <td
-                                  style={{
-                                    padding: "12px 16px",
-                                    textAlign: "center",
-                                    fontSize: "13px",
-                                    color: "#1a365d",
-                                    fontWeight: "500",
-                                    borderRight: "1px solid #e2e8f0",
-                                  }}
-                                >
-                                  {editingProductId === product.id ? (
-                                    <input
-                                      type="number"
-                                      value={editingData.qty ?? product.qty}
-                                      onChange={(e) =>
-                                        setEditingData({
-                                          ...editingData,
-                                          qty: parseInt(e.target.value),
-                                        })
-                                      }
-                                      style={{
-                                        width: "80px",
-                                        padding: "6px",
-                                        border: "1px solid #5b7c99",
-                                        borderRadius: "4px",
-                                        fontSize: "13px",
-                                      }}
-                                    />
-                                  ) : (
-                                    product.qty.toLocaleString()
-                                  )}
-                                </td>
-                                <td
-                                  style={{
-                                    padding: "12px 16px",
-                                    fontSize: "13px",
-                                    borderRight: "1px solid #e2e8f0",
-                                    textAlign: "center",
-                                  }}
-                                >
-                                  <span
+                                    ) : (
+                                      product.currency || "USD"
+                                    )}
+                                  </td>
+                                  <td
                                     style={{
-                                      background:
-                                        product.stock === "In Stock"
-                                          ? "#dcfce7"
-                                          : product.stock === "Low Stock"
-                                            ? "#fef3c7"
-                                            : "#fee2e2",
-                                      color:
-                                        product.stock === "In Stock"
-                                          ? "#16a34a"
-                                          : product.stock === "Low Stock"
-                                            ? "#d97706"
-                                            : "#dc2626",
-                                      padding: "4px 8px",
-                                      borderRadius: "4px",
-                                      fontSize: "12px",
+                                      padding: "12px 16px",
+                                      textAlign: "center",
+                                      fontSize: "13px",
+                                      color: "#1a365d",
                                       fontWeight: "500",
+                                      borderRight: "1px solid #e2e8f0",
                                     }}
                                   >
-                                    {product.stock}
-                                  </span>
-                                </td>
-                                <td
-                                  style={{
-                                    padding: "12px 16px",
-                                    textAlign: "center",
-                                    fontSize: "12px",
-                                    display: "flex",
-                                    gap: "6px",
-                                    justifyContent: "center",
-                                  }}
-                                >
-                                  {editingProductId === product.id ? (
-                                    <>
-                                      <button
-                                        onClick={() =>
-                                          handleEditProduct(product.id, {
+                                    {editingProductId === product.id ? (
+                                      <input
+                                        type="number"
+                                        value={editingData.qty ?? product.qty}
+                                        onChange={(e) =>
+                                          setEditingData({
                                             ...editingData,
-                                            stock:
-                                              (editingData.qty || product.qty) >
-                                              0
-                                                ? "In Stock"
-                                                : "Out of Stock",
+                                            qty: parseInt(e.target.value),
                                           })
                                         }
                                         style={{
-                                          padding: "4px 10px",
-                                          background: "#16a34a",
-                                          color: "white",
-                                          border: "none",
+                                          width: "80px",
+                                          padding: "6px",
+                                          border: "1px solid #5b7c99",
                                           borderRadius: "4px",
-                                          cursor: "pointer",
-                                          fontSize: "12px",
-                                          fontWeight: "500",
+                                          fontSize: "13px",
                                         }}
-                                      >
-                                        Save
-                                      </button>
-                                      <button
-                                        onClick={() => {
-                                          setEditingProductId(null);
-                                          setEditingData({});
-                                        }}
-                                        style={{
-                                          padding: "4px 10px",
-                                          background: "#dc2626",
-                                          color: "white",
-                                          border: "none",
-                                          borderRadius: "4px",
-                                          cursor: "pointer",
-                                          fontSize: "12px",
-                                          fontWeight: "500",
-                                        }}
-                                      >
-                                        Cancel
-                                      </button>
-                                    </>
-                                  ) : (
-                                    <button
-                                      onClick={() => {
-                                        setEditingProductId(product.id);
-                                        setEditingData({});
-                                      }}
+                                      />
+                                    ) : (
+                                      product.qty.toLocaleString()
+                                    )}
+                                  </td>
+                                  <td
+                                    style={{
+                                      padding: "12px 16px",
+                                      fontSize: "13px",
+                                      borderRight: "1px solid #e2e8f0",
+                                      textAlign: "center",
+                                    }}
+                                  >
+                                    <span
                                       style={{
-                                        padding: "4px 10px",
-                                        background: "#5b7c99",
-                                        color: "white",
-                                        border: "none",
+                                        background:
+                                          product.stock === "In Stock"
+                                            ? "#dcfce7"
+                                            : product.stock === "Low Stock"
+                                              ? "#fef3c7"
+                                              : "#fee2e2",
+                                        color:
+                                          product.stock === "In Stock"
+                                            ? "#16a34a"
+                                            : product.stock === "Low Stock"
+                                              ? "#d97706"
+                                              : "#dc2626",
+                                        padding: "4px 8px",
                                         borderRadius: "4px",
-                                        cursor: "pointer",
                                         fontSize: "12px",
                                         fontWeight: "500",
                                       }}
                                     >
-                                      Edit
-                                    </button>
-                                  )}
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-
-                      {/* Pagination Controls */}
-                      <div
-                        style={{
-                          display: "flex",
-                          justifyContent: "space-between",
-                          alignItems: "center",
-                          padding: "16px 0",
-                        }}
-                      >
-                        <span style={{ fontSize: "13px", color: "#64748b" }}>
-                          Showing{" "}
-                          {paginatedProducts.length > 0
-                            ? (currentPage - 1) * itemsPerPage + 1
-                            : 0}{" "}
-                          -{" "}
-                          {Math.min(
-                            currentPage * itemsPerPage,
-                            filteredProducts.length,
-                          )}{" "}
-                          of {filteredProducts.length} results
-                        </span>
-                        <div style={{ display: "flex", gap: "8px" }}>
-                          <button
-                            onClick={() =>
-                              setCurrentPage(Math.max(1, currentPage - 1))
-                            }
-                            disabled={currentPage === 1}
-                            style={{
-                              padding: "6px 12px",
-                              background:
-                                currentPage === 1 ? "#e2e8f0" : "#5b7c99",
-                              color: currentPage === 1 ? "#94a3b8" : "white",
-                              border: "none",
-                              borderRadius: "4px",
-                              cursor:
-                                currentPage === 1 ? "not-allowed" : "pointer",
-                              fontSize: "12px",
-                              fontWeight: "500",
-                            }}
-                          >
-                            Previous
-                          </button>
-                          {generatePageNumbers(currentPage, totalPages).map(
-                            (page, index) => {
-                              if (page === "...") {
-                                return (
-                                  <span
-                                    key={`ellipsis-${index}`}
+                                      {product.stock}
+                                    </span>
+                                  </td>
+                                  <td
                                     style={{
-                                      padding: "6px 0",
-                                      color: "#94a3b8",
+                                      padding: "12px 16px",
+                                      textAlign: "center",
                                       fontSize: "12px",
+                                      display: "flex",
+                                      gap: "6px",
+                                      justifyContent: "center",
                                     }}
                                   >
-                                    ...
-                                  </span>
-                                );
-                              }
-                              return (
-                                <button
-                                  key={page}
-                                  onClick={() => setCurrentPage(page as number)}
-                                  style={{
-                                    padding: "6px 12px",
-                                    background:
-                                      currentPage === page
-                                        ? "#5b7c99"
-                                        : "#ffffff",
-                                    color:
-                                      currentPage === page
-                                        ? "white"
-                                        : "#5b7c99",
-                                    border: `1px solid ${currentPage === page ? "#5b7c99" : "#e2e8f0"}`,
-                                    borderRadius: "4px",
-                                    cursor: "pointer",
-                                    fontSize: "12px",
-                                    fontWeight: "500",
-                                  }}
-                                >
-                                  {page}
-                                </button>
-                              );
-                            },
-                          )}
-                          <button
-                            onClick={() =>
-                              setCurrentPage(
-                                Math.min(totalPages, currentPage + 1),
-                              )
-                            }
-                            disabled={currentPage === totalPages}
-                            style={{
-                              padding: "6px 12px",
-                              background:
-                                currentPage === totalPages
-                                  ? "#e2e8f0"
-                                  : "#5b7c99",
-                              color:
-                                currentPage === totalPages
-                                  ? "#94a3b8"
-                                  : "white",
-                              border: "none",
-                              borderRadius: "4px",
-                              cursor:
-                                currentPage === totalPages
-                                  ? "not-allowed"
-                                  : "pointer",
-                              fontSize: "12px",
-                              fontWeight: "500",
-                            }}
-                          >
-                            Next
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Delete Confirmation Modal */}
-                      {confirmDelete.show && (
-                        <div
-                          style={{
-                            padding: "16px",
-                            background: "#fee2e2",
-                            borderTop: "1px solid #fca5a5",
-                            display: "flex",
-                            justifyContent: "space-between",
-                            alignItems: "center",
-                            borderRadius: "8px",
-                            marginBottom: "16px",
-                          }}
-                        >
-                          <span
-                            style={{
-                              color: "#dc2626",
-                              fontSize: "13px",
-                              fontWeight: "500",
-                            }}
-                          >
-                            Are you sure you want to delete{" "}
-                            {confirmDelete.count} item
-                            {confirmDelete.count > 1 ? "s" : ""}? This action
-                            cannot be undone.
-                          </span>
-                          <div style={{ display: "flex", gap: "8px" }}>
-                            <button
-                              onClick={() => {
-                                confirmDeleteAction(
-                                  Array.from(selectedProducts),
-                                );
-                              }}
-                              style={{
-                                padding: "6px 16px",
-                                background: "#dc2626",
-                                color: "white",
-                                border: "none",
-                                borderRadius: "4px",
-                                cursor: "pointer",
-                                fontSize: "12px",
-                                fontWeight: "500",
-                              }}
-                            >
-                              Yes, Delete
-                            </button>
-                            <button
-                              onClick={() =>
-                                setConfirmDelete({ show: false, count: 0 })
-                              }
-                              style={{
-                                padding: "6px 16px",
-                                background: "#ffffff",
-                                color: "#dc2626",
-                                border: "1px solid #dc2626",
-                                borderRadius: "4px",
-                                cursor: "pointer",
-                                fontSize: "12px",
-                                fontWeight: "500",
-                              }}
-                            >
-                              Cancel
-                            </button>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Quantity Editor Modal */}
-                      {showQuantityEditor.show && selectedProducts.size > 0 && (
-                        <div
-                          style={{
-                            position: "fixed",
-                            inset: 0,
-                            background: "rgba(0,0,0,0.5)",
-                            display: "flex",
-                            justifyContent: "center",
-                            alignItems: "center",
-                            zIndex: 1001,
-                          }}
-                        >
-                          <div
-                            style={{
-                              background: "white",
-                              borderRadius: "12px",
-                              boxShadow: "0 12px 48px rgba(0,0,0,0.15)",
-                              maxWidth: "600px",
-                              width: "90%",
-                              maxHeight: "80vh",
-                              overflow: "auto",
-                            }}
-                          >
-                            <div
-                              style={{
-                                padding: "24px 32px",
-                                borderBottom: "1px solid #e2e8f0",
-                                display: "flex",
-                                justifyContent: "space-between",
-                                alignItems: "center",
-                              }}
-                            >
-                              <h2
-                                style={{
-                                  margin: 0,
-                                  fontSize: "18px",
-                                  fontWeight: "700",
-                                  color: "#1a365d",
-                                }}
-                              >
-                                {showQuantityEditor.mode === "quotation"
-                                  ? "Adjust Quotation Quantities"
-                                  : "Adjust Inquiry Quantities"}
-                              </h2>
-                              <button
-                                onClick={() =>
-                                  setShowQuantityEditor({
-                                    show: false,
-                                    mode: "quotation",
-                                  })
-                                }
-                                style={{
-                                  background: "none",
-                                  border: "none",
-                                  fontSize: "20px",
-                                  cursor: "pointer",
-                                  color: "#64748b",
-                                  padding: "0",
-                                  width: "24px",
-                                  height: "24px",
-                                  display: "flex",
-                                  alignItems: "center",
-                                  justifyContent: "center",
-                                }}
-                              >
-                                ×
-                              </button>
-                            </div>
-                            <div style={{ padding: "24px 32px" }}>
-                              {products
-                                .filter((p) => selectedProducts.has(p.id))
-                                .map((product) => (
-                                  <div
-                                    key={product.id}
-                                    style={{
-                                      marginBottom: "20px",
-                                      padding: "16px",
-                                      background: "#f8fafc",
-                                      borderRadius: "8px",
-                                      border: "1px solid #e2e8f0",
-                                    }}
-                                  >
-                                    <div
-                                      style={{
-                                        display: "flex",
-                                        justifyContent: "space-between",
-                                        alignItems: "start",
-                                        marginBottom: "12px",
-                                      }}
-                                    >
-                                      <div>
-                                        <p
-                                          style={{
-                                            margin: "0 0 4px 0",
-                                            fontSize: "14px",
-                                            fontWeight: "600",
-                                            color: "#1a365d",
-                                          }}
-                                        >
-                                          {product.name}
-                                        </p>
-                                        <p
-                                          style={{
-                                            margin: "0",
-                                            fontSize: "12px",
-                                            color: "#64748b",
-                                          }}
-                                        >
-                                          Part: {product.partNumber}
-                                        </p>
-                                        <p
-                                          style={{
-                                            margin: "4px 0 0 0",
-                                            fontSize: "12px",
-                                            color: "#64748b",
-                                          }}
-                                        >
-                                          Price: {product.currency || "USD"}{" "}
-                                          {product.price.toFixed(2)}
-                                        </p>
-                                      </div>
-                                      <div style={{ textAlign: "right" }}>
-                                        <p
-                                          style={{
-                                            margin: "0 0 8px 0",
-                                            fontSize: "12px",
-                                            color: "#64748b",
-                                            fontWeight: "500",
-                                          }}
-                                        >
-                                          Quantity
-                                        </p>
-                                        <input
-                                          type="number"
-                                          min="1"
-                                          value={
-                                            quantityEdits[product.id] ||
-                                            product.qty
-                                          }
-                                          onChange={(e) =>
-                                            setQuantityEdits({
-                                              ...quantityEdits,
-                                              [product.id]:
-                                                parseInt(e.target.value) || 1,
+                                    {editingProductId === product.id ? (
+                                      <>
+                                        <button
+                                          onClick={() =>
+                                            handleEditProduct(product.id, {
+                                              ...editingData,
+                                              stock:
+                                                (editingData.qty ||
+                                                  product.qty) > 0
+                                                  ? "In Stock"
+                                                  : "Out of Stock",
                                             })
                                           }
                                           style={{
-                                            width: "80px",
-                                            padding: "8px 12px",
-                                            border: "1px solid #d0dce6",
-                                            borderRadius: "6px",
-                                            fontSize: "14px",
-                                            fontWeight: "600",
-                                            textAlign: "center",
-                                          }}
-                                        />
-                                        <p
-                                          style={{
-                                            margin: "8px 0 0 0",
+                                            padding: "4px 10px",
+                                            background: "#16a34a",
+                                            color: "white",
+                                            border: "none",
+                                            borderRadius: "4px",
+                                            cursor: "pointer",
                                             fontSize: "12px",
-                                            color: "#5b7c99",
-                                            fontWeight: "600",
+                                            fontWeight: "500",
                                           }}
                                         >
-                                          Total: {product.currency || "USD"}{" "}
-                                          {(
-                                            product.price *
-                                            (quantityEdits[product.id] ||
-                                              product.qty)
-                                          ).toFixed(2)}
-                                        </p>
-                                      </div>
-                                    </div>
-                                  </div>
-                                ))}
-                            </div>
-                            <div
+                                          Save
+                                        </button>
+                                        <button
+                                          onClick={() => {
+                                            setEditingProductId(null);
+                                            setEditingData({});
+                                          }}
+                                          style={{
+                                            padding: "4px 10px",
+                                            background: "#dc2626",
+                                            color: "white",
+                                            border: "none",
+                                            borderRadius: "4px",
+                                            cursor: "pointer",
+                                            fontSize: "12px",
+                                            fontWeight: "500",
+                                          }}
+                                        >
+                                          Cancel
+                                        </button>
+                                      </>
+                                    ) : (
+                                      <button
+                                        onClick={() => {
+                                          setEditingProductId(product.id);
+                                          setEditingData({});
+                                        }}
+                                        style={{
+                                          padding: "4px 10px",
+                                          background: "#5b7c99",
+                                          color: "white",
+                                          border: "none",
+                                          borderRadius: "4px",
+                                          cursor: "pointer",
+                                          fontSize: "12px",
+                                          fontWeight: "500",
+                                        }}
+                                      >
+                                        Edit
+                                      </button>
+                                    )}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+
+                        {/* Pagination Controls */}
+                        <div
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "center",
+                            padding: "16px 0",
+                          }}
+                        >
+                          <span style={{ fontSize: "13px", color: "#64748b" }}>
+                            Showing{" "}
+                            {paginatedProducts.length > 0
+                              ? (currentPage - 1) * itemsPerPage + 1
+                              : 0}{" "}
+                            -{" "}
+                            {Math.min(
+                              currentPage * itemsPerPage,
+                              filteredProducts.length,
+                            )}{" "}
+                            of {filteredProducts.length} results
+                          </span>
+                          <div style={{ display: "flex", gap: "8px" }}>
+                            <button
+                              onClick={() =>
+                                setCurrentPage(Math.max(1, currentPage - 1))
+                              }
+                              disabled={currentPage === 1}
                               style={{
-                                padding: "16px 32px",
-                                borderTop: "1px solid #e2e8f0",
-                                display: "flex",
-                                gap: "12px",
-                                justifyContent: "flex-end",
+                                padding: "6px 12px",
+                                background:
+                                  currentPage === 1 ? "#e2e8f0" : "#5b7c99",
+                                color: currentPage === 1 ? "#94a3b8" : "white",
+                                border: "none",
+                                borderRadius: "4px",
+                                cursor:
+                                  currentPage === 1 ? "not-allowed" : "pointer",
+                                fontSize: "12px",
+                                fontWeight: "500",
                               }}
                             >
+                              Previous
+                            </button>
+                            {generatePageNumbers(currentPage, totalPages).map(
+                              (page, index) => {
+                                if (page === "...") {
+                                  return (
+                                    <span
+                                      key={`ellipsis-${index}`}
+                                      style={{
+                                        padding: "6px 0",
+                                        color: "#94a3b8",
+                                        fontSize: "12px",
+                                      }}
+                                    >
+                                      ...
+                                    </span>
+                                  );
+                                }
+                                return (
+                                  <button
+                                    key={page}
+                                    onClick={() =>
+                                      setCurrentPage(page as number)
+                                    }
+                                    style={{
+                                      padding: "6px 12px",
+                                      background:
+                                        currentPage === page
+                                          ? "#5b7c99"
+                                          : "#ffffff",
+                                      color:
+                                        currentPage === page
+                                          ? "white"
+                                          : "#5b7c99",
+                                      border: `1px solid ${currentPage === page ? "#5b7c99" : "#e2e8f0"}`,
+                                      borderRadius: "4px",
+                                      cursor: "pointer",
+                                      fontSize: "12px",
+                                      fontWeight: "500",
+                                    }}
+                                  >
+                                    {page}
+                                  </button>
+                                );
+                              },
+                            )}
+                            <button
+                              onClick={() =>
+                                setCurrentPage(
+                                  Math.min(totalPages, currentPage + 1),
+                                )
+                              }
+                              disabled={currentPage === totalPages}
+                              style={{
+                                padding: "6px 12px",
+                                background:
+                                  currentPage === totalPages
+                                    ? "#e2e8f0"
+                                    : "#5b7c99",
+                                color:
+                                  currentPage === totalPages
+                                    ? "#94a3b8"
+                                    : "white",
+                                border: "none",
+                                borderRadius: "4px",
+                                cursor:
+                                  currentPage === totalPages
+                                    ? "not-allowed"
+                                    : "pointer",
+                                fontSize: "12px",
+                                fontWeight: "500",
+                              }}
+                            >
+                              Next
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Delete Confirmation Modal */}
+                        {confirmDelete.show && (
+                          <div
+                            style={{
+                              padding: "16px",
+                              background: "#fee2e2",
+                              borderTop: "1px solid #fca5a5",
+                              display: "flex",
+                              justifyContent: "space-between",
+                              alignItems: "center",
+                              borderRadius: "8px",
+                              marginBottom: "16px",
+                            }}
+                          >
+                            <span
+                              style={{
+                                color: "#dc2626",
+                                fontSize: "13px",
+                                fontWeight: "500",
+                              }}
+                            >
+                              Are you sure you want to delete{" "}
+                              {confirmDelete.count} item
+                              {confirmDelete.count > 1 ? "s" : ""}? This action
+                              cannot be undone.
+                            </span>
+                            <div style={{ display: "flex", gap: "8px" }}>
+                              <button
+                                onClick={() => {
+                                  confirmDeleteAction(
+                                    Array.from(selectedProducts),
+                                  );
+                                }}
+                                style={{
+                                  padding: "6px 16px",
+                                  background: "#dc2626",
+                                  color: "white",
+                                  border: "none",
+                                  borderRadius: "4px",
+                                  cursor: "pointer",
+                                  fontSize: "12px",
+                                  fontWeight: "500",
+                                }}
+                              >
+                                Yes, Delete
+                              </button>
                               <button
                                 onClick={() =>
-                                  setShowQuantityEditor({
-                                    show: false,
-                                    mode: "quotation",
-                                  })
+                                  setConfirmDelete({ show: false, count: 0 })
                                 }
                                 style={{
-                                  padding: "10px 24px",
-                                  background: "#e2e8f0",
-                                  color: "#1a365d",
-                                  border: "none",
-                                  borderRadius: "6px",
+                                  padding: "6px 16px",
+                                  background: "#ffffff",
+                                  color: "#dc2626",
+                                  border: "1px solid #dc2626",
+                                  borderRadius: "4px",
                                   cursor: "pointer",
-                                  fontSize: "13px",
-                                  fontWeight: "600",
+                                  fontSize: "12px",
+                                  fontWeight: "500",
                                 }}
                               >
                                 Cancel
                               </button>
-                              <button
-                                onClick={async () => {
-                                  const selectedItems = products
-                                    .filter((p) => selectedProducts.has(p.id))
-                                    .map((p) => ({
-                                      ...p,
-                                      qty: quantityEdits[p.id] || p.qty,
-                                    }));
-                                  console.log(
-                                    "DEBUG: Selected items:",
-                                    selectedItems.map((s) => ({
-                                      id: s.id,
-                                      name: s.name,
-                                      price: s.price,
-                                      qty: s.qty,
-                                      currency: s.currency,
-                                    })),
-                                  );
-                                  try {
-                                    if (
-                                      showQuantityEditor.mode === "quotation"
-                                    ) {
-                                      const newMeta =
-                                        generateQuotationMetadata();
-                                      setQuotations(selectedItems);
-                                      await saveQuotationToIndexedDB(
-                                        selectedItems,
-                                        newMeta,
-                                      );
-                                      const newHistory =
-                                        await loadQuotationHistory();
-                                      setQuotationHistory(newHistory);
-                                    } else {
-                                      const newMeta = generateInquiryMetadata();
-                                      setInquiries(selectedItems);
-                                      // Don't save to IndexedDB yet - will save when PDF is generated
-                                      // Items are just in the current composition area
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Quantity Editor Modal */}
+                        {showQuantityEditor.show &&
+                          selectedProducts.size > 0 && (
+                            <div
+                              style={{
+                                position: "fixed",
+                                inset: 0,
+                                background: "rgba(0,0,0,0.5)",
+                                display: "flex",
+                                justifyContent: "center",
+                                alignItems: "center",
+                                zIndex: 1001,
+                              }}
+                            >
+                              <div
+                                style={{
+                                  background: "white",
+                                  borderRadius: "12px",
+                                  boxShadow: "0 12px 48px rgba(0,0,0,0.15)",
+                                  maxWidth: "600px",
+                                  width: "90%",
+                                  maxHeight: "80vh",
+                                  overflow: "auto",
+                                }}
+                              >
+                                <div
+                                  style={{
+                                    padding: "24px 32px",
+                                    borderBottom: "1px solid #e2e8f0",
+                                    display: "flex",
+                                    justifyContent: "space-between",
+                                    alignItems: "center",
+                                  }}
+                                >
+                                  <h2
+                                    style={{
+                                      margin: 0,
+                                      fontSize: "18px",
+                                      fontWeight: "700",
+                                      color: "#1a365d",
+                                    }}
+                                  >
+                                    {showQuantityEditor.mode === "quotation"
+                                      ? "Adjust Quotation Quantities"
+                                      : "Adjust Inquiry Quantities"}
+                                  </h2>
+                                  <button
+                                    onClick={() =>
+                                      setShowQuantityEditor({
+                                        show: false,
+                                        mode: "quotation",
+                                      })
                                     }
-                                  } catch (error) {
-                                    console.error(
-                                      "Error saving to IndexedDB:",
-                                      error,
-                                    );
-                                    alert(
-                                      "Error saving document: " +
-                                        (error instanceof Error
-                                          ? error.message
-                                          : "Unknown error"),
-                                    );
-                                  }
-                                  setSelectedProducts(new Set());
+                                    style={{
+                                      background: "none",
+                                      border: "none",
+                                      fontSize: "20px",
+                                      cursor: "pointer",
+                                      color: "#64748b",
+                                      padding: "0",
+                                      width: "24px",
+                                      height: "24px",
+                                      display: "flex",
+                                      alignItems: "center",
+                                      justifyContent: "center",
+                                    }}
+                                  >
+                                    ×
+                                  </button>
+                                </div>
+                                <div style={{ padding: "24px 32px" }}>
+                                  {products
+                                    .filter((p) => selectedProducts.has(p.id))
+                                    .map((product) => (
+                                      <div
+                                        key={product.id}
+                                        style={{
+                                          marginBottom: "20px",
+                                          padding: "16px",
+                                          background: "#f8fafc",
+                                          borderRadius: "8px",
+                                          border: "1px solid #e2e8f0",
+                                        }}
+                                      >
+                                        <div
+                                          style={{
+                                            display: "flex",
+                                            justifyContent: "space-between",
+                                            alignItems: "start",
+                                            marginBottom: "12px",
+                                          }}
+                                        >
+                                          <div>
+                                            <p
+                                              style={{
+                                                margin: "0 0 4px 0",
+                                                fontSize: "14px",
+                                                fontWeight: "600",
+                                                color: "#1a365d",
+                                              }}
+                                            >
+                                              {product.name}
+                                            </p>
+                                            <p
+                                              style={{
+                                                margin: "0",
+                                                fontSize: "12px",
+                                                color: "#64748b",
+                                              }}
+                                            >
+                                              Part: {product.partNumber}
+                                            </p>
+                                            <p
+                                              style={{
+                                                margin: "4px 0 0 0",
+                                                fontSize: "12px",
+                                                color: "#64748b",
+                                              }}
+                                            >
+                                              Price: {product.currency || "USD"}{" "}
+                                              {product.price.toFixed(2)}
+                                            </p>
+                                          </div>
+                                          <div style={{ textAlign: "right" }}>
+                                            <p
+                                              style={{
+                                                margin: "0 0 8px 0",
+                                                fontSize: "12px",
+                                                color: "#64748b",
+                                                fontWeight: "500",
+                                              }}
+                                            >
+                                              Quantity
+                                            </p>
+                                            <input
+                                              type="number"
+                                              min="1"
+                                              value={
+                                                quantityEdits[product.id] ||
+                                                product.qty
+                                              }
+                                              onChange={(e) =>
+                                                setQuantityEdits({
+                                                  ...quantityEdits,
+                                                  [product.id]:
+                                                    parseInt(e.target.value) ||
+                                                    1,
+                                                })
+                                              }
+                                              style={{
+                                                width: "80px",
+                                                padding: "8px 12px",
+                                                border: "1px solid #d0dce6",
+                                                borderRadius: "6px",
+                                                fontSize: "14px",
+                                                fontWeight: "600",
+                                                textAlign: "center",
+                                              }}
+                                            />
+                                            <p
+                                              style={{
+                                                margin: "8px 0 0 0",
+                                                fontSize: "12px",
+                                                color: "#5b7c99",
+                                                fontWeight: "600",
+                                              }}
+                                            >
+                                              Total: {product.currency || "USD"}{" "}
+                                              {(
+                                                product.price *
+                                                (quantityEdits[product.id] ||
+                                                  product.qty)
+                                              ).toFixed(2)}
+                                            </p>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    ))}
+                                </div>
+                                <div
+                                  style={{
+                                    padding: "16px 32px",
+                                    borderTop: "1px solid #e2e8f0",
+                                    display: "flex",
+                                    gap: "12px",
+                                    justifyContent: "flex-end",
+                                  }}
+                                >
+                                  <button
+                                    onClick={() =>
+                                      setShowQuantityEditor({
+                                        show: false,
+                                        mode: "quotation",
+                                      })
+                                    }
+                                    style={{
+                                      padding: "10px 24px",
+                                      background: "#e2e8f0",
+                                      color: "#1a365d",
+                                      border: "none",
+                                      borderRadius: "6px",
+                                      cursor: "pointer",
+                                      fontSize: "13px",
+                                      fontWeight: "600",
+                                    }}
+                                  >
+                                    Cancel
+                                  </button>
+                                  <button
+                                    onClick={async () => {
+                                      const selectedItems = products
+                                        .filter((p) =>
+                                          selectedProducts.has(p.id),
+                                        )
+                                        .map((p) => ({
+                                          ...p,
+                                          qty: quantityEdits[p.id] || p.qty,
+                                        }));
+                                      console.log(
+                                        "DEBUG: Selected items:",
+                                        selectedItems.map((s) => ({
+                                          id: s.id,
+                                          name: s.name,
+                                          price: s.price,
+                                          qty: s.qty,
+                                          currency: s.currency,
+                                        })),
+                                      );
+                                      try {
+                                        if (
+                                          showQuantityEditor.mode ===
+                                          "quotation"
+                                        ) {
+                                          const newMeta =
+                                            generateQuotationMetadata();
+                                          setQuotations(selectedItems);
+                                          await saveQuotationToIndexedDB(
+                                            selectedItems,
+                                            newMeta,
+                                          );
+                                          const newHistory =
+                                            await loadQuotationHistory();
+                                          setQuotationHistory(newHistory);
+                                        } else {
+                                          const newMeta =
+                                            generateInquiryMetadata();
+                                          setInquiries(selectedItems);
+                                          // Don't save to IndexedDB yet - will save when PDF is generated
+                                          // Items are just in the current composition area
+                                        }
+                                      } catch (error) {
+                                        console.error(
+                                          "Error saving to IndexedDB:",
+                                          error,
+                                        );
+                                        alert(
+                                          "Error saving document: " +
+                                            (error instanceof Error
+                                              ? error.message
+                                              : "Unknown error"),
+                                        );
+                                      }
+                                      setSelectedProducts(new Set());
+                                      setShowQuantityEditor({
+                                        show: false,
+                                        mode: "quotation",
+                                      });
+                                      setActiveWarehouseTab(
+                                        showQuantityEditor.mode === "quotation"
+                                          ? "quotations"
+                                          : "inquiries",
+                                      );
+                                    }}
+                                    style={{
+                                      padding: "10px 24px",
+                                      background:
+                                        showQuantityEditor.mode === "quotation"
+                                          ? "#5b7c99"
+                                          : "#64748b",
+                                      color: "white",
+                                      border: "none",
+                                      borderRadius: "6px",
+                                      cursor: "pointer",
+                                      fontSize: "13px",
+                                      fontWeight: "600",
+                                    }}
+                                  >
+                                    Confirm & Add
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+
+                        {/* Floating Action Bar for Quotations & Inquiries */}
+                        {selectedProducts.size > 0 &&
+                          !confirmDelete.show &&
+                          !showQuantityEditor.show && (
+                            <div
+                              style={{
+                                position: "fixed",
+                                bottom: "32px",
+                                left: "50%",
+                                transform: "translateX(-50%)",
+                                background: "white",
+                                border: "1px solid #d0dce6",
+                                borderRadius: "12px",
+                                padding: "16px 24px",
+                                boxShadow: "0 8px 24px rgba(0, 0, 0, 0.12)",
+                                display: "flex",
+                                justifyContent: "center",
+                                alignItems: "center",
+                                gap: "16px",
+                                zIndex: 1000,
+                              }}
+                            >
+                              <span
+                                style={{
+                                  fontSize: "13px",
+                                  fontWeight: "600",
+                                  color: "#5b7c99",
+                                }}
+                              >
+                                {selectedProducts.size} product(s) selected
+                              </span>
+                              <button
+                                onClick={() => {
+                                  const selectedItems = products.filter((p) =>
+                                    selectedProducts.has(p.id),
+                                  );
+                                  const edits: { [key: string]: number } = {};
+                                  selectedItems.forEach((item) => {
+                                    edits[item.id] = item.qty;
+                                  });
+                                  setQuantityEdits(edits);
                                   setShowQuantityEditor({
-                                    show: false,
+                                    show: true,
                                     mode: "quotation",
                                   });
-                                  setActiveWarehouseTab(
-                                    showQuantityEditor.mode === "quotation"
-                                      ? "quotations"
-                                      : "inquiries",
-                                  );
                                 }}
                                 style={{
-                                  padding: "10px 24px",
-                                  background:
-                                    showQuantityEditor.mode === "quotation"
-                                      ? "#5b7c99"
-                                      : "#64748b",
+                                  padding: "10px 20px",
+                                  background: "#5b7c99",
                                   color: "white",
                                   border: "none",
                                   borderRadius: "6px",
                                   cursor: "pointer",
                                   fontSize: "13px",
                                   fontWeight: "600",
+                                  transition: "all 0.25s ease",
+                                }}
+                                onMouseEnter={(e) => {
+                                  e.currentTarget.style.background = "#4a6fa5";
+                                  e.currentTarget.style.transform =
+                                    "translateY(-2px)";
+                                }}
+                                onMouseLeave={(e) => {
+                                  e.currentTarget.style.background = "#5b7c99";
+                                  e.currentTarget.style.transform =
+                                    "translateY(0)";
                                 }}
                               >
-                                Confirm & Add
+                                Add to Quotation
                               </button>
-                            </div>
-                          </div>
-                        </div>
-                      )}
+                              <button
+                                onClick={() => {
+                                  const selectedItems = products.filter((p) =>
+                                    selectedProducts.has(p.id),
+                                  );
+                                  const edits: { [key: string]: number } = {};
+                                  selectedItems.forEach((item) => {
+                                    edits[item.id] = item.qty;
+                                  });
+                                  setQuantityEdits(edits);
+                                  setShowQuantityEditor({
+                                    show: true,
+                                    mode: "inquiry",
+                                  });
+                                }}
+                                style={{
+                                  padding: "10px 20px",
+                                  background: "#64748b",
+                                  color: "white",
+                                  border: "none",
+                                  borderRadius: "6px",
+                                  cursor: "pointer",
+                                  fontSize: "13px",
+                                  fontWeight: "600",
+                                  transition: "all 0.25s ease",
+                                }}
+                                onMouseEnter={(e) => {
+                                  e.currentTarget.style.background = "#475569";
+                                  e.currentTarget.style.transform =
+                                    "translateY(-2px)";
+                                }}
+                                onMouseLeave={(e) => {
+                                  e.currentTarget.style.background = "#64748b";
+                                  e.currentTarget.style.transform =
+                                    "translateY(0)";
+                                }}
+                              >
+                                Add to Inquiry
+                              </button>
+                              <button
+                                onClick={async () => {
+                                  const selectedItems = products.filter((p) =>
+                                    selectedProducts.has(p.id),
+                                  );
+                                  try {
+                                    if (!db) {
+                                      setUploadMessage({
+                                        type: "error",
+                                        text: "Marketplace not available. Firebase connection required.",
+                                      });
+                                      return;
+                                    }
 
-                      {/* Floating Action Bar for Quotations & Inquiries */}
-                      {selectedProducts.size > 0 &&
-                        !confirmDelete.show &&
-                        !showQuantityEditor.show && (
-                          <div
-                            style={{
-                              position: "fixed",
-                              bottom: "32px",
-                              left: "50%",
-                              transform: "translateX(-50%)",
-                              background: "white",
-                              border: "1px solid #d0dce6",
-                              borderRadius: "12px",
-                              padding: "16px 24px",
-                              boxShadow: "0 8px 24px rgba(0, 0, 0, 0.12)",
-                              display: "flex",
-                              justifyContent: "center",
-                              alignItems: "center",
-                              gap: "16px",
-                              zIndex: 1000,
-                            }}
-                          >
-                            <span
-                              style={{
-                                fontSize: "13px",
-                                fontWeight: "600",
-                                color: "#5b7c99",
-                              }}
-                            >
-                              {selectedProducts.size} product(s) selected
-                            </span>
-                            <button
-                              onClick={() => {
-                                const selectedItems = products.filter((p) =>
-                                  selectedProducts.has(p.id),
-                                );
-                                const edits: { [key: string]: number } = {};
-                                selectedItems.forEach((item) => {
-                                  edits[item.id] = item.qty;
-                                });
-                                setQuantityEdits(edits);
-                                setShowQuantityEditor({
-                                  show: true,
-                                  mode: "quotation",
-                                });
-                              }}
-                              style={{
-                                padding: "10px 20px",
-                                background: "#5b7c99",
-                                color: "white",
-                                border: "none",
-                                borderRadius: "6px",
-                                cursor: "pointer",
-                                fontSize: "13px",
-                                fontWeight: "600",
-                                transition: "all 0.25s ease",
-                              }}
-                              onMouseEnter={(e) => {
-                                e.currentTarget.style.background = "#4a6fa5";
-                                e.currentTarget.style.transform =
-                                  "translateY(-2px)";
-                              }}
-                              onMouseLeave={(e) => {
-                                e.currentTarget.style.background = "#5b7c99";
-                                e.currentTarget.style.transform =
-                                  "translateY(0)";
-                              }}
-                            >
-                              Add to Quotation
-                            </button>
-                            <button
-                              onClick={() => {
-                                const selectedItems = products.filter((p) =>
-                                  selectedProducts.has(p.id),
-                                );
-                                const edits: { [key: string]: number } = {};
-                                selectedItems.forEach((item) => {
-                                  edits[item.id] = item.qty;
-                                });
-                                setQuantityEdits(edits);
-                                setShowQuantityEditor({
-                                  show: true,
-                                  mode: "inquiry",
-                                });
-                              }}
-                              style={{
-                                padding: "10px 20px",
-                                background: "#64748b",
-                                color: "white",
-                                border: "none",
-                                borderRadius: "6px",
-                                cursor: "pointer",
-                                fontSize: "13px",
-                                fontWeight: "600",
-                                transition: "all 0.25s ease",
-                              }}
-                              onMouseEnter={(e) => {
-                                e.currentTarget.style.background = "#475569";
-                                e.currentTarget.style.transform =
-                                  "translateY(-2px)";
-                              }}
-                              onMouseLeave={(e) => {
-                                e.currentTarget.style.background = "#64748b";
-                                e.currentTarget.style.transform =
-                                  "translateY(0)";
-                              }}
-                            >
-                              Add to Inquiry
-                            </button>
-                            <button
-                              onClick={async () => {
-                                const selectedItems = products.filter((p) =>
-                                  selectedProducts.has(p.id),
-                                );
-                                try {
-                                  if (!db) {
+                                    // Generate marketplace items with consistent IDs
+                                    const now = Date.now(); // Use timestamp number instead of ISO string
+                                    const newMarketplaceItems =
+                                      selectedItems.map((item, index) => {
+                                        const marketplaceId = `MP-${now}-${Math.random().toString(36).substr(2, 9)}-${index}`;
+                                        return {
+                                          ...item,
+                                          id: marketplaceId,
+                                          addedAt: now,
+                                          seller: currentUser,
+                                        };
+                                      });
+
+                                    // Save to Firestore marketplace collection (global, visible to all users)
+                                    for (const item of newMarketplaceItems) {
+                                      await setDoc(
+                                        doc(db, "marketplace", item.id),
+                                        item,
+                                      );
+                                    }
+
+                                    // Reset pagination to show newly added items at the top
+                                    setCurrentMarketplacePage(1);
+                                    setLastMarketplaceDoc(null);
+
+                                    // Reload marketplace from page 1 to show new items
+                                    const { items, hasMore, lastDoc } =
+                                      await loadMarketplaceItems(1);
+                                    setMarketplaceItems(items);
+                                    setHasMoreMarketplaceItems(hasMore);
+                                    setLastMarketplaceDoc(lastDoc);
+
+                                    setSelectedProducts(new Set());
+                                    setUploadMessage({
+                                      type: "success",
+                                      text: `Added ${selectedItems.length} item(s) to marketplace`,
+                                    });
+                                    setTimeout(
+                                      () => setUploadMessage(null),
+                                      3000,
+                                    );
+                                  } catch (error) {
+                                    console.error(
+                                      "Error adding to marketplace:",
+                                      error,
+                                    );
                                     setUploadMessage({
                                       type: "error",
-                                      text: "Marketplace not available. Firebase connection required.",
+                                      text: "Error adding items to marketplace",
                                     });
-                                    return;
                                   }
-
-                                  // Generate marketplace items with consistent IDs
-                                  const now = Date.now(); // Use timestamp number instead of ISO string
-                                  const newMarketplaceItems = selectedItems.map(
-                                    (item, index) => {
-                                      const marketplaceId = `MP-${now}-${Math.random().toString(36).substr(2, 9)}-${index}`;
-                                      return {
-                                        ...item,
-                                        id: marketplaceId,
-                                        addedAt: now,
-                                        seller: currentUser,
-                                      };
-                                    },
-                                  );
-
-                                  // Save to Firestore marketplace collection (global, visible to all users)
-                                  for (const item of newMarketplaceItems) {
-                                    await setDoc(
-                                      doc(db, "marketplace", item.id),
-                                      item,
-                                    );
-                                  }
-
-                                  // Reset pagination to show newly added items at the top
-                                  setCurrentMarketplacePage(1);
-                                  setLastMarketplaceDoc(null);
-
-                                  // Reload marketplace from page 1 to show new items
-                                  const { items, hasMore, lastDoc } =
-                                    await loadMarketplaceItems(1);
-                                  setMarketplaceItems(items);
-                                  setHasMoreMarketplaceItems(hasMore);
-                                  setLastMarketplaceDoc(lastDoc);
-
-                                  setSelectedProducts(new Set());
-                                  setUploadMessage({
-                                    type: "success",
-                                    text: `Added ${selectedItems.length} item(s) to marketplace`,
-                                  });
-                                  setTimeout(
-                                    () => setUploadMessage(null),
-                                    3000,
-                                  );
-                                } catch (error) {
-                                  console.error(
-                                    "Error adding to marketplace:",
-                                    error,
-                                  );
-                                  setUploadMessage({
-                                    type: "error",
-                                    text: "Error adding items to marketplace",
-                                  });
+                                }}
+                                style={{
+                                  padding: "10px 20px",
+                                  background: "#059669",
+                                  color: "white",
+                                  border: "none",
+                                  borderRadius: "6px",
+                                  cursor: "pointer",
+                                  fontSize: "13px",
+                                  fontWeight: "600",
+                                  transition: "all 0.25s ease",
+                                }}
+                                onMouseEnter={(e) => {
+                                  e.currentTarget.style.background = "#047857";
+                                  e.currentTarget.style.transform =
+                                    "translateY(-2px)";
+                                }}
+                                onMouseLeave={(e) => {
+                                  e.currentTarget.style.background = "#059669";
+                                  e.currentTarget.style.transform =
+                                    "translateY(0)";
+                                }}
+                              >
+                                Add to Marketplace
+                              </button>
+                              <button
+                                onClick={() =>
+                                  handleDeleteProducts(
+                                    Array.from(selectedProducts),
+                                  )
                                 }
-                              }}
-                              style={{
-                                padding: "10px 20px",
-                                background: "#059669",
-                                color: "white",
-                                border: "none",
-                                borderRadius: "6px",
-                                cursor: "pointer",
-                                fontSize: "13px",
-                                fontWeight: "600",
-                                transition: "all 0.25s ease",
-                              }}
-                              onMouseEnter={(e) => {
-                                e.currentTarget.style.background = "#047857";
-                                e.currentTarget.style.transform =
-                                  "translateY(-2px)";
-                              }}
-                              onMouseLeave={(e) => {
-                                e.currentTarget.style.background = "#059669";
-                                e.currentTarget.style.transform =
-                                  "translateY(0)";
-                              }}
-                            >
-                              Add to Marketplace
-                            </button>
-                            <button
-                              onClick={() =>
-                                handleDeleteProducts(
-                                  Array.from(selectedProducts),
-                                )
-                              }
-                              style={{
-                                padding: "10px 20px",
-                                background: "#dc2626",
-                                color: "white",
-                                border: "none",
-                                borderRadius: "6px",
-                                cursor: "pointer",
-                                fontSize: "13px",
-                                fontWeight: "600",
-                                transition: "all 0.25s ease",
-                              }}
-                              onMouseEnter={(e) => {
-                                e.currentTarget.style.background = "#b91c1c";
-                                e.currentTarget.style.transform =
-                                  "translateY(-2px)";
-                              }}
-                              onMouseLeave={(e) => {
-                                e.currentTarget.style.background = "#dc2626";
-                                e.currentTarget.style.transform =
-                                  "translateY(0)";
-                              }}
-                            >
-                              Delete Selected
-                            </button>
-                          </div>
-                        )}
-                    </div>
-                  )}
+                                style={{
+                                  padding: "10px 20px",
+                                  background: "#dc2626",
+                                  color: "white",
+                                  border: "none",
+                                  borderRadius: "6px",
+                                  cursor: "pointer",
+                                  fontSize: "13px",
+                                  fontWeight: "600",
+                                  transition: "all 0.25s ease",
+                                }}
+                                onMouseEnter={(e) => {
+                                  e.currentTarget.style.background = "#b91c1c";
+                                  e.currentTarget.style.transform =
+                                    "translateY(-2px)";
+                                }}
+                                onMouseLeave={(e) => {
+                                  e.currentTarget.style.background = "#dc2626";
+                                  e.currentTarget.style.transform =
+                                    "translateY(0)";
+                                }}
+                              >
+                                Delete Selected
+                              </button>
+                            </div>
+                          )}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+              {activeWarehouseTab === "home" && (
+                <div style={{ flex: 1, overflow: "auto" }}>
+                  <HomeDashboard
+                    metrics={{
+                      outgoingQuotations: quotationHistory.length,
+                      outgoingInquiries: inquiryHistory.length,
+                      invoices: 0,
+                      totalOrders:
+                        incomingOrders.length + outgoingOrders.length,
+                      totalProducts: products.length,
+                      vendorConnections: acceptedVendorConnections.length,
+                    }}
+                    userName={currentUser}
+                    userCompany={currentUserCompany}
+                    setActiveSubmenu={setActiveSubmenu}
+                    setActiveWarehouseTab={setActiveWarehouseTab}
+                    onNavigate={(section) => {
+                      if (section === "quotations") {
+                        setActiveWarehouseTab("quotations");
+                      } else if (section === "inquiries") {
+                        setActiveWarehouseTab("inquiries");
+                      } else if (section === "invoices") {
+                        setActiveWarehouseTab("invoices");
+                      } else if (section === "orders") {
+                        setActiveWarehouseTab("orders");
+                      } else if (section === "vendors") {
+                        setActiveWarehouseTab("vendors");
+                      } else if (section === "inventory") {
+                        setActiveWarehouseTab("products");
+                      } else if (section === "marketplace") {
+                        setActiveSubmenu("marketplace");
+                      }
+                    }}
+                  />
                 </div>
               )}
 
@@ -8699,6 +9063,7 @@ export default function App() {
                       items={inquiries}
                       history={inquiryHistory}
                       letterhead={inquiryLetterhead}
+                      allProducts={products}
                       vendors={acceptedVendorConnections}
                       preFillRecipient={preFillRecipient || undefined}
                       onGeneratePDF={async (inquiry, letterRef) => {
@@ -9679,862 +10044,871 @@ export default function App() {
                     }
                   }}
                   onDeleteLetterhead={() => deleteLetterhead(currentUser)}
+                  gmailService={gmailService}
                 />
               )}
 
-              {false && (
-                <div>
-                  <h2
-                    style={{
-                      margin: "0 0 28px 0",
-                      fontSize: "24px",
-                      fontWeight: "800",
-                      color: "#5b7c99",
-                      letterSpacing: "-0.5px",
-                      textTransform: "uppercase",
-                    }}
-                  >
-                    Upload Portal
-                  </h2>
-
-                  {uploadMessage && (
-                    <div
+              {activeWarehouseTab === "products" &&
+                activeProductsSubTab === "upload" && (
+                  <div>
+                    <h2
                       style={{
-                        marginBottom: "24px",
-                        padding: "14px 18px",
-                        background:
-                          uploadMessage.type === "success"
-                            ? "#dcfce7"
-                            : "#fee2e2",
-                        border: `2px solid ${uploadMessage.type === "success" ? "#86efac" : "#fca5a5"}`,
-                        borderRadius: "8px",
-                        color:
-                          uploadMessage.type === "success"
-                            ? "#15803d"
-                            : "#dc2626",
-                        fontSize: "13px",
-                        fontWeight: "600",
-                        boxShadow: `0 2px 8px ${uploadMessage.type === "success" ? "rgba(22, 163, 74, 0.1)" : "rgba(220, 38, 38, 0.1)"}`,
-                      }}
-                    >
-                      {uploadMessage.text}
-                    </div>
-                  )}
-
-                  {/* Upload Type Selector - Premium Buttons */}
-                  <div
-                    style={{
-                      marginBottom: "28px",
-                      display: "flex",
-                      gap: "12px",
-                      background:
-                        "linear-gradient(135deg, #f8fafc 0%, #f0f7fa 100%)",
-                      padding: "8px",
-                      borderRadius: "10px",
-                      border: "1px solid #d0dce6",
-                      boxShadow: "0 2px 4px rgba(0, 0, 0, 0.03)",
-                    }}
-                  >
-                    <button
-                      onClick={() => setUploadType("single")}
-                      style={{
-                        flex: 1,
-                        padding: "13px 18px",
-                        background:
-                          uploadType === "single"
-                            ? "linear-gradient(135deg, #5b7c99 0%, #4a6fa5 100%)"
-                            : "transparent",
-                        color: uploadType === "single" ? "#ffffff" : "#64748b",
-                        border: "none",
-                        borderRadius: "8px",
-                        cursor: "pointer",
-                        fontSize: "13px",
-                        fontWeight: uploadType === "single" ? "700" : "600",
-                        transition: "all 0.25s ease",
-                        boxShadow:
-                          uploadType === "single"
-                            ? "0 4px 12px rgba(2, 132, 199, 0.25)"
-                            : "none",
+                        margin: "0 0 28px 0",
+                        fontSize: "24px",
+                        fontWeight: "800",
+                        color: "#5b7c99",
+                        letterSpacing: "-0.5px",
                         textTransform: "uppercase",
-                        letterSpacing: "0.3px",
-                      }}
-                      onMouseEnter={(e) => {
-                        if (uploadType !== "single") {
-                          e.currentTarget.style.background =
-                            "rgba(2, 132, 199, 0.08)";
-                        }
-                      }}
-                      onMouseLeave={(e) => {
-                        if (uploadType !== "single") {
-                          e.currentTarget.style.background = "transparent";
-                        }
                       }}
                     >
-                      Single Product
-                    </button>
-                    <button
-                      onClick={() => setUploadType("bulk")}
-                      style={{
-                        flex: 1,
-                        padding: "13px 18px",
-                        background:
-                          uploadType === "bulk"
-                            ? "linear-gradient(135deg, #5b7c99 0%, #4a6fa5 100%)"
-                            : "transparent",
-                        color: uploadType === "bulk" ? "#ffffff" : "#64748b",
-                        border: "none",
-                        borderRadius: "8px",
-                        cursor: "pointer",
-                        fontSize: "13px",
-                        fontWeight: uploadType === "bulk" ? "700" : "600",
-                        transition: "all 0.25s ease",
-                        boxShadow:
-                          uploadType === "bulk"
-                            ? "0 4px 12px rgba(2, 132, 199, 0.25)"
-                            : "none",
-                        textTransform: "uppercase",
-                        letterSpacing: "0.3px",
-                      }}
-                      onMouseEnter={(e) => {
-                        if (uploadType !== "bulk") {
-                          e.currentTarget.style.background =
-                            "rgba(2, 132, 199, 0.08)";
-                        }
-                      }}
-                      onMouseLeave={(e) => {
-                        if (uploadType !== "bulk") {
-                          e.currentTarget.style.background = "transparent";
-                        }
-                      }}
-                    >
-                      Bulk Upload
-                    </button>
-                  </div>
+                      Upload Portal
+                    </h2>
 
-                  {/* Single Product Upload */}
-                  {uploadType === "single" && (
-                    <div
-                      style={{
-                        background: "#ffffff",
-                        border: "1px solid #d0dce6",
-                        borderRadius: "12px",
-                        padding: "32px",
-                        marginBottom: "28px",
-                        boxShadow: "0 4px 12px rgba(0, 0, 0, 0.06)",
-                      }}
-                    >
-                      <h3
+                    {uploadMessage && (
+                      <div
                         style={{
-                          margin: "0 0 24px 0",
-                          fontSize: "18px",
-                          fontWeight: "800",
-                          color: "#5b7c99",
+                          marginBottom: "24px",
+                          padding: "14px 18px",
+                          background:
+                            uploadMessage.type === "success"
+                              ? "#dcfce7"
+                              : "#fee2e2",
+                          border: `2px solid ${uploadMessage.type === "success" ? "#86efac" : "#fca5a5"}`,
+                          borderRadius: "8px",
+                          color:
+                            uploadMessage.type === "success"
+                              ? "#15803d"
+                              : "#dc2626",
+                          fontSize: "13px",
+                          fontWeight: "600",
+                          boxShadow: `0 2px 8px ${uploadMessage.type === "success" ? "rgba(22, 163, 74, 0.1)" : "rgba(220, 38, 38, 0.1)"}`,
+                        }}
+                      >
+                        {uploadMessage.text}
+                      </div>
+                    )}
+
+                    {/* Upload Type Selector - Premium Buttons */}
+                    <div
+                      style={{
+                        marginBottom: "28px",
+                        display: "flex",
+                        gap: "12px",
+                        background:
+                          "linear-gradient(135deg, #f8fafc 0%, #f0f7fa 100%)",
+                        padding: "8px",
+                        borderRadius: "10px",
+                        border: "1px solid #d0dce6",
+                        boxShadow: "0 2px 4px rgba(0, 0, 0, 0.03)",
+                      }}
+                    >
+                      <button
+                        onClick={() => setUploadType("single")}
+                        style={{
+                          flex: 1,
+                          padding: "13px 18px",
+                          background:
+                            uploadType === "single"
+                              ? "linear-gradient(135deg, #5b7c99 0%, #4a6fa5 100%)"
+                              : "transparent",
+                          color:
+                            uploadType === "single" ? "#ffffff" : "#64748b",
+                          border: "none",
+                          borderRadius: "8px",
+                          cursor: "pointer",
+                          fontSize: "13px",
+                          fontWeight: uploadType === "single" ? "700" : "600",
+                          transition: "all 0.25s ease",
+                          boxShadow:
+                            uploadType === "single"
+                              ? "0 4px 12px rgba(2, 132, 199, 0.25)"
+                              : "none",
                           textTransform: "uppercase",
                           letterSpacing: "0.3px",
                         }}
-                      >
-                        Add Single Product
-                      </h3>
-
-                      <div
-                        style={{
-                          display: "grid",
-                          gridTemplateColumns: "1fr 1fr 1fr",
-                          gap: "20px",
-                          marginBottom: "20px",
+                        onMouseEnter={(e) => {
+                          if (uploadType !== "single") {
+                            e.currentTarget.style.background =
+                              "rgba(2, 132, 199, 0.08)";
+                          }
+                        }}
+                        onMouseLeave={(e) => {
+                          if (uploadType !== "single") {
+                            e.currentTarget.style.background = "transparent";
+                          }
                         }}
                       >
-                        <div>
-                          <label
-                            style={{
-                              display: "block",
-                              marginBottom: "8px",
-                              fontSize: "11px",
-                              fontWeight: "800",
-                              color: "#475569",
-                              textTransform: "uppercase",
-                              letterSpacing: "0.4px",
-                            }}
-                          >
-                            Product Name *
-                          </label>
-                          <input
-                            type="text"
-                            value={singleProduct.name}
-                            onChange={(e) =>
-                              setSingleProduct({
-                                ...singleProduct,
-                                name: e.target.value,
-                              })
-                            }
-                            placeholder="e.g., PD/DD Filter Kit"
-                            style={{
-                              width: "100%",
-                              padding: "11px 14px",
-                              border: "1px solid #d0dce6",
-                              borderRadius: "7px",
-                              fontSize: "13px",
-                              boxSizing: "border-box",
-                              background: "#ffffff",
-                              transition: "all 0.25s ease",
-                              fontWeight: "500",
-                            }}
-                            onFocus={(e) => {
-                              e.currentTarget.style.borderColor = "#5b7c99";
-                              e.currentTarget.style.boxShadow =
-                                "0 0 0 4px rgba(2, 132, 199, 0.1), inset 0 0 0 1px rgba(2, 132, 199, 0.1)";
-                            }}
-                            onBlur={(e) => {
-                              e.currentTarget.style.borderColor = "#d0dce6";
-                              e.currentTarget.style.boxShadow = "none";
-                            }}
-                          />
-                        </div>
-                        <div>
-                          <label
-                            style={{
-                              display: "block",
-                              marginBottom: "8px",
-                              fontSize: "11px",
-                              fontWeight: "800",
-                              color: "#475569",
-                              textTransform: "uppercase",
-                              letterSpacing: "0.4px",
-                            }}
-                          >
-                            Part Number *
-                          </label>
-                          <input
-                            type="text"
-                            value={singleProduct.partNumber}
-                            onChange={(e) =>
-                              setSingleProduct({
-                                ...singleProduct,
-                                partNumber: e.target.value,
-                              })
-                            }
-                            placeholder="e.g., 0000000338"
-                            style={{
-                              width: "100%",
-                              padding: "11px 14px",
-                              border: "1px solid #d0dce6",
-                              borderRadius: "7px",
-                              fontSize: "13px",
-                              boxSizing: "border-box",
-                              background: "#ffffff",
-                              transition: "all 0.25s ease",
-                              fontWeight: "500",
-                            }}
-                            onFocus={(e) => {
-                              e.currentTarget.style.borderColor = "#5b7c99";
-                              e.currentTarget.style.boxShadow =
-                                "0 0 0 4px rgba(2, 132, 199, 0.1), inset 0 0 0 1px rgba(2, 132, 199, 0.1)";
-                            }}
-                            onBlur={(e) => {
-                              e.currentTarget.style.borderColor = "#d0dce6";
-                              e.currentTarget.style.boxShadow = "none";
-                            }}
-                          />
-                        </div>
-                        <div>
-                          <label
-                            style={{
-                              display: "block",
-                              marginBottom: "8px",
-                              fontSize: "11px",
-                              fontWeight: "800",
-                              color: "#475569",
-                              textTransform: "uppercase",
-                              letterSpacing: "0.4px",
-                            }}
-                          >
-                            Price
-                          </label>
-                          <input
-                            type="number"
-                            value={singleProduct.price}
-                            onChange={(e) =>
-                              setSingleProduct({
-                                ...singleProduct,
-                                price: e.target.value,
-                              })
-                            }
-                            placeholder="0.00"
-                            step="0.01"
-                            style={{
-                              width: "100%",
-                              padding: "11px 14px",
-                              border: "1px solid #d0dce6",
-                              borderRadius: "7px",
-                              fontSize: "13px",
-                              boxSizing: "border-box",
-                              background: "#ffffff",
-                              transition: "all 0.25s ease",
-                              fontWeight: "500",
-                            }}
-                            onFocus={(e) => {
-                              e.currentTarget.style.borderColor = "#5b7c99";
-                              e.currentTarget.style.boxShadow =
-                                "0 0 0 4px rgba(2, 132, 199, 0.1), inset 0 0 0 1px rgba(2, 132, 199, 0.1)";
-                            }}
-                            onBlur={(e) => {
-                              e.currentTarget.style.borderColor = "#d0dce6";
-                              e.currentTarget.style.boxShadow = "none";
-                            }}
-                          />
-                        </div>
-                        <div>
-                          <label
-                            style={{
-                              display: "block",
-                              marginBottom: "8px",
-                              fontSize: "11px",
-                              fontWeight: "800",
-                              color: "#475569",
-                              textTransform: "uppercase",
-                              letterSpacing: "0.4px",
-                            }}
-                          >
-                            Currency
-                          </label>
-                          <select
-                            value={selectedCurrency}
-                            onChange={(e) =>
-                              setSelectedCurrency(e.target.value)
-                            }
-                            style={{
-                              width: "100%",
-                              padding: "11px 14px",
-                              border: "1px solid #d0dce6",
-                              borderRadius: "7px",
-                              fontSize: "13px",
-                              boxSizing: "border-box",
-                              transition: "all 0.25s ease",
-                              fontWeight: "500",
-                              color: "#1a365d",
-                              background: "#ffffff",
-                              cursor: "pointer",
-                            }}
-                            onFocus={(e) => {
-                              e.currentTarget.style.borderColor = "#5b7c99";
-                              e.currentTarget.style.boxShadow =
-                                "0 0 0 4px rgba(2, 132, 199, 0.1), inset 0 0 0 1px rgba(2, 132, 199, 0.1)";
-                            }}
-                            onBlur={(e) => {
-                              e.currentTarget.style.borderColor = "#d0dce6";
-                              e.currentTarget.style.boxShadow = "none";
-                            }}
-                          >
-                            {CURRENCY_OPTIONS.map((curr) => (
-                              <option key={curr.code} value={curr.code}>
-                                {curr.code} - {curr.name}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                        <div>
-                          <label
-                            style={{
-                              display: "block",
-                              marginBottom: "8px",
-                              fontSize: "11px",
-                              fontWeight: "800",
-                              color: "#475569",
-                              textTransform: "uppercase",
-                              letterSpacing: "0.4px",
-                            }}
-                          >
-                            Quantity
-                          </label>
-                          <input
-                            type="number"
-                            value={singleProduct.qty}
-                            onChange={(e) =>
-                              setSingleProduct({
-                                ...singleProduct,
-                                qty: e.target.value,
-                              })
-                            }
-                            placeholder="0"
-                            style={{
-                              width: "100%",
-                              padding: "11px 14px",
-                              border: "1px solid #d0dce6",
-                              borderRadius: "7px",
-                              fontSize: "13px",
-                              boxSizing: "border-box",
-                              transition: "all 0.25s ease",
-                              fontWeight: "500",
-                            }}
-                            onFocus={(e) => {
-                              e.currentTarget.style.borderColor = "#5b7c99";
-                              e.currentTarget.style.boxShadow =
-                                "0 0 0 4px rgba(2, 132, 199, 0.1), inset 0 0 0 1px rgba(2, 132, 199, 0.1)";
-                            }}
-                            onBlur={(e) => {
-                              e.currentTarget.style.borderColor = "#d0dce6";
-                              e.currentTarget.style.boxShadow = "none";
-                            }}
-                          />
-                        </div>
-                        <div>
-                          <label
-                            style={{
-                              display: "block",
-                              marginBottom: "8px",
-                              fontSize: "11px",
-                              fontWeight: "800",
-                              color: "#475569",
-                              textTransform: "uppercase",
-                              letterSpacing: "0.4px",
-                            }}
-                          >
-                            Stock Status
-                          </label>
-                          <select
-                            value={singleProduct.stock}
-                            onChange={(e) =>
-                              setSingleProduct({
-                                ...singleProduct,
-                                stock: e.target.value,
-                              })
-                            }
-                            style={{
-                              width: "100%",
-                              padding: "11px 14px",
-                              border: "1px solid #d0dce6",
-                              borderRadius: "7px",
-                              fontSize: "13px",
-                              boxSizing: "border-box",
-                              transition: "all 0.25s ease",
-                              fontWeight: "500",
-                              color: "#1a365d",
-                              background: "#ffffff",
-                              cursor: "pointer",
-                            }}
-                            onFocus={(e) => {
-                              e.currentTarget.style.borderColor = "#5b7c99";
-                              e.currentTarget.style.boxShadow =
-                                "0 0 0 4px rgba(2, 132, 199, 0.1), inset 0 0 0 1px rgba(2, 132, 199, 0.1)";
-                            }}
-                            onBlur={(e) => {
-                              e.currentTarget.style.borderColor = "#d0dce6";
-                              e.currentTarget.style.boxShadow = "none";
-                            }}
-                          >
-                            <option>In Stock</option>
-                            <option>Out of Stock</option>
-                            <option>Low Stock</option>
-                          </select>
-                        </div>
-                      </div>
+                        Single Product
+                      </button>
+                      <button
+                        onClick={() => setUploadType("bulk")}
+                        style={{
+                          flex: 1,
+                          padding: "13px 18px",
+                          background:
+                            uploadType === "bulk"
+                              ? "linear-gradient(135deg, #5b7c99 0%, #4a6fa5 100%)"
+                              : "transparent",
+                          color: uploadType === "bulk" ? "#ffffff" : "#64748b",
+                          border: "none",
+                          borderRadius: "8px",
+                          cursor: "pointer",
+                          fontSize: "13px",
+                          fontWeight: uploadType === "bulk" ? "700" : "600",
+                          transition: "all 0.25s ease",
+                          boxShadow:
+                            uploadType === "bulk"
+                              ? "0 4px 12px rgba(2, 132, 199, 0.25)"
+                              : "none",
+                          textTransform: "uppercase",
+                          letterSpacing: "0.3px",
+                        }}
+                        onMouseEnter={(e) => {
+                          if (uploadType !== "bulk") {
+                            e.currentTarget.style.background =
+                              "rgba(2, 132, 199, 0.08)";
+                          }
+                        }}
+                        onMouseLeave={(e) => {
+                          if (uploadType !== "bulk") {
+                            e.currentTarget.style.background = "transparent";
+                          }
+                        }}
+                      >
+                        Bulk Upload
+                      </button>
+                    </div>
 
-                      {/* Image Upload */}
-                      <div style={{ marginBottom: "24px" }}>
-                        <label
+                    {/* Single Product Upload */}
+                    {uploadType === "single" && (
+                      <div
+                        style={{
+                          background: "#ffffff",
+                          border: "1px solid #d0dce6",
+                          borderRadius: "12px",
+                          padding: "32px",
+                          marginBottom: "28px",
+                          boxShadow: "0 4px 12px rgba(0, 0, 0, 0.06)",
+                        }}
+                      >
+                        <h3
                           style={{
-                            display: "block",
-                            marginBottom: "12px",
-                            fontSize: "11px",
+                            margin: "0 0 24px 0",
+                            fontSize: "18px",
                             fontWeight: "800",
-                            color: "#475569",
+                            color: "#5b7c99",
                             textTransform: "uppercase",
-                            letterSpacing: "0.4px",
+                            letterSpacing: "0.3px",
                           }}
                         >
-                          Product Image
-                        </label>
+                          Add Single Product
+                        </h3>
+
                         <div
                           style={{
-                            display: "flex",
-                            gap: "14px",
-                            alignItems: "flex-start",
+                            display: "grid",
+                            gridTemplateColumns: "1fr 1fr 1fr",
+                            gap: "20px",
+                            marginBottom: "20px",
                           }}
                         >
+                          <div>
+                            <label
+                              style={{
+                                display: "block",
+                                marginBottom: "8px",
+                                fontSize: "11px",
+                                fontWeight: "800",
+                                color: "#475569",
+                                textTransform: "uppercase",
+                                letterSpacing: "0.4px",
+                              }}
+                            >
+                              Product Name *
+                            </label>
+                            <input
+                              type="text"
+                              value={singleProduct.name}
+                              onChange={(e) =>
+                                setSingleProduct({
+                                  ...singleProduct,
+                                  name: e.target.value,
+                                })
+                              }
+                              placeholder="e.g., PD/DD Filter Kit"
+                              style={{
+                                width: "100%",
+                                padding: "11px 14px",
+                                border: "1px solid #d0dce6",
+                                borderRadius: "7px",
+                                fontSize: "13px",
+                                boxSizing: "border-box",
+                                background: "#ffffff",
+                                transition: "all 0.25s ease",
+                                fontWeight: "500",
+                              }}
+                              onFocus={(e) => {
+                                e.currentTarget.style.borderColor = "#5b7c99";
+                                e.currentTarget.style.boxShadow =
+                                  "0 0 0 4px rgba(2, 132, 199, 0.1), inset 0 0 0 1px rgba(2, 132, 199, 0.1)";
+                              }}
+                              onBlur={(e) => {
+                                e.currentTarget.style.borderColor = "#d0dce6";
+                                e.currentTarget.style.boxShadow = "none";
+                              }}
+                            />
+                          </div>
+                          <div>
+                            <label
+                              style={{
+                                display: "block",
+                                marginBottom: "8px",
+                                fontSize: "11px",
+                                fontWeight: "800",
+                                color: "#475569",
+                                textTransform: "uppercase",
+                                letterSpacing: "0.4px",
+                              }}
+                            >
+                              Part Number *
+                            </label>
+                            <input
+                              type="text"
+                              value={singleProduct.partNumber}
+                              onChange={(e) =>
+                                setSingleProduct({
+                                  ...singleProduct,
+                                  partNumber: e.target.value,
+                                })
+                              }
+                              placeholder="e.g., 0000000338"
+                              style={{
+                                width: "100%",
+                                padding: "11px 14px",
+                                border: "1px solid #d0dce6",
+                                borderRadius: "7px",
+                                fontSize: "13px",
+                                boxSizing: "border-box",
+                                background: "#ffffff",
+                                transition: "all 0.25s ease",
+                                fontWeight: "500",
+                              }}
+                              onFocus={(e) => {
+                                e.currentTarget.style.borderColor = "#5b7c99";
+                                e.currentTarget.style.boxShadow =
+                                  "0 0 0 4px rgba(2, 132, 199, 0.1), inset 0 0 0 1px rgba(2, 132, 199, 0.1)";
+                              }}
+                              onBlur={(e) => {
+                                e.currentTarget.style.borderColor = "#d0dce6";
+                                e.currentTarget.style.boxShadow = "none";
+                              }}
+                            />
+                          </div>
+                          <div>
+                            <label
+                              style={{
+                                display: "block",
+                                marginBottom: "8px",
+                                fontSize: "11px",
+                                fontWeight: "800",
+                                color: "#475569",
+                                textTransform: "uppercase",
+                                letterSpacing: "0.4px",
+                              }}
+                            >
+                              Price
+                            </label>
+                            <input
+                              type="number"
+                              value={singleProduct.price}
+                              onChange={(e) =>
+                                setSingleProduct({
+                                  ...singleProduct,
+                                  price: e.target.value,
+                                })
+                              }
+                              placeholder="0.00"
+                              step="0.01"
+                              style={{
+                                width: "100%",
+                                padding: "11px 14px",
+                                border: "1px solid #d0dce6",
+                                borderRadius: "7px",
+                                fontSize: "13px",
+                                boxSizing: "border-box",
+                                background: "#ffffff",
+                                transition: "all 0.25s ease",
+                                fontWeight: "500",
+                              }}
+                              onFocus={(e) => {
+                                e.currentTarget.style.borderColor = "#5b7c99";
+                                e.currentTarget.style.boxShadow =
+                                  "0 0 0 4px rgba(2, 132, 199, 0.1), inset 0 0 0 1px rgba(2, 132, 199, 0.1)";
+                              }}
+                              onBlur={(e) => {
+                                e.currentTarget.style.borderColor = "#d0dce6";
+                                e.currentTarget.style.boxShadow = "none";
+                              }}
+                            />
+                          </div>
+                          <div>
+                            <label
+                              style={{
+                                display: "block",
+                                marginBottom: "8px",
+                                fontSize: "11px",
+                                fontWeight: "800",
+                                color: "#475569",
+                                textTransform: "uppercase",
+                                letterSpacing: "0.4px",
+                              }}
+                            >
+                              Currency
+                            </label>
+                            <select
+                              value={selectedCurrency}
+                              onChange={(e) =>
+                                setSelectedCurrency(e.target.value)
+                              }
+                              style={{
+                                width: "100%",
+                                padding: "11px 14px",
+                                border: "1px solid #d0dce6",
+                                borderRadius: "7px",
+                                fontSize: "13px",
+                                boxSizing: "border-box",
+                                transition: "all 0.25s ease",
+                                fontWeight: "500",
+                                color: "#1a365d",
+                                background: "#ffffff",
+                                cursor: "pointer",
+                              }}
+                              onFocus={(e) => {
+                                e.currentTarget.style.borderColor = "#5b7c99";
+                                e.currentTarget.style.boxShadow =
+                                  "0 0 0 4px rgba(2, 132, 199, 0.1), inset 0 0 0 1px rgba(2, 132, 199, 0.1)";
+                              }}
+                              onBlur={(e) => {
+                                e.currentTarget.style.borderColor = "#d0dce6";
+                                e.currentTarget.style.boxShadow = "none";
+                              }}
+                            >
+                              {CURRENCY_OPTIONS.map((curr) => (
+                                <option key={curr.code} value={curr.code}>
+                                  {curr.code} - {curr.name}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div>
+                            <label
+                              style={{
+                                display: "block",
+                                marginBottom: "8px",
+                                fontSize: "11px",
+                                fontWeight: "800",
+                                color: "#475569",
+                                textTransform: "uppercase",
+                                letterSpacing: "0.4px",
+                              }}
+                            >
+                              Quantity
+                            </label>
+                            <input
+                              type="number"
+                              value={singleProduct.qty}
+                              onChange={(e) =>
+                                setSingleProduct({
+                                  ...singleProduct,
+                                  qty: e.target.value,
+                                })
+                              }
+                              placeholder="0"
+                              style={{
+                                width: "100%",
+                                padding: "11px 14px",
+                                border: "1px solid #d0dce6",
+                                borderRadius: "7px",
+                                fontSize: "13px",
+                                boxSizing: "border-box",
+                                transition: "all 0.25s ease",
+                                fontWeight: "500",
+                              }}
+                              onFocus={(e) => {
+                                e.currentTarget.style.borderColor = "#5b7c99";
+                                e.currentTarget.style.boxShadow =
+                                  "0 0 0 4px rgba(2, 132, 199, 0.1), inset 0 0 0 1px rgba(2, 132, 199, 0.1)";
+                              }}
+                              onBlur={(e) => {
+                                e.currentTarget.style.borderColor = "#d0dce6";
+                                e.currentTarget.style.boxShadow = "none";
+                              }}
+                            />
+                          </div>
+                          <div>
+                            <label
+                              style={{
+                                display: "block",
+                                marginBottom: "8px",
+                                fontSize: "11px",
+                                fontWeight: "800",
+                                color: "#475569",
+                                textTransform: "uppercase",
+                                letterSpacing: "0.4px",
+                              }}
+                            >
+                              Stock Status
+                            </label>
+                            <select
+                              value={singleProduct.stock}
+                              onChange={(e) =>
+                                setSingleProduct({
+                                  ...singleProduct,
+                                  stock: e.target.value,
+                                })
+                              }
+                              style={{
+                                width: "100%",
+                                padding: "11px 14px",
+                                border: "1px solid #d0dce6",
+                                borderRadius: "7px",
+                                fontSize: "13px",
+                                boxSizing: "border-box",
+                                transition: "all 0.25s ease",
+                                fontWeight: "500",
+                                color: "#1a365d",
+                                background: "#ffffff",
+                                cursor: "pointer",
+                              }}
+                              onFocus={(e) => {
+                                e.currentTarget.style.borderColor = "#5b7c99";
+                                e.currentTarget.style.boxShadow =
+                                  "0 0 0 4px rgba(2, 132, 199, 0.1), inset 0 0 0 1px rgba(2, 132, 199, 0.1)";
+                              }}
+                              onBlur={(e) => {
+                                e.currentTarget.style.borderColor = "#d0dce6";
+                                e.currentTarget.style.boxShadow = "none";
+                              }}
+                            >
+                              <option>In Stock</option>
+                              <option>Out of Stock</option>
+                              <option>Low Stock</option>
+                            </select>
+                          </div>
+                        </div>
+
+                        {/* Image Upload */}
+                        <div style={{ marginBottom: "24px" }}>
                           <label
                             style={{
-                              cursor: "pointer",
+                              display: "block",
+                              marginBottom: "12px",
+                              fontSize: "11px",
+                              fontWeight: "800",
+                              color: "#475569",
+                              textTransform: "uppercase",
+                              letterSpacing: "0.4px",
+                            }}
+                          >
+                            Product Image
+                          </label>
+                          <div
+                            style={{
+                              display: "flex",
+                              gap: "14px",
+                              alignItems: "flex-start",
+                            }}
+                          >
+                            <label
+                              style={{
+                                cursor: "pointer",
+                                display: "inline-block",
+                              }}
+                            >
+                              <input
+                                type="file"
+                                accept="image/*"
+                                onChange={(e) => {
+                                  const file = e.target.files?.[0];
+                                  if (file) {
+                                    const reader = new FileReader();
+                                    reader.onload = (event) => {
+                                      setSingleProductImage(
+                                        event.target?.result as string,
+                                      );
+                                    };
+                                    reader.readAsDataURL(file);
+                                  }
+                                }}
+                                style={{ display: "none" }}
+                              />
+                              <div
+                                style={{
+                                  width: "90px",
+                                  height: "90px",
+                                  background: singleProductImage
+                                    ? "#f1f5f9"
+                                    : "#f0f7fa",
+                                  borderRadius: "8px",
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  color: "#5b7c99",
+                                  fontSize: "28px",
+                                  border: "2px dashed #d0dce6",
+                                  cursor: "pointer",
+                                  overflow: "hidden",
+                                  transition: "all 0.2s ease",
+                                  boxShadow: "0 2px 4px rgba(0, 0, 0, 0.03)",
+                                }}
+                                onMouseEnter={(e) => {
+                                  e.currentTarget.style.borderColor = "#5b7c99";
+                                  e.currentTarget.style.boxShadow =
+                                    "0 4px 8px rgba(2, 132, 199, 0.12)";
+                                }}
+                                onMouseLeave={(e) => {
+                                  e.currentTarget.style.borderColor = "#d0dce6";
+                                  e.currentTarget.style.boxShadow =
+                                    "0 2px 4px rgba(0, 0, 0, 0.03)";
+                                }}
+                              >
+                                {singleProductImage ? (
+                                  <img
+                                    src={singleProductImage}
+                                    alt="preview"
+                                    style={{
+                                      width: "100%",
+                                      height: "100%",
+                                      objectFit: "cover",
+                                    }}
+                                  />
+                                ) : (
+                                  <span style={{ fontSize: "36px" }}></span>
+                                )}
+                              </div>
+                            </label>
+                            <div style={{ flex: 1 }}>
+                              <p
+                                style={{
+                                  margin: "0 0 10px 0",
+                                  fontSize: "13px",
+                                  color: "#64748b",
+                                  lineHeight: "1.5",
+                                  fontWeight: "500",
+                                }}
+                              >
+                                Click the image box to upload a product image
+                              </p>
+                              {singleProductImage && (
+                                <button
+                                  onClick={() => setSingleProductImage("")}
+                                  style={{
+                                    padding: "7px 14px",
+                                    background: "#fee2e2",
+                                    color: "#dc2626",
+                                    border: "1px solid #fca5a5",
+                                    borderRadius: "6px",
+                                    cursor: "pointer",
+                                    fontSize: "12px",
+                                    fontWeight: "600",
+                                    transition: "all 0.2s ease",
+                                    textTransform: "uppercase",
+                                    letterSpacing: "0.2px",
+                                  }}
+                                  onMouseEnter={(e) => {
+                                    e.currentTarget.style.background =
+                                      "#fecaca";
+                                  }}
+                                  onMouseLeave={(e) => {
+                                    e.currentTarget.style.background =
+                                      "#fee2e2";
+                                  }}
+                                >
+                                  Remove Image
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        <button
+                          onClick={handleSingleProductUpload}
+                          style={{
+                            background:
+                              "linear-gradient(135deg, #5b7c99 0%, #4a6fa5 100%)",
+                            color: "#ffffff",
+                            border: "none",
+                            padding: "12px 24px",
+                            borderRadius: "8px",
+                            cursor: "pointer",
+                            fontSize: "13px",
+                            fontWeight: "700",
+                            transition: "all 0.25s ease",
+                            boxShadow: "0 4px 12px rgba(2, 132, 199, 0.2)",
+                            textTransform: "uppercase",
+                            letterSpacing: "0.3px",
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.boxShadow =
+                              "0 6px 16px rgba(2, 132, 199, 0.28)";
+                            e.currentTarget.style.transform =
+                              "translateY(-2px)";
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.boxShadow =
+                              "0 4px 12px rgba(2, 132, 199, 0.2)";
+                            e.currentTarget.style.transform = "translateY(0px)";
+                          }}
+                        >
+                          Add Product
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Bulk Upload */}
+                    {uploadType === "bulk" && (
+                      <div
+                        style={{
+                          background: "#ffffff",
+                          border: "1px solid #d0dce6",
+                          borderRadius: "12px",
+                          padding: "32px",
+                          boxShadow: "0 4px 12px rgba(0, 0, 0, 0.06)",
+                        }}
+                      >
+                        <h3
+                          style={{
+                            margin: "0 0 24px 0",
+                            fontSize: "18px",
+                            fontWeight: "800",
+                            color: "#5b7c99",
+                            textTransform: "uppercase",
+                            letterSpacing: "0.3px",
+                          }}
+                        >
+                          Bulk Upload
+                        </h3>
+
+                        <div style={{ marginBottom: "24px" }}>
+                          <label
+                            style={{
+                              display: "block",
+                              marginBottom: "12px",
+                              fontSize: "11px",
+                              fontWeight: "800",
+                              color: "#475569",
+                              textTransform: "uppercase",
+                              letterSpacing: "0.4px",
+                            }}
+                          >
+                            Select File (PDF or Excel)
+                          </label>
+                          <div
+                            style={{
+                              position: "relative",
                               display: "inline-block",
+                              width: "100%",
                             }}
                           >
                             <input
                               type="file"
-                              accept="image/*"
-                              onChange={(e) => {
-                                const file = e.target.files?.[0];
-                                if (file) {
-                                  const reader = new FileReader();
-                                  reader.onload = (event) => {
-                                    setSingleProductImage(
-                                      event.target?.result as string,
-                                    );
-                                  };
-                                  reader.readAsDataURL(file);
-                                }
+                              accept=".pdf,.xls,.xlsx"
+                              onChange={handleBulkFileUpload}
+                              style={{
+                                position: "absolute",
+                                opacity: "0",
+                                width: "100%",
+                                height: "100%",
+                                cursor: "pointer",
                               }}
-                              style={{ display: "none" }}
                             />
                             <div
                               style={{
-                                width: "90px",
-                                height: "90px",
-                                background: singleProductImage
-                                  ? "#f1f5f9"
-                                  : "#f0f7fa",
-                                borderRadius: "8px",
-                                display: "flex",
-                                alignItems: "center",
-                                justifyContent: "center",
-                                color: "#5b7c99",
-                                fontSize: "28px",
+                                padding: "32px",
                                 border: "2px dashed #d0dce6",
+                                borderRadius: "10px",
+                                textAlign: "center",
+                                background: "#f8fafc",
                                 cursor: "pointer",
-                                overflow: "hidden",
-                                transition: "all 0.2s ease",
-                                boxShadow: "0 2px 4px rgba(0, 0, 0, 0.03)",
+                                transition: "all 0.25s ease",
+                                boxShadow: "0 2px 4px rgba(0, 0, 0, 0.02)",
                               }}
                               onMouseEnter={(e) => {
+                                e.currentTarget.style.background = "#f0f7fa";
                                 e.currentTarget.style.borderColor = "#5b7c99";
                                 e.currentTarget.style.boxShadow =
                                   "0 4px 8px rgba(2, 132, 199, 0.12)";
                               }}
                               onMouseLeave={(e) => {
+                                e.currentTarget.style.background = "#f8fafc";
                                 e.currentTarget.style.borderColor = "#d0dce6";
                                 e.currentTarget.style.boxShadow =
-                                  "0 2px 4px rgba(0, 0, 0, 0.03)";
+                                  "0 2px 4px rgba(0, 0, 0, 0.02)";
                               }}
                             >
-                              {singleProductImage ? (
-                                <img
-                                  src={singleProductImage}
-                                  alt="preview"
-                                  style={{
-                                    width: "100%",
-                                    height: "100%",
-                                    objectFit: "cover",
-                                  }}
-                                />
-                              ) : (
-                                <span style={{ fontSize: "36px" }}></span>
-                              )}
-                            </div>
-                          </label>
-                          <div style={{ flex: 1 }}>
-                            <p
-                              style={{
-                                margin: "0 0 10px 0",
-                                fontSize: "13px",
-                                color: "#64748b",
-                                lineHeight: "1.5",
-                                fontWeight: "500",
-                              }}
-                            >
-                              Click the image box to upload a product image
-                            </p>
-                            {singleProductImage && (
-                              <button
-                                onClick={() => setSingleProductImage("")}
+                              <p
                                 style={{
-                                  padding: "7px 14px",
-                                  background: "#fee2e2",
-                                  color: "#dc2626",
-                                  border: "1px solid #fca5a5",
-                                  borderRadius: "6px",
-                                  cursor: "pointer",
-                                  fontSize: "12px",
-                                  fontWeight: "600",
-                                  transition: "all 0.2s ease",
-                                  textTransform: "uppercase",
-                                  letterSpacing: "0.2px",
-                                }}
-                                onMouseEnter={(e) => {
-                                  e.currentTarget.style.background = "#fecaca";
-                                }}
-                                onMouseLeave={(e) => {
-                                  e.currentTarget.style.background = "#fee2e2";
+                                  color: "#5b7c99",
+                                  margin: "0 0 8px 0",
+                                  fontSize: "16px",
+                                  fontWeight: "700",
                                 }}
                               >
-                                Remove Image
-                              </button>
-                            )}
+                                {uploadFile
+                                  ? `${uploadFile.name}`
+                                  : "Click to select file"}
+                              </p>
+                              <p
+                                style={{
+                                  color: "#64748b",
+                                  margin: "4px 0 0 0",
+                                  fontSize: "13px",
+                                  fontWeight: "500",
+                                }}
+                              >
+                                or drag your file here
+                              </p>
+                              <p
+                                style={{
+                                  color: "#94a3b8",
+                                  margin: "6px 0 0 0",
+                                  fontSize: "12px",
+                                  letterSpacing: "0.2px",
+                                  textTransform: "uppercase",
+                                }}
+                              >
+                                Supported: PDF, XLS, XLSX
+                              </p>
+                            </div>
                           </div>
                         </div>
-                      </div>
 
-                      <button
-                        onClick={handleSingleProductUpload}
-                        style={{
-                          background:
-                            "linear-gradient(135deg, #5b7c99 0%, #4a6fa5 100%)",
-                          color: "#ffffff",
-                          border: "none",
-                          padding: "12px 24px",
-                          borderRadius: "8px",
-                          cursor: "pointer",
-                          fontSize: "13px",
-                          fontWeight: "700",
-                          transition: "all 0.25s ease",
-                          boxShadow: "0 4px 12px rgba(2, 132, 199, 0.2)",
-                          textTransform: "uppercase",
-                          letterSpacing: "0.3px",
-                        }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.boxShadow =
-                            "0 6px 16px rgba(2, 132, 199, 0.28)";
-                          e.currentTarget.style.transform = "translateY(-2px)";
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.boxShadow =
-                            "0 4px 12px rgba(2, 132, 199, 0.2)";
-                          e.currentTarget.style.transform = "translateY(0px)";
-                        }}
-                      >
-                        Add Product
-                      </button>
-                    </div>
-                  )}
-
-                  {/* Bulk Upload */}
-                  {uploadType === "bulk" && (
-                    <div
-                      style={{
-                        background: "#ffffff",
-                        border: "1px solid #d0dce6",
-                        borderRadius: "12px",
-                        padding: "32px",
-                        boxShadow: "0 4px 12px rgba(0, 0, 0, 0.06)",
-                      }}
-                    >
-                      <h3
-                        style={{
-                          margin: "0 0 24px 0",
-                          fontSize: "18px",
-                          fontWeight: "800",
-                          color: "#5b7c99",
-                          textTransform: "uppercase",
-                          letterSpacing: "0.3px",
-                        }}
-                      >
-                        Bulk Upload
-                      </h3>
-
-                      <div style={{ marginBottom: "24px" }}>
-                        <label
-                          style={{
-                            display: "block",
-                            marginBottom: "12px",
-                            fontSize: "11px",
-                            fontWeight: "800",
-                            color: "#475569",
-                            textTransform: "uppercase",
-                            letterSpacing: "0.4px",
-                          }}
-                        >
-                          Select File (PDF or Excel)
-                        </label>
-                        <div
-                          style={{
-                            position: "relative",
-                            display: "inline-block",
-                            width: "100%",
-                          }}
-                        >
-                          <input
-                            type="file"
-                            accept=".pdf,.xls,.xlsx"
-                            onChange={handleBulkFileUpload}
-                            style={{
-                              position: "absolute",
-                              opacity: "0",
-                              width: "100%",
-                              height: "100%",
-                              cursor: "pointer",
-                            }}
-                          />
+                        {uploadProgress && (
                           <div
                             style={{
-                              padding: "32px",
-                              border: "2px dashed #d0dce6",
+                              marginBottom: "24px",
+                              padding: "18px",
+                              background:
+                                "linear-gradient(135deg, #f3f6f9 0%, #e0f2fe 100%)",
+                              border: "1px solid #bae6fd",
                               borderRadius: "10px",
-                              textAlign: "center",
-                              background: "#f8fafc",
-                              cursor: "pointer",
-                              transition: "all 0.25s ease",
-                              boxShadow: "0 2px 4px rgba(0, 0, 0, 0.02)",
-                            }}
-                            onMouseEnter={(e) => {
-                              e.currentTarget.style.background = "#f0f7fa";
-                              e.currentTarget.style.borderColor = "#5b7c99";
-                              e.currentTarget.style.boxShadow =
-                                "0 4px 8px rgba(2, 132, 199, 0.12)";
-                            }}
-                            onMouseLeave={(e) => {
-                              e.currentTarget.style.background = "#f8fafc";
-                              e.currentTarget.style.borderColor = "#d0dce6";
-                              e.currentTarget.style.boxShadow =
-                                "0 2px 4px rgba(0, 0, 0, 0.02)";
-                            }}
-                          >
-                            <p
-                              style={{
-                                color: "#5b7c99",
-                                margin: "0 0 8px 0",
-                                fontSize: "16px",
-                                fontWeight: "700",
-                              }}
-                            >
-                              {uploadFile
-                                ? `${uploadFile.name}`
-                                : "Click to select file"}
-                            </p>
-                            <p
-                              style={{
-                                color: "#64748b",
-                                margin: "4px 0 0 0",
-                                fontSize: "13px",
-                                fontWeight: "500",
-                              }}
-                            >
-                              or drag your file here
-                            </p>
-                            <p
-                              style={{
-                                color: "#94a3b8",
-                                margin: "6px 0 0 0",
-                                fontSize: "12px",
-                                letterSpacing: "0.2px",
-                                textTransform: "uppercase",
-                              }}
-                            >
-                              Supported: PDF, XLS, XLSX
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-
-                      {uploadProgress && (
-                        <div
-                          style={{
-                            marginBottom: "24px",
-                            padding: "18px",
-                            background:
-                              "linear-gradient(135deg, #f3f6f9 0%, #e0f2fe 100%)",
-                            border: "1px solid #bae6fd",
-                            borderRadius: "10px",
-                            boxShadow: "0 2px 8px rgba(2, 132, 199, 0.1)",
-                          }}
-                        >
-                          <div
-                            style={{
-                              display: "flex",
-                              justifyContent: "space-between",
-                              marginBottom: "10px",
-                            }}
-                          >
-                            <span
-                              style={{
-                                fontSize: "12px",
-                                fontWeight: "700",
-                                color: "#5b7c99",
-                                textTransform: "uppercase",
-                                letterSpacing: "0.2px",
-                              }}
-                            >
-                              {uploadProgress.status}
-                            </span>
-                            <span
-                              style={{
-                                fontSize: "12px",
-                                color: "#5b7c99",
-                                fontWeight: "600",
-                              }}
-                            >
-                              {uploadProgress.current} / {uploadProgress.total}
-                            </span>
-                          </div>
-                          <div
-                            style={{
-                              width: "100%",
-                              height: "10px",
-                              background: "#bae6fd",
-                              borderRadius: "6px",
-                              overflow: "hidden",
-                              boxShadow: "inset 0 1px 2px rgba(0, 0, 0, 0.05)",
+                              boxShadow: "0 2px 8px rgba(2, 132, 199, 0.1)",
                             }}
                           >
                             <div
                               style={{
-                                width: `${(uploadProgress.current / uploadProgress.total) * 100}%`,
-                                height: "100%",
-                                background:
-                                  "linear-gradient(90deg, #5b7c99 0%, #4a6fa5 100%)",
-                                transition: "width 0.3s ease",
-                                boxShadow: "0 0 8px rgba(2, 132, 199, 0.3)",
+                                display: "flex",
+                                justifyContent: "space-between",
+                                marginBottom: "10px",
                               }}
-                            />
+                            >
+                              <span
+                                style={{
+                                  fontSize: "12px",
+                                  fontWeight: "700",
+                                  color: "#5b7c99",
+                                  textTransform: "uppercase",
+                                  letterSpacing: "0.2px",
+                                }}
+                              >
+                                {uploadProgress.status}
+                              </span>
+                              <span
+                                style={{
+                                  fontSize: "12px",
+                                  color: "#5b7c99",
+                                  fontWeight: "600",
+                                }}
+                              >
+                                {uploadProgress.current} /{" "}
+                                {uploadProgress.total}
+                              </span>
+                            </div>
+                            <div
+                              style={{
+                                width: "100%",
+                                height: "10px",
+                                background: "#bae6fd",
+                                borderRadius: "6px",
+                                overflow: "hidden",
+                                boxShadow:
+                                  "inset 0 1px 2px rgba(0, 0, 0, 0.05)",
+                              }}
+                            >
+                              <div
+                                style={{
+                                  width: `${(uploadProgress.current / uploadProgress.total) * 100}%`,
+                                  height: "100%",
+                                  background:
+                                    "linear-gradient(90deg, #5b7c99 0%, #4a6fa5 100%)",
+                                  transition: "width 0.3s ease",
+                                  boxShadow: "0 0 8px rgba(2, 132, 199, 0.3)",
+                                }}
+                              />
+                            </div>
+                            <p
+                              style={{
+                                margin: "10px 0 0 0",
+                                fontSize: "12px",
+                                color: "#64748b",
+                                fontWeight: "500",
+                              }}
+                            >
+                              Processing... Do not close this page or refresh
+                              browser
+                            </p>
                           </div>
-                          <p
-                            style={{
-                              margin: "10px 0 0 0",
-                              fontSize: "12px",
-                              color: "#64748b",
-                              fontWeight: "500",
-                            }}
-                          >
-                            Processing... Do not close this page or refresh
-                            browser
-                          </p>
-                        </div>
-                      )}
+                        )}
 
-                      <button
-                        onClick={handleProcessBulkUpload}
-                        disabled={!uploadFile || uploadProgress !== null}
-                        style={{
-                          background:
-                            uploadFile && !uploadProgress
-                              ? "linear-gradient(135deg, #5b7c99 0%, #4a6fa5 100%)"
-                              : "#cbd5e1",
-                          color: "#ffffff",
-                          border: "none",
-                          padding: "13px 28px",
-                          borderRadius: "8px",
-                          cursor:
-                            uploadFile && !uploadProgress
-                              ? "pointer"
-                              : "not-allowed",
-                          fontSize: "13px",
-                          fontWeight: "700",
-                          transition: "all 0.25s ease",
-                          textTransform: "uppercase",
-                          letterSpacing: "0.3px",
-                          boxShadow:
-                            uploadFile && !uploadProgress
-                              ? "0 4px 12px rgba(2, 132, 199, 0.2)"
-                              : "none",
-                        }}
-                        onMouseEnter={(e) => {
-                          if (uploadFile && !uploadProgress) {
-                            e.currentTarget.style.boxShadow =
-                              "0 6px 16px rgba(2, 132, 199, 0.28)";
-                            e.currentTarget.style.transform =
-                              "translateY(-2px)";
-                          }
-                        }}
-                        onMouseLeave={(e) => {
-                          if (uploadFile && !uploadProgress) {
-                            e.currentTarget.style.boxShadow =
-                              "0 4px 12px rgba(2, 132, 199, 0.2)";
-                            e.currentTarget.style.transform = "translateY(0px)";
-                          }
-                        }}
-                      >
-                        {uploadProgress ? "Processing..." : "Process Upload"}
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )}
+                        <button
+                          onClick={handleProcessBulkUpload}
+                          disabled={!uploadFile || uploadProgress !== null}
+                          style={{
+                            background:
+                              uploadFile && !uploadProgress
+                                ? "linear-gradient(135deg, #5b7c99 0%, #4a6fa5 100%)"
+                                : "#cbd5e1",
+                            color: "#ffffff",
+                            border: "none",
+                            padding: "13px 28px",
+                            borderRadius: "8px",
+                            cursor:
+                              uploadFile && !uploadProgress
+                                ? "pointer"
+                                : "not-allowed",
+                            fontSize: "13px",
+                            fontWeight: "700",
+                            transition: "all 0.25s ease",
+                            textTransform: "uppercase",
+                            letterSpacing: "0.3px",
+                            boxShadow:
+                              uploadFile && !uploadProgress
+                                ? "0 4px 12px rgba(2, 132, 199, 0.2)"
+                                : "none",
+                          }}
+                          onMouseEnter={(e) => {
+                            if (uploadFile && !uploadProgress) {
+                              e.currentTarget.style.boxShadow =
+                                "0 6px 16px rgba(2, 132, 199, 0.28)";
+                              e.currentTarget.style.transform =
+                                "translateY(-2px)";
+                            }
+                          }}
+                          onMouseLeave={(e) => {
+                            if (uploadFile && !uploadProgress) {
+                              e.currentTarget.style.boxShadow =
+                                "0 4px 12px rgba(2, 132, 199, 0.2)";
+                              e.currentTarget.style.transform =
+                                "translateY(0px)";
+                            }
+                          }}
+                        >
+                          {uploadProgress ? "Processing..." : "Process Upload"}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
             </>
           ) : activeSubmenu === "allDocuments" ? (
             <div>

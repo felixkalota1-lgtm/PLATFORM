@@ -1,4 +1,6 @@
 import React from "react";
+import EmailAccountsSettings from "../components/EmailAccountsSettings";
+import GmailOAuthService from "../services/GmailOAuthService";
 
 interface PDFTemplate {
   id: string;
@@ -26,6 +28,7 @@ interface SettingsProps {
   onLoadTemplate: (type: "quotation" | "inquiry") => void;
   onSaveLetterhead: (letterhead: Letterhead) => void;
   onDeleteLetterhead?: () => void;
+  gmailService?: GmailOAuthService | null;
 }
 
 export default function Settings({
@@ -36,8 +39,9 @@ export default function Settings({
   onLoadTemplate,
   onSaveLetterhead,
   onDeleteLetterhead,
+  gmailService,
 }: SettingsProps) {
-  const [activeTab, setActiveTab] = React.useState<"quotation" | "inquiry">(
+  const [activeTab, setActiveTab] = React.useState<"quotation" | "inquiry" | "email">(
     "quotation",
   );
   const [companyName, setCompanyName] = React.useState(
@@ -159,7 +163,7 @@ export default function Settings({
             borderBottom: "2px solid #e2e8f0",
           }}
         >
-          {(["quotation", "inquiry"] as const).map((tab) => (
+          {(["quotation", "inquiry", "email"] as const).map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -181,7 +185,11 @@ export default function Settings({
                 if (activeTab !== tab) e.currentTarget.style.color = "#64748b";
               }}
             >
-              {tab === "quotation" ? "Quotation Template" : "Inquiry Template"}
+              {tab === "quotation"
+                ? "Quotation Template"
+                : tab === "inquiry"
+                  ? "Inquiry Template"
+                  : "Email Accounts"}
             </button>
           ))}
         </div>
@@ -566,6 +574,30 @@ export default function Settings({
                 </button>
               </div>
             )}
+          </div>
+        )}
+
+        {/* Email Accounts Section */}
+        {activeTab === "email" && gmailService && (
+          <div>
+            <EmailAccountsSettings gmailService={gmailService} />
+          </div>
+        )}
+
+        {activeTab === "email" && !gmailService && (
+          <div
+            style={{
+              padding: "32px",
+              background: "#f8fafc",
+              borderRadius: "12px",
+              border: "1px solid #d0dce6",
+              textAlign: "center",
+              color: "#64748b",
+            }}
+          >
+            <p style={{ margin: "0", fontSize: "14px" }}>
+              Email system is being initialized...
+            </p>
           </div>
         )}
       </div>
