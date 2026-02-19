@@ -1,8 +1,17 @@
-import { Database, getDatabase, ref, get, set, update, remove } from 'firebase/database';
+import {
+  Database,
+  getDatabase,
+  ref,
+  get,
+  set,
+  update,
+  remove,
+} from "firebase/database";
 
 // Firebase Realtime Database configuration
-export const FIREBASE_RTDB_URL = 'https://platform-sale-and-procurement-default-rtdb.firebaseio.com';
-export const FIREBASE_PROJECT_ID = 'platform-sale-and-procurement';
+export const FIREBASE_RTDB_URL =
+  "https://platform-sale-and-procurement-default-rtdb.firebaseio.com";
+export const FIREBASE_PROJECT_ID = "platform-sale-and-procurement";
 
 /**
  * Get or initialize Realtime Database reference
@@ -43,7 +52,10 @@ export async function readFromDatabase(path: string): Promise<any> {
 /**
  * Generic database update operation
  */
-export async function updateDatabase(path: string, updates: Record<string, any>): Promise<void> {
+export async function updateDatabase(
+  path: string,
+  updates: Record<string, any>,
+): Promise<void> {
   try {
     const db = getDatabase();
     const dbRef = ref(db, path);
@@ -72,7 +84,7 @@ export async function deleteFromDatabase(path: string): Promise<void> {
  * Convert email for use as database key (replaces . and @ with underscores)
  */
 export function encodeEmail(email: string): string {
-  return email.replace(/[.@]/g, '_');
+  return email.replace(/[.@]/g, "_");
 }
 
 /**
@@ -80,7 +92,7 @@ export function encodeEmail(email: string): string {
  */
 export function decodeEmail(encoded: string): string {
   // This is lossy - you should store the email separately if you need to decode it
-  return encoded.replace(/_/g, '.');
+  return encoded.replace(/_/g, ".");
 }
 
 /**
@@ -99,8 +111,8 @@ export async function ensureUserStructure(userId: string): Promise<void> {
         emailHistory: {},
         inboxMetadata: {
           unreadCount: 0,
-          lastFetch: 0
-        }
+          lastFetch: 0,
+        },
       });
     }
   } catch (error) {
@@ -115,11 +127,11 @@ export async function ensureUserStructure(userId: string): Promise<void> {
 export function validateEmailAccount(account: any): boolean {
   return (
     account &&
-    typeof account === 'object' &&
-    'email' in account &&
-    'provider' in account &&
-    'accessToken' in account &&
-    'connectedAt' in account
+    typeof account === "object" &&
+    "email" in account &&
+    "provider" in account &&
+    "accessToken" in account &&
+    "connectedAt" in account
   );
 }
 
@@ -129,12 +141,12 @@ export function validateEmailAccount(account: any): boolean {
 export function validateEmailHistory(entry: any): boolean {
   return (
     entry &&
-    typeof entry === 'object' &&
-    'documentId' in entry &&
-    'documentType' in entry &&
-    'recipientEmail' in entry &&
-    'senderEmail' in entry &&
-    'timestamp' in entry &&
-    'status' in entry
+    typeof entry === "object" &&
+    "documentId" in entry &&
+    "documentType" in entry &&
+    "recipientEmail" in entry &&
+    "senderEmail" in entry &&
+    "timestamp" in entry &&
+    "status" in entry
   );
 }

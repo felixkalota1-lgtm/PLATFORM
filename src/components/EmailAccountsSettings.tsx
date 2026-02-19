@@ -1,12 +1,14 @@
-import React, { useState, useEffect } from 'react';
-import { Plus, Trash2, Check, Loader, Mail, LogOut } from 'lucide-react';
-import GmailOAuthService, { EmailAccount } from '../services/GmailOAuthService';
+import React, { useState, useEffect } from "react";
+import { Plus, Trash2, Check, Loader, Mail, LogOut } from "lucide-react";
+import GmailOAuthService, { EmailAccount } from "../services/GmailOAuthService";
 
 export interface EmailAccountsSettingsProps {
   gmailService: GmailOAuthService;
 }
 
-const EmailAccountsSettings: React.FC<EmailAccountsSettingsProps> = ({ gmailService }) => {
+const EmailAccountsSettings: React.FC<EmailAccountsSettingsProps> = ({
+  gmailService,
+}) => {
   const [emailAccounts, setEmailAccounts] = useState<EmailAccount[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
@@ -19,12 +21,15 @@ const EmailAccountsSettings: React.FC<EmailAccountsSettingsProps> = ({ gmailServ
     loadEmailAccounts();
 
     // Listen for email accounts changes
-    const unsubscribe = window.addEventListener('emailAccountsChanged', () => {
+    const unsubscribe = window.addEventListener("emailAccountsChanged", () => {
       loadEmailAccounts();
     });
 
     return () => {
-      window.removeEventListener('emailAccountsChanged', loadEmailAccounts as EventListener);
+      window.removeEventListener(
+        "emailAccountsChanged",
+        loadEmailAccounts as EventListener,
+      );
     };
   }, []);
 
@@ -34,7 +39,8 @@ const EmailAccountsSettings: React.FC<EmailAccountsSettingsProps> = ({ gmailServ
       const accounts = await gmailService.getEmailAccounts();
       setEmailAccounts(accounts);
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to load email accounts';
+      const errorMessage =
+        err instanceof Error ? err.message : "Failed to load email accounts";
       setError(errorMessage);
     } finally {
       setIsLoading(false);
@@ -55,7 +61,8 @@ const EmailAccountsSettings: React.FC<EmailAccountsSettingsProps> = ({ gmailServ
         setTimeout(() => setSuccess(null), 3000);
       }
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to connect Gmail account';
+      const errorMessage =
+        err instanceof Error ? err.message : "Failed to connect Gmail account";
       setError(errorMessage);
     } finally {
       setIsConnecting(false);
@@ -66,12 +73,13 @@ const EmailAccountsSettings: React.FC<EmailAccountsSettingsProps> = ({ gmailServ
     try {
       setError(null);
       await gmailService.setDefaultEmailAccount(accountId);
-      setSuccess('Default email account updated!');
+      setSuccess("Default email account updated!");
       await loadEmailAccounts();
 
       setTimeout(() => setSuccess(null), 3000);
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to set default account';
+      const errorMessage =
+        err instanceof Error ? err.message : "Failed to set default account";
       setError(errorMessage);
     }
   };
@@ -80,33 +88,34 @@ const EmailAccountsSettings: React.FC<EmailAccountsSettingsProps> = ({ gmailServ
     try {
       setError(null);
       await gmailService.disconnectEmailAccount(accountId);
-      setSuccess('Email account disconnected successfully!');
+      setSuccess("Email account disconnected successfully!");
       setAccountToDelete(null);
       await loadEmailAccounts();
 
       setTimeout(() => setSuccess(null), 3000);
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to disconnect account';
+      const errorMessage =
+        err instanceof Error ? err.message : "Failed to disconnect account";
       setError(errorMessage);
     }
   };
 
   const formatConnectDate = (timestamp: number) => {
-    return new Date(timestamp).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
+    return new Date(timestamp).toLocaleDateString("en-US", {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
     });
   };
 
   const formatLastSync = (timestamp?: number) => {
-    if (!timestamp) return 'Never';
+    if (!timestamp) return "Never";
     const now = Date.now();
     const diff = now - timestamp;
 
-    if (diff < 60000) return 'Just now';
+    if (diff < 60000) return "Just now";
     if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
     if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
     return new Date(timestamp).toLocaleDateString();
@@ -117,7 +126,9 @@ const EmailAccountsSettings: React.FC<EmailAccountsSettingsProps> = ({ gmailServ
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="text-lg font-semibold text-gray-900">Email Accounts</h3>
+          <h3 className="text-lg font-semibold text-gray-900">
+            Email Accounts
+          </h3>
           <p className="text-sm text-gray-600 mt-1">
             Connect and manage email accounts for sending documents
           </p>
@@ -128,7 +139,10 @@ const EmailAccountsSettings: React.FC<EmailAccountsSettingsProps> = ({ gmailServ
       {error && (
         <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-red-700 text-sm flex justify-between items-center">
           <span>{error}</span>
-          <button onClick={() => setError(null)} className="text-red-400 hover:text-red-600">
+          <button
+            onClick={() => setError(null)}
+            className="text-red-400 hover:text-red-600"
+          >
             ×
           </button>
         </div>
@@ -228,7 +242,9 @@ const EmailAccountsSettings: React.FC<EmailAccountsSettingsProps> = ({ gmailServ
       {!isLoading && emailAccounts.length === 0 && (
         <div className="bg-gray-50 border border-gray-200 rounded-lg p-12 text-center">
           <Mail size={48} className="mx-auto text-gray-400 mb-4" />
-          <h4 className="text-lg font-medium text-gray-900 mb-2">No Email Accounts Connected</h4>
+          <h4 className="text-lg font-medium text-gray-900 mb-2">
+            No Email Accounts Connected
+          </h4>
           <p className="text-gray-600 mb-6">
             Connect a Gmail account to send documents via email from the app.
           </p>
@@ -256,10 +272,12 @@ const EmailAccountsSettings: React.FC<EmailAccountsSettingsProps> = ({ gmailServ
       {accountToDelete && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg shadow-xl max-w-sm w-full p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">Disconnect Email Account?</h3>
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">
+              Disconnect Email Account?
+            </h3>
             <p className="text-gray-600 text-sm mb-6">
-              Are you sure you want to disconnect this email account? You won't be able to send documents
-              from this account anymore.
+              Are you sure you want to disconnect this email account? You won't
+              be able to send documents from this account anymore.
             </p>
 
             <div className="flex gap-3 justify-end">
@@ -283,8 +301,9 @@ const EmailAccountsSettings: React.FC<EmailAccountsSettingsProps> = ({ gmailServ
       {/* Info Box */}
       <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-700">
         <p>
-          <strong>Privacy:</strong> Your email credentials are securely stored and encrypted in Firebase.
-          We only use them to send documents on your behalf.
+          <strong>Privacy:</strong> Your email credentials are securely stored
+          and encrypted in Firebase. We only use them to send documents on your
+          behalf.
         </p>
       </div>
     </div>

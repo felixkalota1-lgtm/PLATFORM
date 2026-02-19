@@ -41,9 +41,9 @@ export default function Settings({
   onDeleteLetterhead,
   gmailService,
 }: SettingsProps) {
-  const [activeTab, setActiveTab] = React.useState<"quotation" | "inquiry" | "email">(
-    "quotation",
-  );
+  const [activeTab, setActiveTab] = React.useState<
+    "quotation" | "inquiry" | "email"
+  >("quotation");
   const [companyName, setCompanyName] = React.useState(
     quotationTemplate?.companyName || "",
   );

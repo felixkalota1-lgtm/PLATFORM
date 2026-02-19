@@ -314,7 +314,13 @@ export const EmailTemplateSelector: React.FC<EmailTemplateSelectProps> = ({
             <div style={{ fontSize: "20px", marginBottom: "8px" }}>
               {getTemplateIcon(template.category)}
             </div>
-            <h4 style={{ margin: "0 0 4px 0", fontSize: "13px", fontWeight: "600" }}>
+            <h4
+              style={{
+                margin: "0 0 4px 0",
+                fontSize: "13px",
+                fontWeight: "600",
+              }}
+            >
               {template.name}
             </h4>
             <p

@@ -15,7 +15,9 @@ interface HomeDashboardProps {
   userCompany?: string;
   onNavigate?: (section: string) => void;
   setActiveSubmenu?: Dispatch<
-    SetStateAction<"dashboard" | "marketplace" | "warehouse" | "allDocuments" | "inbox">
+    SetStateAction<
+      "dashboard" | "marketplace" | "warehouse" | "allDocuments" | "inbox"
+    >
   >;
   setActiveWarehouseTab?: Dispatch<
     SetStateAction<

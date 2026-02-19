@@ -53,7 +53,9 @@ const InboxModule: React.FC<InboxModuleProps> = ({
       const accounts = await gmailService.getEmailAccounts();
 
       if (accounts.length === 0) {
-        setError("No email accounts connected. Please connect a Gmail account.");
+        setError(
+          "No email accounts connected. Please connect a Gmail account.",
+        );
         setEmails([]);
         return;
       }
@@ -67,18 +69,20 @@ const InboxModule: React.FC<InboxModuleProps> = ({
             await EmailSendingService.fetchInboxEmails(account);
 
           // Map Cloud Function response to InboxEmail structure
-          const mappedEmails: InboxEmail[] = fetchedEmails.map((email: any) => ({
-            id: email.id,
-            messageId: email.messageId,
-            from: email.from,
-            to: "", // Not provided by Cloud Function, set to empty
-            subject: email.subject,
-            body: email.body,
-            timestamp: new Date(email.date).getTime(),
-            isRead: email.isRead,
-            hasAttachments: false, // Cloud Function doesn't include attachment info yet
-            attachmentCount: 0,
-          }));
+          const mappedEmails: InboxEmail[] = fetchedEmails.map(
+            (email: any) => ({
+              id: email.id,
+              messageId: email.messageId,
+              from: email.from,
+              to: "", // Not provided by Cloud Function, set to empty
+              subject: email.subject,
+              body: email.body,
+              timestamp: new Date(email.date).getTime(),
+              isRead: email.isRead,
+              hasAttachments: false, // Cloud Function doesn't include attachment info yet
+              attachmentCount: 0,
+            }),
+          );
 
           allEmails.push(...mappedEmails);
         } catch (err) {
@@ -137,9 +141,7 @@ const InboxModule: React.FC<InboxModuleProps> = ({
       const updated = { ...email, isRead: false };
       setEmails(emails.map((e) => (e.id === email.id ? updated : e)));
       setSelectedEmail(updated);
-      console.warn(
-        "Mark as unread not yet implemented in Cloud Functions",
-      );
+      console.warn("Mark as unread not yet implemented in Cloud Functions");
     } catch (err) {
       console.error("Failed to mark email as unread:", err);
     }

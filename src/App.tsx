@@ -9580,9 +9580,7 @@ export default function App() {
                                             `Order ${order.id.substring(0, 8)}`,
                                           );
                                           setEmailDocumentType("order");
-                                          setEmailDocumentElement(
-                                            orderElement,
-                                          );
+                                          setEmailDocumentElement(orderElement);
                                           setShowSendEmailDialog(true);
                                         }}
                                         style={{
@@ -9906,9 +9904,7 @@ export default function App() {
                                             `Order ${order.id.substring(0, 8)}`,
                                           );
                                           setEmailDocumentType("order");
-                                          setEmailDocumentElement(
-                                            orderElement,
-                                          );
+                                          setEmailDocumentElement(orderElement);
                                           setShowSendEmailDialog(true);
                                         }}
                                         style={{

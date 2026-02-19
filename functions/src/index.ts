@@ -9,7 +9,7 @@ admin.initializeApp();
 const oauth2Client = new google.auth.OAuth2(
   process.env.GOOGLE_CLIENT_ID,
   process.env.GOOGLE_CLIENT_SECRET,
-  process.env.GOOGLE_REDIRECT_URL
+  process.env.GOOGLE_REDIRECT_URL,
 );
 
 // Gmail API client type
@@ -33,18 +33,12 @@ export const sendEmailViaGmail = functions.https.onCall(
     if (!context.auth) {
       throw new functions.https.HttpsError(
         "unauthenticated",
-        "User must be authenticated to send emails"
+        "User must be authenticated to send emails",
       );
     }
 
     const userId = context.auth.uid;
-    const {
-      emailAccountId,
-      toEmail,
-      subject,
-      htmlBody,
-      attachmentData,
-    } = data;
+    const { emailAccountId, toEmail, subject, htmlBody, attachmentData } = data;
 
     try {
       // 1. Retrieve email account data from Realtime Database
@@ -56,7 +50,7 @@ export const sendEmailViaGmail = functions.https.onCall(
       if (!accountSnapshot.exists()) {
         throw new functions.https.HttpsError(
           "not-found",
-          "Email account not found"
+          "Email account not found",
         );
       }
 
@@ -72,7 +66,7 @@ export const sendEmailViaGmail = functions.https.onCall(
         toEmail,
         subject,
         htmlBody,
-        attachmentData
+        attachmentData,
       );
 
       // 4. Send email via Gmail API
@@ -131,10 +125,10 @@ export const sendEmailViaGmail = functions.https.onCall(
 
       throw new functions.https.HttpsError(
         "internal",
-        `Failed to send email: ${error.message}`
+        `Failed to send email: ${error.message}`,
       );
     }
-  }
+  },
 );
 
 /**
@@ -146,7 +140,7 @@ export const fetchInboxEmails = functions.https.onCall(
     if (!context.auth) {
       throw new functions.https.HttpsError(
         "unauthenticated",
-        "User must be authenticated"
+        "User must be authenticated",
       );
     }
 
@@ -163,7 +157,7 @@ export const fetchInboxEmails = functions.https.onCall(
       if (!accountSnapshot.exists()) {
         throw new functions.https.HttpsError(
           "not-found",
-          "Email account not found"
+          "Email account not found",
         );
       }
 
@@ -210,12 +204,10 @@ export const fetchInboxEmails = functions.https.onCall(
       }
 
       // 4. Update last sync time in Realtime DB
-      await db
-        .ref(`users/${userId}/inboxMetadata`)
-        .update({
-          lastFetch: admin.database.ServerValue.TIMESTAMP,
-          unreadCount: messages.length,
-        });
+      await db.ref(`users/${userId}/inboxMetadata`).update({
+        lastFetch: admin.database.ServerValue.TIMESTAMP,
+        unreadCount: messages.length,
+      });
 
       return {
         success: true,
@@ -226,61 +218,59 @@ export const fetchInboxEmails = functions.https.onCall(
       console.error("❌ Error fetching inbox:", error);
       throw new functions.https.HttpsError(
         "internal",
-        `Failed to fetch inbox: ${error.message}`
+        `Failed to fetch inbox: ${error.message}`,
       );
     }
-  }
+  },
 );
 
 /**
  * Cloud Function: Mark email as read
  */
-export const markEmailAsRead = functions.https.onCall(
-  async (data, context) => {
-    if (!context.auth) {
-      throw new functions.https.HttpsError(
-        "unauthenticated",
-        "User must be authenticated"
-      );
-    }
-
-    const userId = context.auth.uid;
-    const { emailAccountId, messageId } = data;
-
-    try {
-      const db = admin.database();
-      const accountSnapshot = await db
-        .ref(`users/${userId}/emailAccounts/${emailAccountId}`)
-        .once("value");
-
-      if (!accountSnapshot.exists()) {
-        throw new functions.https.HttpsError(
-          "not-found",
-          "Email account not found"
-        );
-      }
-
-      const account = accountSnapshot.val();
-      initializeGmailService(account.accessToken);
-
-      await gmailService.users.messages.modify({
-        userId: "me",
-        id: messageId,
-        requestBody: {
-          removeLabelIds: ["UNREAD"],
-        },
-      });
-
-      return { success: true };
-    } catch (error: any) {
-      console.error("❌ Error marking email as read:", error);
-      throw new functions.https.HttpsError(
-        "internal",
-        `Failed to mark email as read: ${error.message}`
-      );
-    }
+export const markEmailAsRead = functions.https.onCall(async (data, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError(
+      "unauthenticated",
+      "User must be authenticated",
+    );
   }
-);
+
+  const userId = context.auth.uid;
+  const { emailAccountId, messageId } = data;
+
+  try {
+    const db = admin.database();
+    const accountSnapshot = await db
+      .ref(`users/${userId}/emailAccounts/${emailAccountId}`)
+      .once("value");
+
+    if (!accountSnapshot.exists()) {
+      throw new functions.https.HttpsError(
+        "not-found",
+        "Email account not found",
+      );
+    }
+
+    const account = accountSnapshot.val();
+    initializeGmailService(account.accessToken);
+
+    await gmailService.users.messages.modify({
+      userId: "me",
+      id: messageId,
+      requestBody: {
+        removeLabelIds: ["UNREAD"],
+      },
+    });
+
+    return { success: true };
+  } catch (error: any) {
+    console.error("❌ Error marking email as read:", error);
+    throw new functions.https.HttpsError(
+      "internal",
+      `Failed to mark email as read: ${error.message}`,
+    );
+  }
+});
 
 /**
  * Helper: Build MIME email message
@@ -290,7 +280,7 @@ function buildEmailMessage(
   to: string,
   subject: string,
   htmlBody: string,
-  attachmentData?: { filename: string; mimeType: string; data: string }
+  attachmentData?: { filename: string; mimeType: string; data: string },
 ): string {
   const boundary = `boundary${Date.now()}`;
   const utf8Subject = `=?UTF-8?B?${Buffer.from(subject).toString("base64")}?=`;
@@ -309,7 +299,11 @@ function buildEmailMessage(
     message += htmlBody;
   }
 
-  return Buffer.from(message).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
+  return Buffer.from(message)
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=/g, "");
 }
 
 /**
@@ -378,7 +372,7 @@ export const syncAllInboxes = functions.pubsub
           } catch (error) {
             console.error(
               `Failed to sync inbox for user ${userId} account ${accountId}:`,
-              error
+              error,
             );
             failed++;
           }
