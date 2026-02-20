@@ -15,7 +15,11 @@ import {
   startAfter,
   addDoc,
 } from "firebase/firestore";
-import { signInWithEmailAndPassword } from "firebase/auth";
+import {
+  signInWithEmailAndPassword,
+  signInWithPopup,
+  GoogleAuthProvider,
+} from "firebase/auth";
 import * as XLSX from "xlsx";
 import { signUpWithEmailAndPassword } from "./firebaseAuth";
 import CryptoJS from "crypto-js";
@@ -339,6 +343,15 @@ export default function App() {
     email: string;
     username: string;
   } | null>(null);
+  const [gmailSignupInProgress, setGmailSignupInProgress] = useState<{
+    uid: string;
+    email: string;
+    displayName: string;
+  } | null>(null);
+  const [gmailSignupForm, setGmailSignupForm] = useState({
+    username: "",
+    companyName: "",
+  });
   const [showSplash, setShowSplash] = useState<boolean>(true);
   const [isAppInitializing, setIsAppInitializing] = useState<boolean>(true);
   const [showAuthUI, setShowAuthUI] = useState<boolean>(false);
@@ -3918,6 +3931,295 @@ export default function App() {
     }
   };
 
+  // Gmail Login handler - for users who signed up with Gmail OAuth
+  const handleGmailLogin = async () => {
+    setIsLoading(true);
+    try {
+      // Initialize Google OAuth provider
+      const provider = new GoogleAuthProvider();
+      provider.setCustomParameters({ prompt: "select_account" });
+
+      // Trigger Google OAuth popup
+      const result = await signInWithPopup(auth, provider);
+      const oauthUser = result.user;
+      const oauthEmail = normalizeEmail(oauthUser.email);
+
+      console.log("✅ Gmail OAuth successful for email:", oauthEmail);
+
+      // Find user in userProfiles by email
+      const userDocs = await getDocs(
+        query(
+          collection(db, "userProfiles"),
+          where("emailSearchable", "==", oauthEmail),
+        ),
+      );
+
+      if (userDocs.docs.length === 0) {
+        setAuthError(
+          "No account found with this Gmail address. Please sign up first.",
+        );
+        setIsLoading(false);
+        return;
+      }
+
+      // Get user profile
+      const userProfileDoc = userDocs.docs[0];
+      const profileData = userProfileDoc.data();
+      const uid = profileData.uid;
+      const username = profileData.username;
+
+      // Load user data
+      const {
+        products: userProducts,
+        activeTab: userActiveTab,
+        quotationHistory: userQuotationHistory,
+        inquiryHistory: userInquiryHistory,
+      } = await loadUserDataOnLogin(username, oauthEmail);
+
+      setProducts(userProducts);
+      setActiveSubmenu(
+        "warehouse" as "marketplace" | "warehouse" | "allDocuments",
+      );
+      setActiveWarehouseTab(
+        (userActiveTab || "products") as
+          | "products"
+          | "quotations"
+          | "inquiries"
+          | "orders"
+          | "invoices"
+          | "vendors"
+          | "settings",
+      );
+      setCurrentUser(username);
+      setCurrentUserEmail(oauthEmail);
+      localStorage.setItem("pspm_current_user", username);
+      localStorage.setItem("pspm_auth_uid", uid);
+      cacheUserData(username, oauthEmail);
+      setIsLoggedIn(true);
+      setAuthError("");
+
+      console.log("✅ Gmail login successful for user:", username);
+    } catch (error: any) {
+      const errorCode = error.code || "";
+
+      // Handle common OAuth errors
+      if (errorCode === "auth/popup-closed-by-user") {
+        setAuthError("Login cancelled. Please try again.");
+      } else if (errorCode === "auth/popup-blocked") {
+        setAuthError("Pop-up blocked. Please enable pop-ups and try again.");
+      } else {
+        console.error("Gmail login error:", error);
+        setAuthError("Gmail login failed. Please try again.");
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Gmail Signup handler - for new users signing up with Gmail OAuth
+  const handleGmailSignup = async () => {
+    setIsLoading(true);
+    try {
+      // Initialize Google OAuth provider
+      const provider = new GoogleAuthProvider();
+      provider.setCustomParameters({ prompt: "consent" });
+
+      // Trigger Google OAuth popup
+      const result = await signInWithPopup(auth, provider);
+      const oauthUser = result.user;
+      const oauthEmail = normalizeEmail(oauthUser.email);
+
+      console.log("✅ Gmail OAuth successful for new signup:", oauthEmail);
+
+      // Check if email already exists in userProfiles
+      const existingUserDocs = await getDocs(
+        query(
+          collection(db, "userProfiles"),
+          where("emailSearchable", "==", oauthEmail),
+        ),
+      );
+
+      if (existingUserDocs.docs.length > 0) {
+        setAuthError("This email is already registered. Please login instead.");
+        setIsLoading(false);
+        return;
+      }
+
+      // Set state to show form for username and company name input
+      setGmailSignupInProgress({
+        uid: oauthUser.uid,
+        email: oauthEmail,
+        displayName: oauthUser.displayName || "",
+      });
+
+      setGmailSignupForm({
+        username: "",
+        companyName: "",
+      });
+      setAuthError("");
+
+      console.log(
+        "✅ Gmail OAuth verified - awaiting user input for username/company",
+      );
+    } catch (error: any) {
+      const errorCode = error.code || "";
+
+      // Handle specific errors
+      if (errorCode === "auth/popup-closed-by-user") {
+        setAuthError("Signup cancelled. Please try again.");
+      } else if (errorCode === "auth/popup-blocked") {
+        setAuthError("Pop-up blocked. Please enable pop-ups and try again.");
+      } else {
+        console.error("Gmail signup error:", error);
+        setAuthError("Gmail signup failed. Please try again.");
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Complete Gmail Signup - after user enters username and company name
+  const handleCompleteGmailSignup = async () => {
+    if (!gmailSignupInProgress) {
+      setAuthError("Session expired. Please try again.");
+      return;
+    }
+
+    if (!gmailSignupForm.username || !gmailSignupForm.companyName) {
+      setAuthError("Please enter both username and company name");
+      return;
+    }
+
+    if (gmailSignupForm.username.trim().length < 3) {
+      setAuthError("Username must be at least 3 characters");
+      return;
+    }
+
+    if (gmailSignupForm.companyName.trim().length < 2) {
+      setAuthError("Company name must be at least 2 characters");
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const oauthEmail = gmailSignupInProgress.email;
+      const oauthUid = gmailSignupInProgress.uid;
+      const username = gmailSignupForm.username.trim();
+      const companyName = gmailSignupForm.companyName.trim();
+
+      // Create searchable fields (consistent with regular signup)
+      const usernameSearchable = username.toLowerCase().trim();
+      const companyNameSearchable = companyName.toLowerCase().trim();
+      const emailSearchable = oauthEmail;
+
+      // Check if username already taken (same validation as regular signup)
+      const existingUsernameDocs = await getDocs(
+        query(
+          collection(db, "userProfiles"),
+          where("usernameSearchable", "==", usernameSearchable),
+        ),
+      );
+
+      if (existingUsernameDocs.docs.length > 0) {
+        setAuthError("Username is already taken");
+        setIsLoading(false);
+        return;
+      }
+
+      // Create userProfiles document (IDENTICAL path to regular signup)
+      const userProfileData = {
+        uid: oauthUid,
+        username: username,
+        usernameSearchable: usernameSearchable,
+        email: oauthEmail,
+        emailSearchable: emailSearchable,
+        companyName: companyName,
+        companyNameSearchable: companyNameSearchable,
+        activeTab: "products",
+        emailVerified: true, // Gmail is already verified
+        authMethod: "gmail",
+        createdAt: new Date().toISOString(),
+      };
+
+      await setDoc(doc(db, "userProfiles", oauthUid), userProfileData, {
+        merge: false,
+      });
+      console.log("✅ User profile created - username:", username);
+
+      // Create vendorDirectory entry (IDENTICAL path to regular signup)
+      const vendorData = {
+        uid: oauthUid,
+        username: username,
+        usernameSearchable: usernameSearchable,
+        email: oauthEmail,
+        emailSearchable: emailSearchable,
+        companyName: companyName,
+        companyNameSearchable: companyNameSearchable,
+        phone: "",
+        address: "",
+        website: "",
+        authMethod: "gmail",
+        createdAt: new Date().toISOString(),
+      };
+
+      await setDoc(doc(db, "vendorDirectory", oauthUid), vendorData, {
+        merge: false,
+      });
+      console.log("✅ Vendor entry created - searchable paths active");
+
+      // Auto-login the user (no email verification needed for Gmail)
+      const {
+        products: userProducts,
+        activeTab: userActiveTab,
+        quotationHistory: userQuotationHistory,
+        inquiryHistory: userInquiryHistory,
+      } = await loadUserDataOnLogin(username, oauthEmail);
+
+      setProducts(userProducts);
+      setActiveSubmenu(
+        "warehouse" as "marketplace" | "warehouse" | "allDocuments",
+      );
+      setActiveWarehouseTab(
+        (userActiveTab || "products") as
+          | "products"
+          | "quotations"
+          | "inquiries"
+          | "orders"
+          | "invoices"
+          | "vendors"
+          | "settings",
+      );
+      setCurrentUser(username);
+      setCurrentUserEmail(oauthEmail);
+      localStorage.setItem("pspm_current_user", username);
+      localStorage.setItem("pspm_auth_uid", oauthUid);
+      cacheUserData(username, oauthEmail);
+      setIsLoggedIn(true);
+
+      // Reset forms and state
+      setSignupForm({
+        username: "",
+        email: "",
+        companyName: "",
+        password: "",
+        confirmPassword: "",
+      });
+      setGmailSignupForm({
+        username: "",
+        companyName: "",
+      });
+      setGmailSignupInProgress(null);
+      setAuthError("");
+
+      console.log("✅ Gmail signup complete - logged in as:", username);
+    } catch (error: any) {
+      console.error("❌ Complete Gmail signup error:", error);
+      setAuthError("Failed to complete signup. Please try again.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   // Filter products by search query, apply threshold logic, and sort
   const filteredProducts = sortProducts(
     products
@@ -4652,11 +4954,300 @@ export default function App() {
               >
                 {isLoading ? "Logging in..." : "Login"}
               </button>
+
+              {/* Divider */}
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  margin: "20px 0 16px 0",
+                  gap: "12px",
+                }}
+              >
+                <div
+                  style={{
+                    flex: 1,
+                    height: "1px",
+                    background: "#e2e8f0",
+                  }}
+                />
+                <span
+                  style={{
+                    fontSize: "12px",
+                    color: "#94a3b8",
+                    fontWeight: "500",
+                  }}
+                >
+                  OR
+                </span>
+                <div
+                  style={{
+                    flex: 1,
+                    height: "1px",
+                    background: "#e2e8f0",
+                  }}
+                />
+              </div>
+
+              {/* Sign in with Gmail Button */}
+              <button
+                onClick={handleGmailLogin}
+                disabled={isLoading}
+                style={{
+                  width: "100%",
+                  padding: "10px 16px",
+                  background: isLoading ? "#f3f4f6" : "#ffffff",
+                  color: "#374151",
+                  border: "1px solid #d1d5db",
+                  borderRadius: "6px",
+                  cursor: isLoading ? "not-allowed" : "pointer",
+                  fontSize: "13px",
+                  fontWeight: "600",
+                  transition: "all 0.2s ease",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: "8px",
+                }}
+                onMouseEnter={(e) => {
+                  if (!isLoading) {
+                    e.currentTarget.style.background = "#f9fafb";
+                    e.currentTarget.style.borderColor = "#9ca3af";
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!isLoading) {
+                    e.currentTarget.style.background = "#ffffff";
+                    e.currentTarget.style.borderColor = "#d1d5db";
+                  }
+                }}
+              >
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  style={{ opacity: 0.8 }}
+                >
+                  <path
+                    d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                    fill="#4285F4"
+                  />
+                  <path
+                    d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                    fill="#34A853"
+                  />
+                  <path
+                    d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
+                    fill="#FBBC05"
+                  />
+                  <path
+                    d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
+                    fill="#EA4335"
+                  />
+                </svg>
+                Sign in with Gmail
+              </button>
             </>
           )}
 
-          {/* Signup Form */}
-          {authMode === "signup" && (
+          {/* Gmail Signup Form - when user completes Gmail OAuth */}
+          {authMode === "signup" && gmailSignupInProgress && (
+            <>
+              <h2
+                style={{
+                  margin: "0 0 20px 0",
+                  fontSize: "16px",
+                  fontWeight: "600",
+                  color: "#1a365d",
+                  textAlign: "center",
+                }}
+              >
+                Complete Your Profile
+              </h2>
+
+              {/* Email - Pre-filled & Disabled */}
+              <div style={{ marginBottom: "16px" }}>
+                <label
+                  style={{
+                    display: "block",
+                    marginBottom: "6px",
+                    fontSize: "13px",
+                    fontWeight: "500",
+                    color: "#64748b",
+                  }}
+                >
+                  Email (from Gmail)
+                </label>
+                <input
+                  type="email"
+                  value={gmailSignupInProgress.email}
+                  disabled={true}
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    border: "1px solid #e2e8f0",
+                    borderRadius: "6px",
+                    fontSize: "13px",
+                    boxSizing: "border-box",
+                    fontFamily: "inherit",
+                    background: "#f8fafc",
+                    color: "#64748b",
+                  }}
+                />
+              </div>
+
+              {/* Username - Required Input */}
+              <div style={{ marginBottom: "16px" }}>
+                <label
+                  style={{
+                    display: "block",
+                    marginBottom: "6px",
+                    fontSize: "13px",
+                    fontWeight: "500",
+                    color: "#64748b",
+                  }}
+                >
+                  Username <span style={{ color: "#dc2626" }}>*</span>
+                </label>
+                <input
+                  type="text"
+                  value={gmailSignupForm.username}
+                  onChange={(e) => {
+                    setGmailSignupForm({
+                      ...gmailSignupForm,
+                      username: e.target.value,
+                    });
+                    setAuthError("");
+                  }}
+                  placeholder="Choose your username (3+ chars)"
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    border: "1px solid #e2e8f0",
+                    borderRadius: "6px",
+                    fontSize: "13px",
+                    boxSizing: "border-box",
+                    fontFamily: "inherit",
+                  }}
+                />
+              </div>
+
+              {/* Company Name - Required Input */}
+              <div style={{ marginBottom: "24px" }}>
+                <label
+                  style={{
+                    display: "block",
+                    marginBottom: "6px",
+                    fontSize: "13px",
+                    fontWeight: "500",
+                    color: "#64748b",
+                  }}
+                >
+                  Company Name <span style={{ color: "#dc2626" }}>*</span>
+                </label>
+                <input
+                  type="text"
+                  value={gmailSignupForm.companyName}
+                  onChange={(e) => {
+                    setGmailSignupForm({
+                      ...gmailSignupForm,
+                      companyName: e.target.value,
+                    });
+                    setAuthError("");
+                  }}
+                  placeholder="e.g., Acme Corporation"
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    border: "1px solid #e2e8f0",
+                    borderRadius: "6px",
+                    fontSize: "13px",
+                    boxSizing: "border-box",
+                    fontFamily: "inherit",
+                  }}
+                />
+              </div>
+
+              {authError && (
+                <div
+                  style={{
+                    marginBottom: "16px",
+                    padding: "10px 12px",
+                    background: "#fee2e2",
+                    border: "1px solid #fca5a5",
+                    borderRadius: "6px",
+                    color: "#dc2626",
+                    fontSize: "12px",
+                  }}
+                >
+                  {authError}
+                </div>
+              )}
+
+              <button
+                onClick={handleCompleteGmailSignup}
+                disabled={isLoading}
+                style={{
+                  width: "100%",
+                  padding: "10px 16px",
+                  background: isLoading ? "#cbd5e1" : "#16a34a",
+                  color: "#ffffff",
+                  border: "none",
+                  borderRadius: "6px",
+                  cursor: isLoading ? "not-allowed" : "pointer",
+                  fontSize: "13px",
+                  fontWeight: "600",
+                  transition: "all 0.2s ease",
+                }}
+                onMouseEnter={(e) => {
+                  if (!isLoading) {
+                    e.currentTarget.style.background = "#15803d";
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!isLoading) {
+                    e.currentTarget.style.background = "#16a34a";
+                  }
+                }}
+              >
+                {isLoading ? "Creating Account..." : "Complete Signup"}
+              </button>
+
+              <button
+                onClick={() => {
+                  setGmailSignupInProgress(null);
+                  setGmailSignupForm({ username: "", companyName: "" });
+                  setAuthError("");
+                }}
+                disabled={isLoading}
+                style={{
+                  width: "100%",
+                  marginTop: "12px",
+                  padding: "10px 16px",
+                  background: "transparent",
+                  color: "#64748b",
+                  border: "1px solid #cbd5e1",
+                  borderRadius: "6px",
+                  cursor: "pointer",
+                  fontSize: "13px",
+                  fontWeight: "500",
+                  transition: "all 0.2s ease",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = "#f1f5f9";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = "transparent";
+                }}
+              >
+                Cancel
+              </button>
+            </>
+          )}
+
+          {/* Signup Form - Regular Email/Password */}
+          {authMode === "signup" && !gmailSignupInProgress && (
             <>
               <div style={{ marginBottom: "16px" }}>
                 <label
@@ -4867,6 +5458,100 @@ export default function App() {
                 }}
               >
                 {isLoading ? "Creating Account..." : "Create Account"}
+              </button>
+
+              {/* Divider */}
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  margin: "20px 0 16px 0",
+                  gap: "12px",
+                }}
+              >
+                <div
+                  style={{
+                    flex: 1,
+                    height: "1px",
+                    background: "#e2e8f0",
+                  }}
+                />
+                <span
+                  style={{
+                    fontSize: "12px",
+                    color: "#94a3b8",
+                    fontWeight: "500",
+                  }}
+                >
+                  OR
+                </span>
+                <div
+                  style={{
+                    flex: 1,
+                    height: "1px",
+                    background: "#e2e8f0",
+                  }}
+                />
+              </div>
+
+              {/* Sign up with Gmail Button */}
+              <button
+                onClick={handleGmailSignup}
+                disabled={isLoading}
+                style={{
+                  width: "100%",
+                  padding: "10px 16px",
+                  background: isLoading ? "#f3f4f6" : "#ffffff",
+                  color: "#374151",
+                  border: "1px solid #d1d5db",
+                  borderRadius: "6px",
+                  cursor: isLoading ? "not-allowed" : "pointer",
+                  fontSize: "13px",
+                  fontWeight: "600",
+                  transition: "all 0.2s ease",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: "8px",
+                }}
+                onMouseEnter={(e) => {
+                  if (!isLoading) {
+                    e.currentTarget.style.background = "#f9fafb";
+                    e.currentTarget.style.borderColor = "#9ca3af";
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!isLoading) {
+                    e.currentTarget.style.background = "#ffffff";
+                    e.currentTarget.style.borderColor = "#d1d5db";
+                  }
+                }}
+              >
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  style={{ opacity: 0.8 }}
+                >
+                  <path
+                    d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                    fill="#4285F4"
+                  />
+                  <path
+                    d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                    fill="#34A853"
+                  />
+                  <path
+                    d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
+                    fill="#FBBC05"
+                  />
+                  <path
+                    d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
+                    fill="#EA4335"
+                  />
+                </svg>
+                Sign up with Gmail
               </button>
             </>
           )}
