@@ -1,16 +1,17 @@
 import React from "react";
-import {
-  collection,
-  query,
-  where,
-  getDocs,
-  doc,
-  setDoc,
-  updateDoc,
-  serverTimestamp,
-  or,
-  Firestore,
-} from "firebase/firestore";
+// Firebase imports temporarily disabled during Turso migration
+// import {
+//   collection,
+//   query,
+//   where,
+//   getDocs,
+//   doc,
+//   setDoc,
+//   updateDoc,
+//   serverTimestamp,
+//   or,
+//   Firestore,
+// } from "firebase/firestore";
 
 interface Company {
   id: string;
@@ -35,7 +36,6 @@ interface VendorConnection {
 }
 
 interface VendorsProps {
-  db: Firestore;
   currentUser: string;
   onSendInquiry?: (company: Company) => void;
   onSendQuotation?: (company: Company) => void;
@@ -46,7 +46,6 @@ interface VendorsProps {
 }
 
 export default function Vendors({
-  db,
   currentUser,
   onSendInquiry,
   onSendQuotation,
@@ -79,136 +78,13 @@ export default function Vendors({
   }, []);
 
   const loadConnections = async () => {
-    setIsLoading(true);
-    try {
-      // Query connections where current user is involved (either as initiator or recipient)
-      const connectionsRef = collection(db, "vendorConnections");
-
-      // Get connections initiated by current user
-      const initiatedByMeQuery = query(
-        connectionsRef,
-        where("initiatedByUser", "==", currentUser),
-      );
-      const initiatedByMeDocs = await getDocs(initiatedByMeQuery);
-
-      // Get connections sent to current user
-      const sentToMeQuery = query(
-        connectionsRef,
-        where("targetUser", "==", currentUser),
-      );
-      const sentToMeDocs = await getDocs(sentToMeQuery);
-
-      const allConnections: VendorConnection[] = [];
-      const vendorDirectoryRef = collection(db, "vendorDirectory");
-      const usersRef = collection(db, "userSettings");
-
-      // Optimization: Batch load all user data in one query instead of per-connection
-      const allUsernames = new Set<string>();
-      initiatedByMeDocs.docs.forEach((doc) => {
-        allUsernames.add(doc.data().targetUser);
-      });
-      sentToMeDocs.docs.forEach((doc) => {
-        allUsernames.add(doc.data().initiatedByUser);
-      });
-
-      // Load all users from vendorDirectory (primary) with fallback to userSettings
-      const userDataMap = new Map<string, any>();
-      for (const username of allUsernames) {
-        try {
-          // Try vendorDirectory first (has complete vendor data)
-          const vendorQuery = query(
-            vendorDirectoryRef,
-            where("username", "==", username),
-          );
-          const vendorDoc = await getDocs(vendorQuery);
-          if (vendorDoc.docs.length > 0) {
-            userDataMap.set(username, vendorDoc.docs[0].data());
-            continue;
-          }
-        } catch (e) {
-          // Fall through to userSettings if vendorDirectory fails
-        }
-
-        // Fallback to userSettings if not in vendorDirectory
-        try {
-          const userQuery = query(usersRef, where("username", "==", username));
-          const userDoc = await getDocs(userQuery);
-          if (userDoc.docs.length > 0) {
-            userDataMap.set(username, userDoc.docs[0].data());
-          }
-        } catch (e2) {
-          console.warn(`Could not load data for user ${username}`);
-        }
-      }
-
-      // Process connections initiated by me
-      for (const doc of initiatedByMeDocs.docs) {
-        const data = doc.data();
-        const userData = userDataMap.get(data.targetUser);
-        if (userData) {
-          allConnections.push({
-            id: doc.id,
-            companyId: data.targetUser,
-            company: {
-              id: data.targetUser,
-              username: data.targetUser,
-              name: userData.companyName || data.targetUser,
-              email: userData.email || "",
-              phone: userData.phone,
-              address: userData.address,
-              website: userData.website,
-              addedAt:
-                data.createdAt?.toDate?.()?.toISOString() ||
-                new Date().toISOString(),
-            },
-            status: data.status,
-            initiatedBy: "you",
-            createdAt:
-              data.createdAt?.toDate?.()?.toISOString() ||
-              new Date().toISOString(),
-            respondedAt: data.respondedAt?.toDate?.()?.toISOString(),
-          });
-        }
-      }
-
-      // Process connections sent to me
-      for (const doc of sentToMeDocs.docs) {
-        const data = doc.data();
-        const userData = userDataMap.get(data.initiatedByUser);
-        if (userData) {
-          allConnections.push({
-            id: doc.id,
-            companyId: data.initiatedByUser,
-            company: {
-              id: data.initiatedByUser,
-              username: data.initiatedByUser,
-              name: userData.companyName || data.initiatedByUser,
-              email: userData.email || "",
-              phone: userData.phone,
-              address: userData.address,
-              website: userData.website,
-              addedAt:
-                data.createdAt?.toDate?.()?.toISOString() ||
-                new Date().toISOString(),
-            },
-            status: data.status,
-            initiatedBy: "them",
-            createdAt:
-              data.createdAt?.toDate?.()?.toISOString() ||
-              new Date().toISOString(),
-            respondedAt: data.respondedAt?.toDate?.()?.toISOString(),
-          });
-        }
-      }
-
-      setConnections(allConnections);
-      console.log(`Loaded ${allConnections.length} vendor connections`);
-    } catch (error) {
-      console.error("Error loading connections:", error);
-      alert("Error loading vendor connections");
-    } finally {
-      setIsLoading(false);
-    }
+    // DISABLED - Firebase migration to Turso in progress
+    console.log(
+      "⏭️  Vendor connections loading disabled during Turso migration",
+    );
+    setConnections([]);
+    setIsLoading(false);
+    return;
   };
 
   // IndexedDB cache utilities for vendors (OPTIMIZATION: ~90% fewer Firestore reads)
@@ -268,33 +144,9 @@ export default function Vendors({
 
   // Diagnostic: Check what's actually in Firestore
   const diagnosticCheckUserExists = async () => {
-    try {
-      console.log(`🔍 DIAGNOSTIC: Checking if user "${currentUser}" exists...`);
-      const usersRef = collection(db, "userSettings");
-
-      // Try to get all users
-      const allUsersQuery = query(usersRef);
-      const allUsersDocs = await getDocs(allUsersQuery);
-
-      console.log(
-        `📊 DIAGNOSTIC: Total users in Firestore: ${allUsersDocs.docs.length}`,
-      );
-
-      allUsersDocs.docs.forEach((doc, index) => {
-        const data = doc.data();
-        console.log(`  User ${index + 1}:`, {
-          id: doc.id,
-          username: data.username,
-          email: data.email,
-          companyName: data.companyName,
-          usernameSearchable: data.usernameSearchable,
-          emailSearchable: data.emailSearchable,
-          companyNameSearchable: data.companyNameSearchable,
-        });
-      });
-    } catch (error) {
-      console.error("🔴 DIAGNOSTIC ERROR:", error);
-    }
+    // DISABLED - Firebase migration to Turso in progress
+    console.log("⏭️  Diagnostic check disabled during Turso migration");
+    return;
   };
 
   const handleSearch = async (searchTerm: string) => {
@@ -303,476 +155,34 @@ export default function Vendors({
       setSearchResults([]);
       return;
     }
-
-    setIsLoading(true);
-    try {
-      const searchLower = searchTerm.toLowerCase();
-      const results: Company[] = [];
-      const seenIds = new Set<string>();
-
-      // PRIMARY SOURCE: Search 'vendorDirectory' collection (has complete data)
-      const vendorSearchRef = collection(db, "vendorDirectory");
-      // FALLBACK: Also check userSettings (for legacy data)
-      const usersRef = collection(db, "userSettings");
-
-      console.log(
-        `🔍 SEARCHING FOR: "${searchTerm}" (lowercase: "${searchLower}")`,
-      );
-
-      // Strategy: Query by multiple fields and deduplicate
-      // We search: company name, username, and email with prefix matching
-
-      // PRIORITY 1: Search by company name in vendorDirectory (has all email/company data)
-      let allDocs: any[] = [];
-      try {
-        console.log("📋 Querying vendorDirectory by companyNameSearchable...");
-        const companyQuery = query(
-          vendorSearchRef,
-          where("companyNameSearchable", ">=", searchLower),
-          where("companyNameSearchable", "<=", searchLower + "\uf8ff"),
-        );
-        const companyDocs = await getDocs(companyQuery);
-        console.log(
-          `✓ Found ${companyDocs.docs.length} by company name in vendorDirectory`,
-        );
-        allDocs = [...companyDocs.docs];
-      } catch (e: any) {
-        console.warn(
-          "⚠️ vendorDirectory company search failed, trying userSettings...",
-          e?.code,
-        );
-        // Fallback: Try userSettings if vendorDirectory is empty/error
-        try {
-          const companyQuery = query(
-            usersRef,
-            where("companyNameSearchable", ">=", searchLower),
-            where("companyNameSearchable", "<=", searchLower + "\uf8ff"),
-          );
-          const companyDocs = await getDocs(companyQuery);
-          console.log(
-            `✓ Found ${companyDocs.docs.length} by company name in userSettings`,
-          );
-          allDocs = [...companyDocs.docs];
-        } catch (e2: any) {
-          console.error(
-            "❌ Company name search failed on both collections:",
-            e2?.message,
-          );
-        }
-      }
-
-      // PRIORITY 2: Search by username in vendorDirectory
-      try {
-        console.log("📋 Querying vendorDirectory by usernameSearchable...");
-        const usernameQuery = query(
-          vendorSearchRef,
-          where("usernameSearchable", ">=", searchLower),
-          where("usernameSearchable", "<=", searchLower + "\uf8ff"),
-        );
-        const usernameDocs = await getDocs(usernameQuery);
-        console.log(
-          `✓ Found ${usernameDocs.docs.length} by username in vendorDirectory`,
-        );
-        allDocs = [
-          ...allDocs,
-          ...usernameDocs.docs.filter(
-            (doc: any) => !allDocs.find((d: any) => d.id === doc.id),
-          ),
-        ];
-      } catch (e: any) {
-        console.warn(
-          "⚠️ vendorDirectory username search failed, trying userSettings...",
-          e?.code,
-        );
-        // Fallback: Try userSettings
-        try {
-          const usernameQuery = query(
-            usersRef,
-            where("usernameSearchable", ">=", searchLower),
-            where("usernameSearchable", "<=", searchLower + "\uf8ff"),
-          );
-          const usernameDocs = await getDocs(usernameQuery);
-          console.log(
-            `✓ Found ${usernameDocs.docs.length} by username in userSettings`,
-          );
-          allDocs = [
-            ...allDocs,
-            ...usernameDocs.docs.filter(
-              (doc: any) => !allDocs.find((d: any) => d.id === doc.id),
-            ),
-          ];
-        } catch (e2: any) {
-          console.error(
-            "❌ Username search failed on both collections:",
-            e2?.message,
-          );
-        }
-      }
-
-      // PRIORITY 3: Search by email in vendorDirectory
-      try {
-        console.log("📋 Querying vendorDirectory by emailSearchable...");
-        const emailQuery = query(
-          vendorSearchRef,
-          where("emailSearchable", ">=", searchLower),
-          where("emailSearchable", "<=", searchLower + "\uf8ff"),
-        );
-        const emailDocs = await getDocs(emailQuery);
-        console.log(
-          `✓ Found ${emailDocs.docs.length} by email in vendorDirectory`,
-        );
-        allDocs = [
-          ...allDocs,
-          ...emailDocs.docs.filter(
-            (doc: any) => !allDocs.find((d: any) => d.id === doc.id),
-          ),
-        ];
-      } catch (e: any) {
-        console.warn(
-          "⚠️ vendorDirectory email search failed, trying userSettings...",
-          e?.code,
-        );
-        // Fallback: Try userSettings
-        try {
-          const emailQuery = query(
-            usersRef,
-            where("emailSearchable", ">=", searchLower),
-            where("emailSearchable", "<=", searchLower + "\uf8ff"),
-          );
-          const emailDocs = await getDocs(emailQuery);
-          console.log(
-            `✓ Found ${emailDocs.docs.length} by email in userSettings`,
-          );
-          allDocs = [
-            ...allDocs,
-            ...emailDocs.docs.filter(
-              (doc: any) => !allDocs.find((d: any) => d.id === doc.id),
-            ),
-          ];
-        } catch (e2: any) {
-          console.error(
-            "❌ Email search failed on both collections:",
-            e2?.message,
-          );
-        }
-      }
-
-      console.log(
-        `📊 Total docs from Firestore (searchable fields): ${allDocs.length}`,
-      );
-
-      // FALLBACK: If searchable queries returned nothing, search all users (for old accounts without searchable fields)
-      if (allDocs.length === 0) {
-        console.log(
-          "🔄 FALLBACK: Searchable queries returned 0 results, fetching ALL users for client-side filtering...",
-        );
-        try {
-          const allUsersDocs = await getDocs(usersRef);
-          console.log(
-            `📊 Total users in Firestore: ${allUsersDocs.docs.length}`,
-          );
-          console.log("🔍 User data diagnostic:");
-
-          for (const doc of allUsersDocs.docs) {
-            const vendorData = doc.data();
-
-            // IMPORTANT: Use searchable fields for matching (these are always populated)
-            // Fall back to base fields if searchable fields don't exist (for very old accounts)
-            const username = (
-              vendorData.usernameSearchable ||
-              vendorData.username ||
-              ""
-            ).toLowerCase();
-            const email = (
-              vendorData.emailSearchable ||
-              vendorData.email ||
-              ""
-            ).toLowerCase();
-            const companyName = (
-              vendorData.companyNameSearchable ||
-              vendorData.companyName ||
-              ""
-            ).toLowerCase();
-
-            // DIAGNOSTIC: Log all fields for this user
-            console.log(
-              `  User "${vendorData.username}": {username: "${username}", email: "${email}", companyName: "${companyName}", hasSearchableFields: ${!!vendorData.usernameSearchable}}`,
-            );
-
-            // Check if search term matches ANY field
-            const matchesUsername = username.includes(searchLower);
-            const matchesEmail = email.includes(searchLower);
-            const matchesCompany = companyName.includes(searchLower);
-
-            if (matchesUsername || matchesEmail || matchesCompany) {
-              console.log(
-                `    ✓ MATCH: matches=${matchesUsername || matchesEmail || matchesCompany} (u:${matchesUsername} e:${matchesEmail} c:${matchesCompany})`,
-              );
-              if (!allDocs.find((d: any) => d.id === doc.id)) {
-                allDocs.push(doc);
-              }
-            }
-          }
-          console.log(
-            `✓ FALLBACK found ${allDocs.length} matches via client-side filtering`,
-          );
-        } catch (e: any) {
-          console.error("❌ FALLBACK search error:", e?.message || e);
-        }
-      }
-
-      // Process all results from Firestore and apply substring filtering
-      for (const doc of allDocs) {
-        if (doc.data().username === currentUser) continue;
-
-        // IMPORTANT: Use searchable fields for matching + display (these are always populated)
-        // Fall back to base fields if searchable fields don't exist
-        const companyName = (
-          doc.data().companyNameSearchable ||
-          doc.data().companyName ||
-          ""
-        ).toLowerCase();
-        const username = (
-          doc.data().usernameSearchable ||
-          doc.data().username ||
-          ""
-        ).toLowerCase();
-        const email = (
-          doc.data().emailSearchable ||
-          doc.data().email ||
-          ""
-        ).toLowerCase();
-
-        // For display: Use original (non-searchable) values with fallback
-        const displayCompanyName =
-          doc.data().companyName ||
-          doc.data().username ||
-          (doc.data().email ? doc.data().email.split("@")[0] : "") ||
-          "Unknown Vendor";
-        const displayEmail =
-          doc.data().email || doc.data().emailSearchable || "";
-
-        console.log(
-          `🔍 VENDOR: ${doc.data().username} | companyName: "${displayCompanyName}" | email: "${displayEmail}" | rawData: {companyName: "${doc.data().companyName}", email: "${doc.data().email}"}`,
-        );
-
-        // Check if search term matches ANY field (prefix or substring)
-        const matchesCompany =
-          companyName.startsWith(searchLower) ||
-          companyName.includes(searchLower);
-        const matchesUsername =
-          username.startsWith(searchLower) || username.includes(searchLower);
-        const matchesEmail = email.includes(searchLower);
-
-        if (matchesCompany || matchesUsername || matchesEmail) {
-          if (!seenIds.has(doc.id)) {
-            seenIds.add(doc.id);
-
-            // Calculate relevance score for ranking results
-            // Higher score = more relevant and should appear first
-            let relevanceScore = 0;
-
-            // Bonus for having complete data
-            if (displayEmail) relevanceScore += 10;
-            if (displayCompanyName && displayCompanyName !== "Unknown Vendor")
-              relevanceScore += 10;
-
-            // Bonus for prefix matches (more specific than substring)
-            if (companyName.startsWith(searchLower)) relevanceScore += 5;
-            if (username.startsWith(searchLower)) relevanceScore += 4;
-
-            // Company matches are more relevant than username/email matches
-            if (matchesCompany) relevanceScore += 3;
-            if (matchesUsername) relevanceScore += 2;
-            if (matchesEmail) relevanceScore += 1;
-
-            results.push({
-              id: doc.data().username,
-              name: displayCompanyName,
-              username: doc.data().username,
-              email: displayEmail,
-              phone: doc.data().phone,
-              address: doc.data().address,
-              website: doc.data().website,
-              addedAt: doc.data().createdAt || new Date().toISOString(),
-              relevanceScore: relevanceScore,
-            });
-          }
-        }
-      }
-
-      // Sort results by relevance score (highest first)
-      results.sort((a, b) => (b.relevanceScore || 0) - (a.relevanceScore || 0));
-
-      // Remove the scoring field before setting state
-      const finalResults = results.map((r) => {
-        const { relevanceScore, ...rest } = r;
-        return rest;
-      });
-
-      setSearchResults(finalResults);
-
-      // CACHE RESULTS for performance on future identical searches
-      // (IndexedDB is now secondary - for caching, not for primary search)
-      if (results.length > 0) {
-        await cacheVendors(results);
-        console.log(
-          `✅ Found ${results.length} companies matching "${searchTerm}" (Firestore → cached to IndexedDB)`,
-        );
-      } else {
-        console.log(`❌ No companies found matching "${searchTerm}"`);
-      }
-    } catch (error) {
-      console.error("❌ Error searching companies:", error);
-      alert("Error searching companies");
-    } finally {
-      setIsLoading(false);
-    }
+    // DISABLED - Firebase migration to Turso in progress
+    console.log("⏭️  Vendor search disabled during Turso migration");
+    setSearchResults([]);
+    return;
   };
 
   const handleAddCompanyClick = async (company: Company) => {
-    try {
-      // Check if connection already exists
-      const connectionsRef = collection(db, "vendorConnections");
-      const existingQuery = query(
-        connectionsRef,
-        where("initiatedByUser", "==", currentUser),
-        where("targetUser", "==", company.id),
-      );
-      const existing = await getDocs(existingQuery);
-
-      if (existing.docs.length > 0) {
-        alert("Connection request already exists for this vendor");
-        return;
-      }
-
-      // Create new connection request
-      const connectionId = `${currentUser}_${company.id}_${Date.now()}`;
-      await setDoc(doc(db, "vendorConnections", connectionId), {
-        id: connectionId,
-        initiatedByUser: currentUser,
-        targetUser: company.id,
-        status: "pending",
-        createdAt: serverTimestamp(),
-      });
-
-      alert(
-        `Connection request sent to ${company.name}. They will need to accept the request.`,
-      );
-      setSearchResults([]);
-      setSearchQuery("");
-      // Reload connections to show pending request
-      loadConnections();
-    } catch (error) {
-      console.error("Error sending connection request:", error);
-      alert("Error sending connection request");
-    }
+    // DISABLED - Firebase migration to Turso in progress
+    console.log("⏭️  Add company disabled during Turso migration");
+    return;
   };
 
   const handleCreateNewCompany = async () => {
-    if (!newCompanyData.name.trim() || !newCompanyData.email.trim()) {
-      alert("Please enter at least company name and email");
-      return;
-    }
-
-    try {
-      // First, try to find if a user with this email already exists
-      const usersRef = collection(db, "users");
-      const emailQuery = query(
-        usersRef,
-        where("email", "==", newCompanyData.email),
-      );
-      const emailDocs = await getDocs(emailQuery);
-
-      let targetUserId: string;
-
-      if (emailDocs.docs.length > 0) {
-        // User exists, use their username
-        targetUserId = emailDocs.docs[0].data().username;
-      } else {
-        // Create a placeholder company entry if system requires it
-        // For now, we'll use email as ID since company doesn't have account yet
-        targetUserId = newCompanyData.email;
-      }
-
-      // Check if connection already exists
-      const connectionsRef = collection(db, "vendorConnections");
-      const existingQuery = query(
-        connectionsRef,
-        where("initiatedByUser", "==", currentUser),
-        where("targetUser", "==", targetUserId),
-      );
-      const existing = await getDocs(existingQuery);
-
-      if (existing.docs.length > 0) {
-        alert("Connection request already exists for this company");
-        return;
-      }
-
-      // Create new connection request
-      const connectionId = `${currentUser}_${targetUserId}_${Date.now()}`;
-      await setDoc(doc(db, "vendorConnections", connectionId), {
-        id: connectionId,
-        initiatedByUser: currentUser,
-        targetUser: targetUserId,
-        status: "pending",
-        companyData: {
-          name: newCompanyData.name,
-          email: newCompanyData.email,
-          phone: newCompanyData.phone,
-          website: newCompanyData.website,
-          address: newCompanyData.address,
-        },
-        createdAt: serverTimestamp(),
-      });
-
-      alert(
-        `Company added and connection request sent to ${newCompanyData.name}`,
-      );
-      setNewCompanyData({
-        name: "",
-        email: "",
-        phone: "",
-        website: "",
-        address: "",
-      });
-      setShowAddCompany(false);
-      // Reload connections
-      loadConnections();
-    } catch (error) {
-      console.error("Error creating company:", error);
-      alert("Error creating company");
-    }
+    // DISABLED - Firebase migration to Turso in progress
+    console.log("⏭️  Create company disabled during Turso migration");
+    return;
   };
 
   const handleAcceptConnection = async (connectionId: string) => {
-    try {
-      await updateDoc(doc(db, "vendorConnections", connectionId), {
-        status: "accepted",
-        respondedAt: serverTimestamp(),
-      });
-
-      alert("Connection accepted!");
-      loadConnections();
-    } catch (error) {
-      console.error("Error accepting connection:", error);
-      alert("Error accepting connection");
-    }
+    // DISABLED - Firebase migration to Turso in progress
+    console.log("⏭️  Accept connection disabled during Turso migration");
+    return;
   };
 
   const handleRejectConnection = async (connectionId: string) => {
-    try {
-      await updateDoc(doc(db, "vendorConnections", connectionId), {
-        status: "rejected",
-        respondedAt: serverTimestamp(),
-      });
-
-      alert("Connection rejected");
-      loadConnections();
-    } catch (error) {
-      console.error("Error rejecting connection:", error);
-      alert("Error rejecting connection");
-    }
+    // DISABLED - Firebase migration to Turso in progress
+    console.log("⏭️  Reject connection disabled during Turso migration");
+    return;
   };
 
   const handleSendInquiry = (company: Company) => {

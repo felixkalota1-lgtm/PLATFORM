@@ -56,6 +56,12 @@ export default function Settings({
     const file = e.target.files?.[0];
     if (!file) return;
 
+    // Only allow templates for quotation and inquiry types
+    if (activeTab !== "quotation" && activeTab !== "inquiry") {
+      alert("Templates can only be created for quotations and inquiries");
+      return;
+    }
+
     const reader = new FileReader();
     reader.onload = (event) => {
       try {
@@ -68,7 +74,7 @@ export default function Settings({
         const template: PDFTemplate = {
           id: `custom-${activeTab}-${Date.now()}`,
           name: file.name.replace(".html", ""),
-          type: activeTab,
+          type: activeTab as "quotation" | "inquiry",
           htmlContent: content,
           companyName,
           createdAt: new Date().toISOString(),

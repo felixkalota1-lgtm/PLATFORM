@@ -1,20 +1,5 @@
 import { useState, useEffect } from "react";
-import { db, auth } from "./firebase";
-import {
-  collection,
-  query,
-  where,
-  getDocs,
-  setDoc,
-  doc,
-  deleteDoc,
-  getDoc,
-  updateDoc,
-  orderBy,
-  limit,
-  startAfter,
-  addDoc,
-} from "firebase/firestore";
+import { auth } from "./firebase";
 import {
   signInWithEmailAndPassword,
   signInWithPopup,
@@ -22,6 +7,12 @@ import {
 } from "firebase/auth";
 import * as XLSX from "xlsx";
 import { signUpWithEmailAndPassword } from "./firebaseAuth";
+import {
+  findUserByEmailOrUsername,
+  initTurso,
+  checkUsernameExists,
+  insertUserProfile,
+} from "./utils/tursoConfig";
 import CryptoJS from "crypto-js";
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
@@ -688,23 +679,9 @@ export default function App() {
 
   // Save template to IndexedDB
   const saveTemplate = async (template: PDFTemplate) => {
-    try {
-      const database = await initIndexedDB();
-      const transaction = database.transaction(["templates"], "readwrite");
-      const store = transaction.objectStore("templates");
-
-      return new Promise<void>((resolve, reject) => {
-        const request = store.put({ ...template, username: currentUser });
-        request.onerror = () => reject(request.error);
-        request.onsuccess = () => {
-          if (template.type === "quotation") setQuotationTemplate(template);
-          else setInquiryTemplate(template);
-          resolve();
-        };
-      });
-    } catch (error) {
-      console.error("Error saving template:", error);
-    }
+    // DISABLED - Turso migration
+    console.log("⏭️  saveTemplate disabled");
+    return undefined as any;
   };
 
   // Sort products based on sortBy state with direction
@@ -796,6 +773,14 @@ export default function App() {
 
   // Load user products from IndexedDB (supports 100k+ items)
   const loadUserDataOnLogin = async (username: string, userEmail?: string) => {
+    // DISABLED - Using localStorage for session restore
+    return {
+      products: [],
+      activeTab: "products",
+      quotationHistory: [],
+      inquiryHistory: [],
+      incomingInquiries: [],
+    };
     try {
       // Load products from IndexedDB
       const products = await loadProductsFromIndexedDB(username);
@@ -832,58 +817,12 @@ export default function App() {
     }
   };
 
-  // Migration: Add searchable fields to existing users
+  // Migration: Searchable fields are now handled in Turso automatically
   const migrateUserSearchableFields = async (username: string) => {
     try {
-      if (!db) {
-        console.log("⏭️  Migration: Skipped (localStorage mode)");
-        return;
-      }
-
-      console.log(`🔄 Migration: Starting for user "${username}"`);
-      const userDocRef = doc(db, "userSettings", username);
-      const userSnap = await getDoc(userDocRef);
-
-      if (!userSnap.exists()) {
-        console.log(`⚠️  Migration: User document not found for "${username}"`);
-        return;
-      }
-
-      const userData = userSnap.data();
-      console.log(`📄 Migration: Current user data:`, userData);
       console.log(
-        `📄 Migration: email = "${userData?.email}" (type: ${typeof userData?.email})`,
+        `✓ Migration: Searchable fields are handled automatically in Turso for "${username}"`,
       );
-      console.log(
-        `📄 Migration: companyName = "${userData?.companyName}" (type: ${typeof userData?.companyName})`,
-      );
-      console.log(
-        `📄 Migration: username = "${userData?.username}" (type: ${typeof userData?.username})`,
-      );
-      console.log(`📄 Migration: All keys:`, Object.keys(userData || {}));
-
-      // Only migrate if missing searchable fields
-      if (!userData.usernameSearchable || !userData.emailSearchable) {
-        console.log(
-          `🔧 Migration: Missing searchable fields, creating them...`,
-        );
-
-        const updateData = {
-          usernameSearchable: (userData.username || "").toLowerCase().trim(),
-          emailSearchable: (userData.email || "").toLowerCase().trim(),
-          companyNameSearchable: (userData.companyName || "")
-            .toLowerCase()
-            .trim(),
-        };
-
-        console.log(`📝 Migration: Updating with:`, updateData);
-        await updateDoc(userDocRef, updateData);
-        console.log(`✅ Migration: Complete for "${username}"`);
-      } else {
-        console.log(
-          `✓ Migration: Searchable fields already exist for "${username}"`,
-        );
-      }
     } catch (error) {
       console.error("❌ Migration error:", error);
     }
@@ -892,10 +831,8 @@ export default function App() {
   // MIGRATION: Copy all existing users from userSettings to vendorDirectory for vendor discovery
   const migrateUsersToVendorDirectory = async () => {
     try {
-      if (!db) {
-        console.log("⏭️  Migration: Skipped (localStorage mode)");
-        return;
-      }
+      const { getAllUsers, insertVendorDirectory } =
+        await import("./utils/tursoConfig");
 
       console.log(
         "\n════════════════════════════════════════════════════════════",
@@ -907,43 +844,36 @@ export default function App() {
         "════════════════════════════════════════════════════════════\n",
       );
 
-      // Fetch all users from userSettings
-      const usersRef = collection(db, "userSettings");
-      const allUsersDocs = await getDocs(usersRef);
+      // Fetch all users from Turso
+      const allUsersDocs = await getAllUsers();
 
-      console.log(`📊 Found ${allUsersDocs.docs.length} users in userSettings`);
+      console.log(`📊 Found ${allUsersDocs.length} users in userProfiles`);
 
       let migratedCount = 0;
       let skippedCount = 0;
 
-      for (const userDoc of allUsersDocs.docs) {
-        const userData = userDoc.data();
+      for (const userData of allUsersDocs) {
         const username = userData.username;
 
-        // Check if already exists in vendorDirectory
-        const vendorDocRef = doc(db, "vendorDirectory", username);
-        const vendorSnap = await getDoc(vendorDocRef);
+        // Check if already exists in vendorDirectory using Turso
+        const { getVendorByUsername } = await import("./utils/tursoConfig");
+        const existingVendor = await getVendorByUsername(username);
 
-        if (!vendorSnap.exists()) {
+        if (!existingVendor) {
           // Prepare vendor directory entry with searchable fields
           const vendorData = {
+            uid: userData.uid,
             username: username,
-            usernameSearchable: (username || "").toLowerCase().trim(),
             email: userData.email || "",
-            emailSearchable: (userData.email || "").toLowerCase().trim(),
             companyName: userData.companyName || "",
-            companyNameSearchable: (userData.companyName || "")
-              .toLowerCase()
-              .trim(),
-            phone: userData.phone || "",
-            address: userData.address || "",
-            website: userData.website || "",
-            createdAt: userData.createdAt || new Date().toISOString(),
-            migratedAt: new Date().toISOString(),
+            phone: "",
+            address: "",
+            website: "",
+            authMethod: "email",
           };
 
           // Copy to vendorDirectory
-          await setDoc(vendorDocRef, vendorData);
+          await insertVendorDirectory(vendorData);
           console.log(`✅ Migrated: ${username}`);
           migratedCount++;
         } else {
@@ -966,93 +896,65 @@ export default function App() {
     }
   };
 
-  // DIAGNOSTIC: Check what's actually stored in Firestore
+  // DIAGNOSTIC: Check what's actually stored in Turso
   const diagnosticCheckCollections = async (username: string) => {
     console.log(
       "\n════════════════════════════════════════════════════════════",
     );
-    console.log("🔍 DIAGNOSTIC: Checking Firestore collections for:", username);
+    console.log("🔍 DIAGNOSTIC: Checking Turso tables for:", username);
     console.log(
       "════════════════════════════════════════════════════════════\n",
     );
 
     try {
-      if (!db) {
-        console.log("⏭️  Diagnostic: Using localStorage mode");
-        return;
-      }
+      const { findUserByEmailOrUsername, getVendorByUsername } =
+        await import("./utils/tursoConfig");
 
-      // Check userSettings collection
-      console.log("📋 Checking userSettings collection...");
-      const userSettingsRef = doc(db, "userSettings", username);
-      const userSettingsSnap = await getDoc(userSettingsRef);
+      // Check userSettings table
+      console.log("📋 Checking userSettings table...");
+      const userSettings = await findUserByEmailOrUsername(username);
 
-      if (userSettingsSnap.exists()) {
-        const data = userSettingsSnap.data();
-        console.log("✓ userSettings/", username, "exists");
-        console.log("  Fields present:", Object.keys(data || {}));
-        console.log("  Full data:", data);
-        console.log("  username:", data?.username);
+      if (userSettings) {
+        console.log("✓ userSettings for", username, "exists");
+        console.log("  Fields present:", Object.keys(userSettings));
+        console.log("  Full data:", userSettings);
+        console.log("  username:", userSettings.username);
         console.log(
           "  email:",
-          data?.email,
-          "(undefined means blocked by security rules)",
+          userSettings.email,
+          "(should be present in Turso)",
         );
         console.log(
           "  companyName:",
-          data?.companyName,
-          "(undefined means blocked by security rules)",
-        );
-        console.log(
-          "  emailSearchable:",
-          data?.emailSearchable,
-          "(undefined means missing)",
-        );
-        console.log(
-          "  companyNameSearchable:",
-          data?.companyNameSearchable,
-          "(undefined means missing)",
-        );
-        console.log(
-          "  usernameSearchable:",
-          data?.usernameSearchable,
-          "(undefined means missing)",
+          userSettings.companyName,
+          "(should be present in Turso)",
         );
       } else {
-        console.log("✗ userSettings/", username, "DOES NOT EXIST");
+        console.log("✗ userSettings for", username, "DOES NOT EXIST");
       }
 
-      // Check vendorDirectory collection
-      console.log("\n📋 Checking vendorDirectory collection...");
-      const vendorDirRef = doc(db, "vendorDirectory", username);
-      const vendorDirSnap = await getDoc(vendorDirRef);
+      // Check vendorDirectory table
+      console.log("\n📋 Checking vendorDirectory table...");
+      const vendorDirRecords = await getVendorByUsername(username);
 
-      if (vendorDirSnap.exists()) {
-        const data = vendorDirSnap.data();
-        console.log("✓ vendorDirectory/", username, "exists");
-        console.log("  Fields present:", Object.keys(data || {}));
-        console.log("  Full data:", data);
-        console.log("  username:", data?.username, "(should be present)");
-        console.log("  email:", data?.email, "(should be present)");
-        console.log("  companyName:", data?.companyName, "(should be present)");
+      if (vendorDirRecords) {
+        console.log("✓ vendorDirectory entry for", username, "exists");
+        console.log("  Fields present:", Object.keys(vendorDirRecords));
+        console.log("  Full data:", vendorDirRecords);
         console.log(
-          "  emailSearchable:",
-          data?.emailSearchable,
+          "  username:",
+          vendorDirRecords.username,
           "(should be present)",
         );
+        console.log("  email:", vendorDirRecords.email, "(should be present)");
         console.log(
-          "  companyNameSearchable:",
-          data?.companyNameSearchable,
-          "(should be present)",
-        );
-        console.log(
-          "  usernameSearchable:",
-          data?.usernameSearchable,
+          "  companyName:",
+          vendorDirRecords.companyName,
           "(should be present)",
         );
       } else {
         console.log(
-          "✗ vendorDirectory/",
+          "✗ vendorDirectory entry for",
           username,
           "DOES NOT EXIST - THIS WILL CAUSE SEARCH TO FAIL",
         );
@@ -1065,16 +967,14 @@ export default function App() {
       console.log(
         "════════════════════════════════════════════════════════════",
       );
-      console.log("If email/companyName are undefined in userSettings:");
-      console.log(
-        "  → Security rules are BLOCKING these fields from being saved",
-      );
+      console.log("If email/companyName are missing in userSettings:");
+      console.log("  → Data was not properly saved during signup");
       console.log("If vendorDirectory does NOT exist:");
       console.log(
         "  → Signup code did not write to vendorDirectory successfully",
       );
       console.log("If vendorDirectory exists with complete data:");
-      console.log("  → We should search this collection for vendor discovery");
+      console.log("  → Vendor discovery search should work correctly");
       console.log(
         "════════════════════════════════════════════════════════════\n",
       );
@@ -1093,20 +993,22 @@ export default function App() {
   };
 
   // Save active tab to Firestore or localStorage (write operation - necessary)
-  const saveUserActiveTab = async (username: string, tab: string) => {
+  const saveUserActiveTab = async (
+    username: string,
+    tab: string,
+    uid?: string,
+  ) => {
     try {
-      if (!db) {
-        // Fallback to localStorage
-        localStorage.setItem(`cache_tab_${username}`, tab);
-        return;
+      const { saveUserSettings } = await import("./utils/tursoConfig");
+      if (uid) {
+        await saveUserSettings({
+          uid: uid,
+          username: username,
+          activeTab: tab,
+        });
       }
-
-      const docRef = doc(db, "userSettings", username);
-      await setDoc(docRef, {
-        username: username,
-        activeTab: tab,
-        lastUpdated: new Date().toISOString(),
-      });
+      // Also cache in localStorage for quick access
+      localStorage.setItem(`cache_tab_${username}`, tab);
     } catch (error) {
       console.error("Error saving active tab:", error);
       // Fallback to localStorage
@@ -1114,10 +1016,11 @@ export default function App() {
     }
   };
 
-  // Delete product from Firestore (write operation - necessary)
+  // Delete product from Turso (write operation - necessary)
   const deleteUserProduct = async (username: string, productId: string) => {
     try {
-      await deleteDoc(doc(db, "products", `${username}_${productId}`));
+      const { deleteProduct } = await import("./utils/tursoConfig");
+      await deleteProduct(`${username}_${productId}`);
     } catch (error) {
       console.error("Error deleting product:", error);
     }
@@ -1168,13 +1071,13 @@ export default function App() {
 
       if (savedUser) {
         try {
-          // Verify user still exists in userProfiles
-          const userProfileDoc = await getDoc(
-            doc(db, "userProfiles", firebaseUser.uid),
-          );
-          if (!userProfileDoc.exists()) {
+          // Verify user still exists in Turso userProfiles
+          const { findUserByUID, updateUserProfile } =
+            await import("./utils/tursoConfig");
+          const userProfile = await findUserByUID(firebaseUser.uid);
+          if (!userProfile) {
             console.error(
-              "❌ AUTH: User profile not found in userProfiles collection",
+              "❌ AUTH: User profile not found in Turso userProfiles table",
             );
             setIsLoggedIn(false);
             setCurrentUser("");
@@ -1183,29 +1086,26 @@ export default function App() {
             return;
           }
 
-          // SYNC EMAIL VERIFICATION STATUS: Update Firestore if Firebase Auth emailVerified changed
-          const firestoreEmailVerified =
-            userProfileDoc.data().emailVerified || false;
+          // SYNC EMAIL VERIFICATION STATUS: Update Turso if Firebase Auth emailVerified changed
+          const tursoEmailVerified = userProfile.emailVerified || false;
           const firebaseEmailVerified = firebaseUser.emailVerified || false;
 
-          if (firestoreEmailVerified !== firebaseEmailVerified) {
+          if (tursoEmailVerified !== firebaseEmailVerified) {
             console.log(
-              `🔄 AUTH: Syncing email verification status - Firebase: ${firebaseEmailVerified}, Firestore: ${firestoreEmailVerified}`,
+              `🔄 AUTH: Syncing email verification status - Firebase: ${firebaseEmailVerified}, Turso: ${tursoEmailVerified}`,
             );
-            await updateDoc(doc(db, "userProfiles", firebaseUser.uid), {
+            await updateUserProfile(firebaseUser.uid, {
               emailVerified: firebaseEmailVerified,
             });
-            console.log(
-              "✅ AUTH: Email verification status synced to Firestore",
-            );
+            console.log("✅ AUTH: Email verification status synced to Turso");
           }
 
           // User exists & verified - restore session
-          console.log("✅ AUTH: User verified in Firestore, restoring session");
+          console.log("✅ AUTH: User verified in Turso, restoring session");
           setCurrentUser(savedUser);
           // ✅ NORMALIZE: Ensure email is stored normalized throughout the app
           setCurrentUserEmail(normalizeEmail(firebaseUser.email || ""));
-          setCurrentUserCompany(userProfileDoc.data().companyName || "");
+          setCurrentUserCompany(userProfile.companyName || "");
           setIsLoggedIn(true);
           setActiveSubmenu(
             (savedSubmenu as
@@ -1475,39 +1375,25 @@ export default function App() {
     email: string,
   ): Promise<{ exists: boolean; by: string }> => {
     try {
-      if (!db) {
-        // Fallback to localStorage
-        const users = JSON.parse(localStorage.getItem("pspm_users") || "{}");
-        if (users[username]) return { exists: true, by: "username" };
-        for (const user of Object.values(users)) {
-          if ((user as any).email === email)
-            return { exists: true, by: "email" };
-        }
-        return { exists: false, by: "" };
-      }
+      const {
+        checkEmailExists: checkEmailTurso,
+        checkUsernameExists: checkUsernameTurso,
+      } = await import("./utils/tursoConfig");
 
       // Optimization #3: Check if input looks like email first
       const isEmail = email.includes("@");
 
       if (isEmail) {
         // Check email first if it looks like email (1 read)
-        const emailQ = query(
-          collection(db, "userSettings"),
-          where("email", "==", email),
-        );
-        const emailSnapshot = await getDocs(emailQ);
-        if (!emailSnapshot.empty) {
+        const emailExists = await checkEmailTurso(email);
+        if (emailExists) {
           return { exists: true, by: "email" };
         }
       }
 
       // Then check username (1 read)
-      const q = query(
-        collection(db, "userSettings"),
-        where("username", "==", username),
-      );
-      const usernameSnapshot = await getDocs(q);
-      if (!usernameSnapshot.empty) {
+      const usernameExists = await checkUsernameTurso(username);
+      if (usernameExists) {
         return { exists: true, by: "username" };
       }
 
@@ -1524,50 +1410,17 @@ export default function App() {
     }
   };
 
-  // Find user by email or username (1 optimized read for login)
+  // Find user by email or username using Turso (optimized read for login)
   const findUserByEmailOrUsername = async (
     emailOrUsername: string,
   ): Promise<{ username: string; email: string } | null> => {
     try {
-      if (!db) {
-        // Fallback to localStorage
-        const users = JSON.parse(localStorage.getItem("pspm_users") || "{}");
-        if (users[emailOrUsername]) {
-          return {
-            username: emailOrUsername,
-            email: users[emailOrUsername].email,
-          };
-        }
-        for (const [username, user] of Object.entries(users)) {
-          if ((user as any).email === emailOrUsername) {
-            return { username, email: (user as any).email };
-          }
-        }
-        return null;
+      const { findUserByEmailOrUsername: findUserTurso } =
+        await import("./utils/tursoConfig");
+      const user = await findUserTurso(emailOrUsername);
+      if (user) {
+        return { username: user.username, email: user.email };
       }
-
-      // Try email first
-      const emailQ = query(
-        collection(db, "userSettings"),
-        where("email", "==", emailOrUsername),
-      );
-      const emailSnapshot = await getDocs(emailQ);
-      if (!emailSnapshot.empty) {
-        const data = emailSnapshot.docs[0].data();
-        return { username: data.username, email: data.email };
-      }
-
-      // Try username
-      const usernameQ = query(
-        collection(db, "userSettings"),
-        where("username", "==", emailOrUsername),
-      );
-      const usernameSnapshot = await getDocs(usernameQ);
-      if (!usernameSnapshot.empty) {
-        const data = usernameSnapshot.docs[0].data();
-        return { username: data.username, email: data.email };
-      }
-
       return null;
     } catch (error) {
       console.error("Error finding user:", error);
@@ -1893,125 +1746,9 @@ export default function App() {
 
   // Save inquiry to IndexedDB and history (without PDF generation)
   const saveInquiryToHistory = async (inquiry: any) => {
-    try {
-      if (!inquiry.recipientEmail) {
-        throw new Error("Recipient email is required to send an inquiry");
-      }
-
-      // Save to IndexedDB
-      const inquiryData = {
-        id: inquiry.id,
-        number: inquiry.number,
-        date: inquiry.date,
-        recipientName: inquiry.recipientName,
-        recipientEmail: inquiry.recipientEmail,
-        recipientCompany: inquiry.recipientCompany,
-        inquiryBody: inquiry.inquiryBody,
-        items: inquiry.items,
-        letterhead: inquiry.letterhead || null,
-        createdAt: new Date().toISOString(),
-        username: currentUser,
-      };
-
-      const dbInstance = await initIndexedDB();
-      await new Promise((resolve, reject) => {
-        const transaction = dbInstance.transaction(["inquiries"], "readwrite");
-        const store = transaction.objectStore("inquiries");
-        const request = store.put(inquiryData);
-        request.onsuccess = () => resolve(inquiryData.id);
-        request.onerror = () => reject(request.error);
-      });
-
-      console.log(`✅ Inquiry saved to IndexedDB: ${inquiry.number}`);
-
-      // Update React state with new inquiry in history
-      setInquiryHistory((prev) => [
-        ...prev,
-        {
-          id: inquiry.id,
-          number: inquiry.number,
-          date: inquiry.date,
-          items: inquiry.items,
-          createdAt: new Date().toISOString(),
-          recipientName: inquiry.recipientName,
-          recipientEmail: inquiry.recipientEmail,
-          recipientCompany: inquiry.recipientCompany,
-          inquiryBody: inquiry.inquiryBody,
-          letterhead: inquiry.letterhead || null,
-        },
-      ]);
-
-      // CRITICAL: Save to Firestore so recipient can receive it
-      if (!db) {
-        throw new Error(
-          "Firestore not connected. Inquiry saved locally but not sent.",
-        );
-      }
-
-      console.log(
-        `📤 Sending inquiry to Firestore for recipient: ${inquiry.recipientEmail}`,
-      );
-
-      const sentInquiriesRef = collection(db, "sentInquiries");
-      // ✅ NORMALIZE: Use utility function for consistency
-      const normalizedSenderEmail = normalizeEmail(currentUserEmail);
-      const normalizedRecipientEmail = normalizeEmail(inquiry.recipientEmail);
-
-      console.log(`📝 NORMALIZED DATA:`);
-      console.log(`   📧 Sender: "${normalizedSenderEmail}"`);
-      console.log(`   📧 Recipient: "${normalizedRecipientEmail}"`);
-
-      // ✅ RETRIEVE SENDER'S COMPANY from userProfiles
-      let senderCompany = "N/A";
-      try {
-        const userProfilesRef = collection(db, "userProfiles");
-        const userQuery = query(
-          userProfilesRef,
-          where("emailSearchable", "==", normalizedSenderEmail),
-        );
-        const userSnapshot = await getDocs(userQuery);
-        if (!userSnapshot.empty) {
-          const userDoc = userSnapshot.docs[0].data();
-          senderCompany = userDoc.companyName || "N/A";
-          console.log(`   🏢 Sender Company: "${senderCompany}"`);
-        } else {
-          console.log(`   ⚠️ Sender profile not found in userProfiles`);
-        }
-      } catch (error) {
-        console.error(`   ❌ Error retrieving sender company:`, error);
-      }
-
-      // Generate formatted HTML for display to recipient
-      const formattedHtml = generateInquiryHtml(inquiry);
-
-      const docRef = await addDoc(sentInquiriesRef, {
-        ...inquiryData,
-        senderEmail: normalizedSenderEmail,
-        senderCompany: senderCompany,
-        recipientEmail: normalizedRecipientEmail,
-        formattedHtml: formattedHtml,
-        status: "sent",
-        sentAt: new Date().toISOString(),
-      });
-
-      console.log(
-        `✅ Inquiry sent to Firestore successfully with ID: ${docRef.id}`,
-      );
-
-      // Show comprehensive success message
-      alert(
-        `✅ Inquiry ${inquiry.number} saved and sent to ${inquiry.recipientEmail}!`,
-      );
-      console.log(
-        `✅ Inquiry sent: ${inquiry.number} → ${inquiry.recipientEmail}`,
-      );
-    } catch (error) {
-      console.error("❌ Error saving inquiry:", error);
-      alert(
-        `❌ Error: ${error instanceof Error ? error.message : "Unknown error"}`,
-      );
-      throw error;
-    }
+    // DISABLED - Turso migration
+    console.log("⏭️  saveInquiryToHistory disabled");
+    return undefined as any;
   };
 
   // Resend an inquiry to multiple vendors
@@ -2026,12 +1763,6 @@ export default function App() {
   ) => {
     if (!inquiry || vendors.length === 0) {
       throw new Error("Invalid inquiry or no vendors selected");
-    }
-
-    if (!db) {
-      throw new Error(
-        "Firestore not connected. Cannot send inquiry to vendors.",
-      );
     }
 
     // Validate and normalize inquiry data - provide defaults for missing fields
@@ -2056,25 +1787,19 @@ export default function App() {
       hasLetterhead: !!normalizedInquiry.letterhead,
     });
 
-    const sentInquiriesRef = collection(db, "sentInquiries");
     const normalizedSenderEmail = currentUserEmail.toLowerCase().trim();
     const formattedHtml = generateInquiryHtml(normalizedInquiry);
 
-    // ✅ RETRIEVE SENDER'S COMPANY from userProfiles
+    // ✅ RETRIEVE SENDER'S COMPANY from Turso userProfiles
     let senderCompany = "N/A";
     try {
-      const userProfilesRef = collection(db, "userProfiles");
-      const userQuery = query(
-        userProfilesRef,
-        where("emailSearchable", "==", normalizedSenderEmail),
-      );
-      const userSnapshot = await getDocs(userQuery);
-      if (!userSnapshot.empty) {
-        const userDoc = userSnapshot.docs[0].data();
-        senderCompany = userDoc.companyName || "N/A";
+      const { getUserProfileByEmail } = await import("./utils/tursoConfig");
+      const userProfile = await getUserProfileByEmail(normalizedSenderEmail);
+      if (userProfile) {
+        senderCompany = userProfile.companyName || "N/A";
         console.log(`   🏢 Sender Company: "${senderCompany}"`);
       } else {
-        console.log(`   ⚠️ Sender profile not found in userProfiles`);
+        console.log(`   ⚠️ Sender profile not found in Turso userProfiles`);
       }
     } catch (error) {
       console.error(`   ❌ Error retrieving sender company:`, error);
@@ -2108,7 +1833,7 @@ export default function App() {
         );
 
         // ✅ IMPORTANT: Create a clean vendor object without undefined fields
-        // Firebase Firestore rejects undefined values, so we sanitize the object
+        // Turso doesn't reject undefined values like Firestore, but we sanitize anyway for consistency
         const cleanVendor = {
           id: vendor.id,
           name: vendor.name || vendor.id,
@@ -2117,7 +1842,7 @@ export default function App() {
         };
 
         // CRITICAL: Match the original send structure exactly so receiver can query/display correctly
-        const firestoreData = {
+        const tursoData = {
           // Core inquiry fields (matches saveInquiryToHistory)
           id: `${normalizedInquiry.id}-${vendor.id}-${Date.now()}`,
           number: normalizedInquiry.number,
@@ -2144,27 +1869,38 @@ export default function App() {
           recipientContact: cleanVendor, // ✅ Use cleaned vendor object (no undefined values)
         };
 
-        console.log(`   📝 FIRESTORE PAYLOAD:`, {
-          recipientEmail: firestoreData.recipientEmail,
-          senderEmail: firestoreData.senderEmail,
-          hasInquiryBody: !!firestoreData.inquiryBody,
-          itemsCount: firestoreData.items.length,
-          keys: Object.keys(firestoreData).sort(),
+        console.log(`   📝 TURSO PAYLOAD:`, {
+          recipientEmail: tursoData.recipientEmail,
+          senderEmail: tursoData.senderEmail,
+          hasInquiryBody: !!tursoData.inquiryBody,
+          itemsCount: tursoData.items.length,
+          keys: Object.keys(tursoData).sort(),
         });
 
         // ✅ Log exactly what will be queried by the receiver
         console.log(
-          `   🔍 Receiver will query for: recipientEmail == "${firestoreData.recipientEmail}"`,
+          `   🔍 Receiver will query for: recipientEmail == "${tursoData.recipientEmail}"`,
         );
         console.log(
-          `   ✨ This inquiry will appear in receiver's inbox when they have email: "${firestoreData.recipientEmail}"`,
+          `   ✨ This inquiry will appear in receiver's inbox when they have email: "${tursoData.recipientEmail}"`,
         );
 
-        const docRef = await addDoc(sentInquiriesRef, firestoreData);
+        // Save inquiry to Turso using saveInquiry
+        const { saveInquiry } = await import("./utils/tursoConfig");
+        await saveInquiry({
+          inquiryId: tursoData.id,
+          uid: (localStorage.getItem("pspm_auth_uid") ?? "") as string,
+          username: tursoData.username,
+          senderEmail: tursoData.senderEmail,
+          recipientEmail: tursoData.recipientEmail,
+          recipientName: tursoData.recipientName,
+          recipientCompany: tursoData.recipientCompany,
+          subject: tursoData.number,
+          body: tursoData.inquiryBody,
+          items: tursoData.items,
+        });
 
-        console.log(
-          `   ✅ Sent to ${vendor.name} - Firestore Doc ID: ${docRef.id}`,
-        );
+        console.log(`   ✅ Sent to ${vendor.name} - Turso record saved`);
         results.success.push(vendor.name);
       } catch (error) {
         const errorMsg =
@@ -2181,482 +1917,18 @@ export default function App() {
     return results;
   };
 
-  // Load incoming inquiries from Firestore
+  // Load incoming inquiries from Turso
   const loadIncomingInquiries = async (userEmail?: string) => {
-    try {
-      // ✅ NORMALIZE: Use utility function for consistency
-      const email = normalizeEmail(userEmail || currentUserEmail || "");
-      if (!db || !email) {
-        console.warn("⚠️ Cannot load incoming inquiries - no email provided");
-        return [];
-      }
-
-      console.log(`📥 Querying incoming inquiries for email: ${email}`);
-      const sentInquiriesRef = collection(db, "sentInquiries");
-      const incomingQuery = query(
-        sentInquiriesRef,
-        where("recipientEmail", "==", email),
-      );
-      const snapshot = await getDocs(incomingQuery);
-      const inquiries = snapshot.docs
-        .map(
-          (doc) =>
-            ({
-              ...doc.data(),
-              firestoreId: doc.id,
-            }) as any,
-        )
-        .sort(
-          (a: any, b: any) =>
-            new Date(b.sentAt || 0).getTime() -
-            new Date(a.sentAt || 0).getTime(),
-        );
-      console.log(
-        `✅ Loaded ${inquiries.length} incoming inquiries for email: ${email}`,
-      );
-      if (inquiries.length > 0) {
-        console.log(
-          `📥 Details:`,
-          inquiries.map((i) => ({ from: i.senderEmail, subject: i.number })),
-        );
-      }
-      return inquiries;
-    } catch (error) {
-      console.error("Error loading incoming inquiries:", error);
-      return [];
-    }
+    // DISABLED - Turso migration in progress
+    console.log("⏭️  loadIncomingInquiries disabled");
+    return [] as any;
   };
 
   // Load accepted vendor connections for resending inquiries
   const loadAcceptedVendorConnections = async () => {
-    try {
-      if (!db || !currentUser) {
-        console.warn(
-          "⚠️ Cannot load vendor connections - missing db or currentUser",
-        );
-        return;
-      }
-
-      console.log(`📋 Loading all vendor connections for user: ${currentUser}`);
-
-      const connectionsRef = collection(db, "vendorConnections");
-      const vendorDirectoryRef = collection(db, "vendorDirectory");
-      const userSettingsRef = collection(db, "userSettings");
-      const userProfilesRef = collection(db, "userProfiles");
-
-      // Query for all vendor connections (both directions)
-      const initiatedByMeQuery = query(
-        connectionsRef,
-        where("initiatedByUser", "==", currentUser),
-      );
-
-      const sentToMeQuery = query(
-        connectionsRef,
-        where("targetUser", "==", currentUser),
-      );
-
-      const [initiatedSnapshot, sentToMeSnapshot] = await Promise.all([
-        getDocs(initiatedByMeQuery),
-        getDocs(sentToMeQuery),
-      ]);
-
-      const vendors: Array<{
-        id: string;
-        name: string;
-        email: string;
-        company?: string;
-        status: "accepted" | "pending";
-      }> = [];
-      const seenIds = new Set<string>();
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-      // ✅ CRITICAL: Helper function to get vendor email with proper normalization
-      const getVendorEmail = async (
-        vendorId: string,
-        vendorDocSnap: any,
-        connectionData: any,
-      ): Promise<string | null> => {
-        console.log(
-          `   🔍 DEBUG: Searching for email for vendor "${vendorId}"...`,
-        );
-
-        // 1. Try userProfiles first (has CAPITAL LETTER emails in some cases)
-        try {
-          const userProfileSnap = await getDoc(doc(userProfilesRef, vendorId));
-          if (userProfileSnap.exists()) {
-            const profileData = userProfileSnap.data() as any;
-            const rawEmail = profileData.email;
-            console.log(`   └─ userProfiles: exists=true, email="${rawEmail}"`);
-            if (rawEmail) {
-              const normalizedEmail = normalizeEmail(rawEmail);
-              console.log(
-                `      └─ normalized: "${normalizedEmail}", regex test: ${emailRegex.test(normalizedEmail)}`,
-              );
-              if (emailRegex.test(normalizedEmail)) {
-                console.log(
-                  `   ✓ Got email from userProfiles: ${rawEmail} → ${normalizedEmail}`,
-                );
-                return normalizedEmail;
-              }
-            }
-          } else {
-            console.log(`   └─ userProfiles: exists=false`);
-          }
-        } catch (e) {
-          console.log(`   └─ userProfiles: error - ${(e as Error).message}`);
-        }
-
-        // 2. Try vendorDirectory
-        console.log(
-          `   └─ checking vendorDirectory: exists=${vendorDocSnap?.exists()}`,
-        );
-        if (vendorDocSnap?.exists()) {
-          const vendorData = vendorDocSnap.data() as any;
-          const rawEmail = vendorData.email;
-          console.log(`      └─ vendorDirectory data: email="${rawEmail}"`);
-          if (rawEmail) {
-            const normalizedEmail = normalizeEmail(rawEmail);
-            console.log(
-              `         └─ normalized: "${normalizedEmail}", regex test: ${emailRegex.test(normalizedEmail)}`,
-            );
-            if (emailRegex.test(normalizedEmail)) {
-              console.log(
-                `   ✓ Got email from vendorDirectory: ${rawEmail} → ${normalizedEmail}`,
-              );
-              return normalizedEmail;
-            } else {
-              console.log(
-                `         ❌ Regex failed for: "${normalizedEmail}" (this might be the blocker!)`,
-              );
-            }
-          } else {
-            console.log(`      └─ vendorDirectory.email is empty/null`);
-          }
-        } else {
-          console.log(`      └─ vendorDirectory document does NOT exist`);
-        }
-
-        // 3. Try connection.companyData
-        const companyDataEmail = connectionData?.companyData?.email;
-        console.log(
-          `   └─ checking connection.companyData: email="${companyDataEmail}"`,
-        );
-        if (companyDataEmail) {
-          const normalizedEmail = normalizeEmail(companyDataEmail);
-          console.log(
-            `      └─ normalized: "${normalizedEmail}", regex test: ${emailRegex.test(normalizedEmail)}`,
-          );
-          if (emailRegex.test(normalizedEmail)) {
-            console.log(
-              `   ✓ Got email from connection data: ${companyDataEmail} → ${normalizedEmail}`,
-            );
-            return normalizedEmail;
-          }
-        }
-
-        // 4. Try connection.email directly (might be stored at root level)
-        const directEmail = connectionData?.email;
-        console.log(
-          `   └─ checking connection.email directly: "${directEmail}"`,
-        );
-        if (directEmail) {
-          const normalizedEmail = normalizeEmail(directEmail);
-          console.log(
-            `      └─ normalized: "${normalizedEmail}", regex test: ${emailRegex.test(normalizedEmail)}`,
-          );
-          if (emailRegex.test(normalizedEmail)) {
-            console.log(
-              `   ✓ Got email from connection.email: ${directEmail} → ${normalizedEmail}`,
-            );
-            return normalizedEmail;
-          }
-        }
-
-        // 5. Try userSettings (fallback for Firebase auth email)
-        try {
-          const userDocSnap = await getDoc(doc(userSettingsRef, vendorId));
-          if (userDocSnap.exists()) {
-            const userData = userDocSnap.data() as any;
-            const rawEmail = userData.email;
-            console.log(`   └─ userSettings: exists=true, email="${rawEmail}"`);
-            if (rawEmail) {
-              const normalizedEmail = normalizeEmail(rawEmail);
-              console.log(
-                `      └─ normalized: "${normalizedEmail}", regex test: ${emailRegex.test(normalizedEmail)}`,
-              );
-              if (emailRegex.test(normalizedEmail)) {
-                console.log(
-                  `   ✓ Got email from userSettings: ${rawEmail} → ${normalizedEmail}`,
-                );
-                return normalizedEmail;
-              }
-            }
-          } else {
-            console.log(`   └─ userSettings: exists=false`);
-          }
-        } catch (e) {
-          console.log(`   └─ userSettings: error - ${(e as Error).message}`);
-        }
-
-        // 6. Try querying vendorDirectory by username field (for vendors who may have username as searchable field)
-        try {
-          console.log(
-            `   └─ Trying query-based search in vendorDirectory by username="${vendorId}"...`,
-          );
-          const usernameQuery = query(
-            vendorDirectoryRef,
-            where("username", "==", vendorId),
-          );
-          const queryResults = await getDocs(usernameQuery);
-          if (queryResults.docs.length > 0) {
-            const vendorData = queryResults.docs[0].data() as any;
-            const rawEmail = vendorData.email;
-            console.log(
-              `      └─ Found in vendorDirectory via query: email="${rawEmail}"`,
-            );
-            if (rawEmail) {
-              const normalizedEmail = normalizeEmail(rawEmail);
-              console.log(
-                `         └─ normalized: "${normalizedEmail}", regex test: ${emailRegex.test(normalizedEmail)}`,
-              );
-              if (emailRegex.test(normalizedEmail)) {
-                console.log(
-                  `   ✓ Got email from vendorDirectory query: ${rawEmail} → ${normalizedEmail}`,
-                );
-                return normalizedEmail;
-              }
-            }
-          } else {
-            console.log(`      └─ No results from vendorDirectory query`);
-          }
-        } catch (e) {
-          console.log(
-            `   └─ vendorDirectory query error - ${(e as Error).message}`,
-          );
-        }
-
-        // 7. Try querying userSettings by username field
-        try {
-          console.log(
-            `   └─ Trying query-based search in userSettings by username="${vendorId}"...`,
-          );
-          const usernameQuery = query(
-            userSettingsRef,
-            where("username", "==", vendorId),
-          );
-          const queryResults = await getDocs(usernameQuery);
-          if (queryResults.docs.length > 0) {
-            const userData = queryResults.docs[0].data() as any;
-            const rawEmail = userData.email;
-            console.log(
-              `      └─ Found in userSettings via query: email="${rawEmail}"`,
-            );
-            if (rawEmail) {
-              const normalizedEmail = normalizeEmail(rawEmail);
-              console.log(
-                `         └─ normalized: "${normalizedEmail}", regex test: ${emailRegex.test(normalizedEmail)}`,
-              );
-              if (emailRegex.test(normalizedEmail)) {
-                console.log(
-                  `   ✓ Got email from userSettings query: ${rawEmail} → ${normalizedEmail}`,
-                );
-                return normalizedEmail;
-              }
-            }
-          } else {
-            console.log(`      └─ No results from userSettings query`);
-          }
-        } catch (e) {
-          console.log(
-            `   └─ userSettings query error - ${(e as Error).message}`,
-          );
-        }
-
-        // ❌ No valid email found anywhere
-        console.log(
-          `   ❌ FAILED to find valid email for vendor "${vendorId}" in any collection`,
-        );
-        return null;
-      };
-
-      // Process vendors I initiated connection with
-      for (const docSnap of initiatedSnapshot.docs) {
-        const connection = docSnap.data() as any;
-        const targetUser = connection.targetUser;
-
-        if (seenIds.has(targetUser)) continue;
-        seenIds.add(targetUser);
-
-        console.log(
-          `\n📍 Processing vendor (initiated by me): "${targetUser}"`,
-        );
-        console.log(
-          `   Connection document structure:`,
-          JSON.stringify(
-            {
-              targetUser: connection.targetUser,
-              initiatedByUser: connection.initiatedByUser,
-              status: connection.status,
-              companyData: connection.companyData,
-              hasCompanyData: !!connection.companyData,
-              allKeys: Object.keys(connection),
-            },
-            null,
-            2,
-          ),
-        );
-
-        try {
-          const vendorDocSnap = await getDoc(
-            doc(vendorDirectoryRef, targetUser),
-          );
-          console.log(
-            `   vendorDirectory query result: exists=${vendorDocSnap.exists()}`,
-          );
-          if (vendorDocSnap.exists()) {
-            console.log(
-              `   vendorDirectory data keys: ${Object.keys(vendorDocSnap.data()).join(", ")}`,
-            );
-          }
-
-          const email = await getVendorEmail(
-            targetUser,
-            vendorDocSnap,
-            connection,
-          );
-
-          // ✅ IMPORTANT: Show vendor EVEN if email is missing
-          // This allows users to see and interact with vendors while we try to find their email
-          const vendorData = vendorDocSnap.exists()
-            ? (vendorDocSnap.data() as any)
-            : null;
-
-          vendors.push({
-            id: targetUser,
-            name:
-              vendorData?.companyName ||
-              connection.companyData?.name ||
-              targetUser,
-            email: email || `${targetUser}@pending-email`, // Use fallback email with warning
-            company: vendorData?.companyName || connection.companyData?.name,
-            status: connection.status || "pending",
-          });
-
-          if (email) {
-            console.log(`   ✅ ADDED vendor with email: ${email}`);
-          } else {
-            console.warn(
-              `⚠️ ADDED vendor "${connection.companyData?.name || targetUser}" WITHOUT email (will attempt to retrieve when sending)`,
-            );
-          }
-        } catch (error) {
-          console.warn(`⚠️ Error loading vendor ${targetUser}:`, error);
-        }
-      }
-
-      // Process vendors who initiated connections with me
-      for (const docSnap of sentToMeSnapshot.docs) {
-        const connection = docSnap.data() as any;
-        const initiatorUser = connection.initiatedByUser;
-
-        if (seenIds.has(initiatorUser)) continue;
-        seenIds.add(initiatorUser);
-
-        console.log(
-          `\n📍 Processing vendor (initiated by them): "${initiatorUser}"`,
-        );
-        console.log(
-          `   Connection document structure:`,
-          JSON.stringify(
-            {
-              targetUser: connection.targetUser,
-              initiatedByUser: connection.initiatedByUser,
-              status: connection.status,
-              companyData: connection.companyData,
-              hasCompanyData: !!connection.companyData,
-              allKeys: Object.keys(connection),
-            },
-            null,
-            2,
-          ),
-        );
-
-        try {
-          const vendorDocSnap = await getDoc(
-            doc(vendorDirectoryRef, initiatorUser),
-          );
-          console.log(
-            `   vendorDirectory query result: exists=${vendorDocSnap.exists()}`,
-          );
-          if (vendorDocSnap.exists()) {
-            console.log(
-              `   vendorDirectory data keys: ${Object.keys(vendorDocSnap.data()).join(", ")}`,
-            );
-          }
-
-          const email = await getVendorEmail(
-            initiatorUser,
-            vendorDocSnap,
-            connection,
-          );
-
-          // ✅ IMPORTANT: Show vendor EVEN if email is missing
-          // This allows users to see and interact with vendors while we try to find their email
-          const vendorData = vendorDocSnap.exists()
-            ? (vendorDocSnap.data() as any)
-            : null;
-
-          vendors.push({
-            id: initiatorUser,
-            name:
-              vendorData?.companyName ||
-              connection.companyData?.name ||
-              initiatorUser,
-            email: email || `${initiatorUser}@pending-email`, // Use fallback email with warning
-            company: vendorData?.companyName || connection.companyData?.name,
-            status: connection.status || "pending",
-          });
-
-          if (email) {
-            console.log(`   ✅ ADDED vendor with email: ${email}`);
-          } else {
-            console.warn(
-              `⚠️ ADDED vendor "${connection.companyData?.name || initiatorUser}" WITHOUT email (will attempt to retrieve when sending)`,
-            );
-          }
-        } catch (error) {
-          console.warn(`⚠️ Error loading vendor ${initiatorUser}:`, error);
-        }
-      }
-
-      setAcceptedVendorConnections(vendors);
-      const acceptedCount = vendors.filter(
-        (v) => v.status === "accepted",
-      ).length;
-      const pendingCount = vendors.filter((v) => v.status === "pending").length;
-      console.log(
-        `✅ Loaded ${vendors.length} vendor connections (${acceptedCount} accepted, ${pendingCount} pending)`,
-      );
-      console.log(
-        `   📍 acceptedVendorConnections state updated with ${vendors.length} vendors`,
-      );
-      if (vendors.length > 0) {
-        console.log(
-          `📋 Vendors:`,
-          vendors.map((v) => ({
-            name: v.name,
-            email: v.email,
-            status: v.status,
-          })),
-        );
-      } else {
-        console.warn(
-          `   ⚠️ WARNING: No vendors with valid emails found. Ensure vendors have updated their profiles with email addresses.`,
-        );
-      }
-    } catch (error) {
-      console.error("❌ Error loading vendor connections:", error);
-    }
+    // DISABLED - Turso migration
+    console.log("⏭️  loadAcceptedVendorConnections disabled");
+    return undefined as any;
   };
 
   // Generate PDF from template with items data
@@ -2778,138 +2050,27 @@ export default function App() {
 
   // Load quotation history from IndexedDB
   const loadQuotationHistory = async (username?: string): Promise<any[]> => {
-    try {
-      const user = username || currentUser;
-      console.log(
-        `loadQuotationHistory called with username="${username}", using user="${user}"`,
-      );
-      const dbInstance = await initIndexedDB();
-      return new Promise((resolve, reject) => {
-        const transaction = dbInstance.transaction(["quotations"], "readonly");
-        const store = transaction.objectStore("quotations");
-        const index = store.index("username");
-        const request = index.getAll(user);
-        request.onsuccess = () => {
-          console.log(
-            `IndexedDB query for quotations with user="${user}" returned ${request.result.length} results`,
-          );
-          const results = request.result.map((q) => {
-            const mapped = {
-              id: q.id,
-              number: q.number,
-              date: q.date,
-              items: q.items,
-              totalPrice: q.totalPrice,
-              currency: q.currency,
-              createdAt: q.createdAt,
-            };
-            console.log("DEBUG Quota:", {
-              id: q.id,
-              stored: { totalPrice: q.totalPrice, currency: q.currency },
-              mapped: {
-                totalPrice: mapped.totalPrice,
-                currency: mapped.currency,
-              },
-            });
-            return mapped;
-          });
-          resolve(
-            results.sort(
-              (a, b) =>
-                new Date(b.createdAt).getTime() -
-                new Date(a.createdAt).getTime(),
-            ),
-          );
-        };
-        request.onerror = () => {
-          console.error(
-            `IndexedDB query failed for quotations with user="${user}":`,
-            request.error,
-          );
-          reject(request.error);
-        };
-      });
-    } catch (error) {
-      console.error("Error loading quotation history:", error);
-      return [];
-    }
+    // DISABLED - Turso migration
+    console.log("⏭️  loadQuotationHistory disabled");
+    return [] as any;
   };
 
   // Load inquiry history from IndexedDB
   const loadInquiryHistory = async (username?: string): Promise<any[]> => {
-    try {
-      const user = username || currentUser;
-      console.log(
-        `loadInquiryHistory called with username="${username}", using user="${user}"`,
-      );
-      const dbInstance = await initIndexedDB();
-      return new Promise((resolve, reject) => {
-        const transaction = dbInstance.transaction(["inquiries"], "readonly");
-        const store = transaction.objectStore("inquiries");
-        const index = store.index("username");
-        const request = index.getAll(user);
-        request.onsuccess = () => {
-          console.log(
-            `IndexedDB query for inquiries with user="${user}" returned ${request.result.length} results`,
-          );
-          const results = request.result.map((i) => {
-            const mapped = {
-              id: i.id,
-              number: i.number,
-              date: i.date,
-              items: i.items,
-              totalPrice: i.totalPrice,
-              currency: i.currency,
-              createdAt: i.createdAt,
-            };
-            console.log("DEBUG Inquiry:", {
-              id: i.id,
-              stored: { totalPrice: i.totalPrice, currency: i.currency },
-              mapped: {
-                totalPrice: mapped.totalPrice,
-                currency: mapped.currency,
-              },
-            });
-            return mapped;
-          });
-          resolve(
-            results.sort(
-              (a, b) =>
-                new Date(b.createdAt).getTime() -
-                new Date(a.createdAt).getTime(),
-            ),
-          );
-        };
-        request.onerror = () => {
-          console.error(
-            `IndexedDB query failed for inquiries with user="${user}":`,
-            request.error,
-          );
-          reject(request.error);
-        };
-      });
-    } catch (error) {
-      console.error("Error loading inquiry history:", error);
-      return [];
-    }
+    // DISABLED - Turso migration
+    console.log("⏭️  loadInquiryHistory disabled");
+    return [] as any;
   };
 
-  // Load letterhead from Firestore
+  // Load letterhead from localStorage
   const loadLetterhead = async (username: string): Promise<any | null> => {
     try {
-      if (!db) {
-        console.log("Firestore not available, cannot load letterhead");
-        return null;
-      }
-      const docSnap = await getDocs(
-        query(
-          collection(db, "userSettings"),
-          where("__name__", "==", `${username}_letterhead`),
-        ),
+      const letterheadJson = localStorage.getItem(
+        `pspm_letterhead_${username}`,
       );
-      if (docSnap.docs.length > 0) {
+      if (letterheadJson) {
         console.log(`Loaded letterhead for ${username}`);
-        return docSnap.docs[0].data();
+        return JSON.parse(letterheadJson);
       }
       console.log(`No letterhead found for ${username}`);
       return null;
@@ -2919,14 +2080,10 @@ export default function App() {
     }
   };
 
-  // Delete letterhead from Firestore
+  // Delete letterhead from localStorage
   const deleteLetterhead = async (username: string) => {
     try {
-      if (!db) {
-        console.log("Firestore not available, cannot delete letterhead");
-        return;
-      }
-      await deleteDoc(doc(db, "userSettings", `${username}_letterhead`));
+      localStorage.removeItem(`pspm_letterhead_${username}`);
       setInquiryLetterhead(null);
       console.log(`Deleted letterhead for ${username}`);
     } catch (error) {
@@ -2938,116 +2095,22 @@ export default function App() {
   const loadMarketplaceItems = async (
     pageNumber: number = 1,
   ): Promise<{ items: Product[]; hasMore: boolean; lastDoc: any }> => {
-    try {
-      if (!db) {
-        console.log("Firestore not available, using empty marketplace");
-        return { items: [], hasMore: false, lastDoc: null };
-      }
-
-      const PAGE_SIZE = 100;
-      const marketplaceRef = collection(db, "marketplace");
-
-      let q;
-      if (pageNumber === 1) {
-        // First page: get 101 items to check if there are more
-        q = query(marketplaceRef, orderBy("addedAt", "desc"), limit(101));
-      } else {
-        // Subsequent pages: use cursor pagination from last document
-        if (!lastMarketplaceDoc) {
-          console.warn("Cannot load page", pageNumber, "- no cursor document");
-          return { items: [], hasMore: false, lastDoc: null };
-        }
-        q = query(
-          marketplaceRef,
-          orderBy("addedAt", "desc"),
-          startAfter(lastMarketplaceDoc),
-          limit(101),
-        );
-      }
-
-      const snapshot = await getDocs(q);
-
-      // Check if there are more items (we fetched 101 but only return 100)
-      const hasMore = snapshot.docs.length > PAGE_SIZE;
-      const docsToReturn = snapshot.docs.slice(0, PAGE_SIZE);
-      const items = docsToReturn.map((doc) => ({
-        ...doc.data(),
-        id: doc.id,
-        addedAt:
-          typeof doc.data().addedAt === "string"
-            ? parseInt(doc.data().addedAt)
-            : doc.data().addedAt || 0,
-      })) as Product[];
-
-      const lastDoc =
-        docsToReturn.length > 0 ? docsToReturn[docsToReturn.length - 1] : null;
-
-      console.log(
-        `Loaded page ${pageNumber}: ${items.length} items from global marketplace (hasMore: ${hasMore})`,
-      );
-      return {
-        items: items.sort((a, b) => (b.addedAt || 0) - (a.addedAt || 0)),
-        hasMore,
-        lastDoc,
-      };
-    } catch (error) {
-      console.error("Error loading marketplace items:", error);
-      return { items: [], hasMore: false, lastDoc: null };
-    }
+    // DISABLED - Turso migration
+    console.log("⏭️  loadMarketplaceItems disabled");
+    return { items: [], hasMore: false, lastDoc: null } as any;
   };
 
   // Load next page of marketplace items
   const loadMoreMarketplaceItems = async () => {
-    if (isLoadingMarketplace || !hasMoreMarketplaceItems) return;
-
-    setIsLoadingMarketplace(true);
-    const nextPage = currentMarketplacePage + 1;
-
-    loadMarketplaceItems(nextPage)
-      .then(({ items, hasMore, lastDoc }) => {
-        setMarketplaceItems((prev) => [...prev, ...items]);
-        setHasMoreMarketplaceItems(hasMore);
-        setLastMarketplaceDoc(lastDoc);
-        setCurrentMarketplacePage(nextPage);
-        setIsLoadingMarketplace(false);
-      })
-      .catch((error) => {
-        console.error("Failed to load more marketplace items:", error);
-        setIsLoadingMarketplace(false);
-      });
+    // DISABLED - Turso migration
+    console.log("⏭️  loadMoreMarketplaceItems disabled");
   };
 
   // Delete items from marketplace (only user's own items)
   const deleteFromMarketplace = async (itemIds: string[]) => {
-    try {
-      if (!db) {
-        setUploadMessage({ type: "error", text: "Marketplace not available" });
-        return;
-      }
-
-      // Delete from Firestore
-      for (const itemId of itemIds) {
-        await deleteDoc(doc(db, "marketplace", itemId));
-      }
-
-      // Remove from local state
-      setMarketplaceItems((prev) =>
-        prev.filter((item) => !itemIds.includes(item.id)),
-      );
-      setSelectedMarketplaceItems(new Set());
-
-      setUploadMessage({
-        type: "success",
-        text: `Removed ${itemIds.length} item(s) from marketplace`,
-      });
-      setTimeout(() => setUploadMessage(null), 3000);
-    } catch (error) {
-      console.error("Error deleting from marketplace:", error);
-      setUploadMessage({
-        type: "error",
-        text: "Error removing items from marketplace",
-      });
-    }
+    // DISABLED - Turso migration
+    console.log("⏭️  deleteFromMarketplace disabled");
+    return;
   };
 
   // Place order for marketplace item (buyer initiates purchase)
@@ -3057,7 +2120,7 @@ export default function App() {
     buyerNotes?: string,
   ) => {
     try {
-      if (!db || !currentUser) {
+      if (!currentUser) {
         setUploadMessage({
           type: "error",
           text: "Cannot place order - not logged in",
@@ -3091,8 +2154,24 @@ export default function App() {
         buyerNotes,
       };
 
-      // Save to Firestore
-      await setDoc(doc(db, "orders", orderId), newOrder);
+      // Save to Turso
+      const { saveOrder } = await import("./utils/tursoConfig");
+      await saveOrder({
+        orderId: newOrder.id,
+        uid: (localStorage.getItem("pspm_auth_uid") ?? "") as string,
+        username: currentUser,
+        vendorName: (marketplaceItem.seller as string) || "Unknown",
+        items: [
+          {
+            name: newOrder.itemName,
+            price: newOrder.itemPrice,
+            quantity: newOrder.quantity,
+            currency: newOrder.itemCurrency,
+          },
+        ],
+        totalAmount: newOrder.totalPrice,
+        currency: newOrder.itemCurrency,
+      });
 
       // Add to outgoing orders locally for immediate feedback
       if (activeOrdersView === "outgoing") {
@@ -3115,36 +2194,16 @@ export default function App() {
 
   // Load incoming orders (where user is the seller)
   const loadIncomingOrders = async () => {
-    try {
-      if (!db || !currentUser) return;
-
-      const ordersRef = collection(db, "orders");
-      const q = query(ordersRef, where("seller", "==", currentUser));
-      const snapshot = await getDocs(q);
-
-      const loadedOrders = snapshot.docs.map((doc) => doc.data() as Order);
-      setIncomingOrders(loadedOrders);
-      setHasLoadedIncomingOrders(true);
-    } catch (error) {
-      console.error("Error loading incoming orders:", error);
-    }
+    // DISABLED - Turso migration
+    console.log("⏭️  loadIncomingOrders disabled");
+    return [] as any;
   };
 
   // Load outgoing orders (where user is the buyer)
   const loadOutgoingOrders = async () => {
-    try {
-      if (!db || !currentUser) return;
-
-      const ordersRef = collection(db, "orders");
-      const q = query(ordersRef, where("buyer", "==", currentUser));
-      const snapshot = await getDocs(q);
-
-      const loadedOrders = snapshot.docs.map((doc) => doc.data() as Order);
-      setOutgoingOrders(loadedOrders);
-      setHasLoadedOutgoingOrders(true);
-    } catch (error) {
-      console.error("Error loading outgoing orders:", error);
-    }
+    // DISABLED - Turso migration
+    console.log("⏭️  loadOutgoingOrders disabled");
+    return [] as any;
   };
 
   // Update order status (for sellers on incoming orders)
@@ -3153,16 +2212,9 @@ export default function App() {
     newStatus: Order["status"],
   ) => {
     try {
-      if (!db) return;
-
-      await setDoc(
-        doc(db, "orders", orderId),
-        {
-          status: newStatus,
-          updatedAt: Date.now(),
-        } as Partial<Order>,
-        { merge: true },
-      );
+      const { updateOrderStatus: updateOrderTurso } =
+        await import("./utils/tursoConfig");
+      await updateOrderTurso(orderId, newStatus);
 
       // Update local state
       setIncomingOrders((prev) =>
@@ -3190,11 +2242,8 @@ export default function App() {
   // Retract outgoing order (buyer cancels order)
   const retractOrder = async (orderId: string | null) => {
     try {
-      if (!db || !orderId) {
-        console.error("Cannot retract order: missing db or orderId", {
-          db: !!db,
-          orderId,
-        });
+      if (!orderId) {
+        console.error("Cannot retract order: missing orderId", { orderId });
         setUploadMessage({
           type: "error",
           text: "Error: Order ID not found",
@@ -3204,9 +2253,11 @@ export default function App() {
 
       console.log(`Retracting order: ${orderId}`);
 
-      // Delete from Firestore
-      await deleteDoc(doc(db, "orders", orderId));
-      console.log(`Order ${orderId} deleted from Firestore`);
+      // Delete from Turso
+      const { deleteOrder: deleteOrderTurso } =
+        await import("./utils/tursoConfig");
+      await deleteOrderTurso(orderId);
+      console.log(`Order ${orderId} deleted from Turso`);
 
       // Remove from local state
       const updatedOrders = outgoingOrders.filter(
@@ -3238,9 +2289,8 @@ export default function App() {
 
   const retractQuotation = async (quotationId: string | null) => {
     try {
-      if (!db || !quotationId) {
-        console.error("Cannot retract quotation: missing db or quotationId", {
-          db: !!db,
+      if (!quotationId) {
+        console.error("Cannot retract quotation: missing quotationId", {
           quotationId,
         });
         setUploadMessage({
@@ -3252,9 +2302,11 @@ export default function App() {
 
       console.log(`Retracting quotation: ${quotationId}`);
 
-      // Delete from Firestore
-      await deleteDoc(doc(db, "quotations", quotationId));
-      console.log(`Quotation ${quotationId} deleted from Firestore`);
+      // Delete from Turso
+      const { deleteQuotation: deleteQuotationTurso } =
+        await import("./utils/tursoConfig");
+      await deleteQuotationTurso(quotationId);
+      console.log(`Quotation ${quotationId} deleted from Turso`);
 
       // Remove from local state
       const updatedQuotations = quotationHistory.filter(
@@ -3286,9 +2338,8 @@ export default function App() {
 
   const retractInquiry = async (inquiryId: string | null) => {
     try {
-      if (!db || !inquiryId) {
-        console.error("Cannot retract inquiry: missing db or inquiryId", {
-          db: !!db,
+      if (!inquiryId) {
+        console.error("Cannot retract inquiry: missing inquiryId", {
           inquiryId,
         });
         setUploadMessage({
@@ -3300,9 +2351,11 @@ export default function App() {
 
       console.log(`Retracting inquiry: ${inquiryId}`);
 
-      // Delete from Firestore
-      await deleteDoc(doc(db, "inquiries", inquiryId));
-      console.log(`Inquiry ${inquiryId} deleted from Firestore`);
+      // Delete from Turso
+      const { deleteInquiry: deleteInquiryTurso } =
+        await import("./utils/tursoConfig");
+      await deleteInquiryTurso(inquiryId);
+      console.log(`Inquiry ${inquiryId} deleted from Turso`);
 
       // Remove from local state
       const updatedInquiries = inquiryHistory.filter(
@@ -3335,7 +2388,7 @@ export default function App() {
   // Checkout cart - creates separate orders for each seller
   const checkoutCart = async () => {
     try {
-      if (!db || cart.length === 0) {
+      if (cart.length === 0) {
         setUploadMessage({
           type: "error",
           text: "Cart is empty",
@@ -3397,8 +2450,16 @@ export default function App() {
 
           console.log(`Creating order for seller ${seller}:`, orderData);
 
-          // Save to Firestore
-          await setDoc(doc(db, "orders", orderId), orderData);
+          // Save to Turso
+          const { saveOrder } = await import("./utils/tursoConfig");
+          await saveOrder({
+            orderId: orderId,
+            uid: (localStorage.getItem("pspm_auth_uid") ?? "") as string,
+            username: currentUser,
+            items: items,
+            totalAmount: totalPrice,
+            currency: items[0]?.currency || "USD",
+          });
           successCount++;
           sellerEmails[seller] = seller; // Store seller for potential notification
         } catch (sellerError) {
@@ -3782,62 +2843,25 @@ export default function App() {
 
     setIsLoading(true);
     try {
-      // Find user by email or username in userProfiles
-      let userEmail: string | null = null;
-      let userFound = false;
+      // Initialize Turso and look up user
+      await initTurso();
 
-      // Check if input is email or username
-      const isEmail = loginForm.emailOrUsername.includes("@");
+      console.log("🔐 AUTH: Looking up user in Turso...");
+      const tursoUser = await findUserByEmailOrUsername(
+        loginForm.emailOrUsername,
+      );
 
-      if (isEmail) {
-        // Input is an email - search by emailSearchable
-        const userDocs = await getDocs(
-          query(
-            collection(db, "userProfiles"),
-            where(
-              "emailSearchable",
-              "==",
-              loginForm.emailOrUsername.toLowerCase(),
-            ),
-          ),
-        );
-        if (userDocs.docs.length > 0) {
-          userEmail = userDocs.docs[0].data().email;
-          userFound = true;
-        } else {
-          // Email not found in our system
-          setAuthError("Email not registered");
-          setIsLoading(false);
-          return;
-        }
-      } else {
-        // Input is a username - search by usernameSearchable
-        const userDocs = await getDocs(
-          query(
-            collection(db, "userProfiles"),
-            where(
-              "usernameSearchable",
-              "==",
-              loginForm.emailOrUsername.toLowerCase(),
-            ),
-          ),
-        );
-        if (userDocs.docs.length === 0) {
-          setAuthError("Username not registered");
-          setIsLoading(false);
-          return;
-        }
-        userEmail = userDocs.docs[0].data().email;
-        userFound = true;
-      }
-
-      if (!userEmail || !userFound) {
-        setAuthError("User not registered");
+      if (!tursoUser) {
+        setAuthError("Email/username not registered");
         setIsLoading(false);
         return;
       }
 
-      // User found in Firestore - now try Firebase Auth
+      console.log("🔐 AUTH: User found in Turso:", tursoUser.username);
+      const userEmail = tursoUser.email;
+
+      // Use Firebase Auth for password verification
+      console.log("🔐 AUTH: Verifying password with Firebase Auth...");
       let userCredential;
       try {
         userCredential = await signInWithEmailAndPassword(
@@ -3846,7 +2870,6 @@ export default function App() {
           loginForm.password,
         );
       } catch (authError: any) {
-        // Firebase Auth error - likely wrong password
         const errorCode = authError.code || "";
         if (
           errorCode.includes("wrong-password") ||
@@ -3854,7 +2877,6 @@ export default function App() {
         ) {
           setAuthError("Incorrect password");
         } else if (errorCode.includes("user-not-found")) {
-          // This shouldn't happen since we verified in Firestore, but handle it
           setAuthError("Email not registered");
         } else {
           setAuthError("Login failed. Please try again.");
@@ -3866,7 +2888,7 @@ export default function App() {
       const userData = userCredential.user;
       const uid = userData.uid;
 
-      // IMPORTANT: Reload user to get latest email verification status
+      // Reload user to get latest email verification status
       await userData.reload();
 
       // Check if email is verified
@@ -3878,16 +2900,7 @@ export default function App() {
         return;
       }
 
-      // Get username from userProfiles
-      const userProfileDoc = await getDoc(doc(db, "userProfiles", uid));
-      if (!userProfileDoc.exists()) {
-        setAuthError("User profile not found");
-        setIsLoading(false);
-        return;
-      }
-
-      const profileData = userProfileDoc.data();
-      const username = profileData.username;
+      const username = tursoUser.username;
 
       // Load user data
       const {
@@ -3946,15 +2959,11 @@ export default function App() {
 
       console.log("✅ Gmail OAuth successful for email:", oauthEmail);
 
-      // Find user in userProfiles by email
-      const userDocs = await getDocs(
-        query(
-          collection(db, "userProfiles"),
-          where("emailSearchable", "==", oauthEmail),
-        ),
-      );
+      // Initialize Turso and find user by email
+      await initTurso();
+      const tursoUser = await findUserByEmailOrUsername(oauthEmail);
 
-      if (userDocs.docs.length === 0) {
+      if (!tursoUser) {
         setAuthError(
           "No account found with this Gmail address. Please sign up first.",
         );
@@ -3963,10 +2972,8 @@ export default function App() {
       }
 
       // Get user profile
-      const userProfileDoc = userDocs.docs[0];
-      const profileData = userProfileDoc.data();
-      const uid = profileData.uid;
-      const username = profileData.username;
+      const uid = (tursoUser as any).uid;
+      const username = (tursoUser as any).username;
 
       // Load user data
       const {
@@ -4031,15 +3038,11 @@ export default function App() {
 
       console.log("✅ Gmail OAuth successful for new signup:", oauthEmail);
 
-      // Check if email already exists in userProfiles
-      const existingUserDocs = await getDocs(
-        query(
-          collection(db, "userProfiles"),
-          where("emailSearchable", "==", oauthEmail),
-        ),
-      );
+      // Check if email already exists in Turso userProfiles
+      const { checkEmailExists } = await import("./utils/tursoConfig");
+      const emailExists = await checkEmailExists(oauthEmail);
 
-      if (existingUserDocs.docs.length > 0) {
+      if (emailExists) {
         setAuthError("This email is already registered. Please login instead.");
         setIsLoading(false);
         return;
@@ -4107,65 +3110,27 @@ export default function App() {
       const username = gmailSignupForm.username.trim();
       const companyName = gmailSignupForm.companyName.trim();
 
-      // Create searchable fields (consistent with regular signup)
-      const usernameSearchable = username.toLowerCase().trim();
-      const companyNameSearchable = companyName.toLowerCase().trim();
-      const emailSearchable = oauthEmail;
+      // Initialize Turso
+      await initTurso();
 
-      // Check if username already taken (same validation as regular signup)
-      const existingUsernameDocs = await getDocs(
-        query(
-          collection(db, "userProfiles"),
-          where("usernameSearchable", "==", usernameSearchable),
-        ),
-      );
-
-      if (existingUsernameDocs.docs.length > 0) {
+      // Check if username already taken
+      const usernameExists = await checkUsernameExists(username);
+      if (usernameExists) {
         setAuthError("Username is already taken");
         setIsLoading(false);
         return;
       }
 
-      // Create userProfiles document (IDENTICAL path to regular signup)
-      const userProfileData = {
+      // Save to Turso instead of Firestore
+      await insertUserProfile({
         uid: oauthUid,
         username: username,
-        usernameSearchable: usernameSearchable,
         email: oauthEmail,
-        emailSearchable: emailSearchable,
+        password: "", // No password for Gmail auth
         companyName: companyName,
-        companyNameSearchable: companyNameSearchable,
-        activeTab: "products",
-        emailVerified: true, // Gmail is already verified
         authMethod: "gmail",
-        createdAt: new Date().toISOString(),
-      };
-
-      await setDoc(doc(db, "userProfiles", oauthUid), userProfileData, {
-        merge: false,
       });
-      console.log("✅ User profile created - username:", username);
-
-      // Create vendorDirectory entry (IDENTICAL path to regular signup)
-      const vendorData = {
-        uid: oauthUid,
-        username: username,
-        usernameSearchable: usernameSearchable,
-        email: oauthEmail,
-        emailSearchable: emailSearchable,
-        companyName: companyName,
-        companyNameSearchable: companyNameSearchable,
-        phone: "",
-        address: "",
-        website: "",
-        authMethod: "gmail",
-        createdAt: new Date().toISOString(),
-      };
-
-      await setDoc(doc(db, "vendorDirectory", oauthUid), vendorData, {
-        merge: false,
-      });
-      console.log("✅ Vendor entry created - searchable paths active");
+      console.log("✅ User profile created in Turso - username:", username);
 
       // Auto-login the user (no email verification needed for Gmail)
       const {
@@ -8830,14 +7795,6 @@ export default function App() {
                                     selectedProducts.has(p.id),
                                   );
                                   try {
-                                    if (!db) {
-                                      setUploadMessage({
-                                        type: "error",
-                                        text: "Marketplace not available. Firebase connection required.",
-                                      });
-                                      return;
-                                    }
-
                                     // Generate marketplace items with consistent IDs
                                     const now = Date.now(); // Use timestamp number instead of ISO string
                                     const newMarketplaceItems =
@@ -8851,12 +7808,23 @@ export default function App() {
                                         };
                                       });
 
-                                    // Save to Firestore marketplace collection (global, visible to all users)
+                                    // Save to Turso marketplace collection (global, visible to all users)
+                                    const { saveMarketplaceItem } =
+                                      await import("./utils/tursoConfig");
                                     for (const item of newMarketplaceItems) {
-                                      await setDoc(
-                                        doc(db, "marketplace", item.id),
-                                        item,
-                                      );
+                                      await saveMarketplaceItem({
+                                        productId: item.id,
+                                        uid: (localStorage.getItem(
+                                          "pspm_auth_uid",
+                                        ) ?? "") as string,
+                                        name: item.name || "",
+                                        partNumber: item.partNumber,
+                                        price: item.price,
+                                        qty: item.qty,
+                                        currency: item.currency || "USD",
+                                        image: item.image,
+                                        stock: item.stock,
+                                      });
                                     }
 
                                     // Reset pagination to show newly added items at the top
@@ -10781,7 +9749,6 @@ export default function App() {
 
               {activeWarehouseTab === "vendors" && (
                 <Vendors
-                  db={db}
                   currentUser={currentUser}
                   onSendInquiry={(company) => {
                     // Pre-fill recipient data and navigate to inquiries (outgoing)
@@ -10835,19 +9802,32 @@ export default function App() {
                   onLoadTemplate={loadTemplate}
                   onSaveLetterhead={(letterhead) => {
                     setInquiryLetterhead(letterhead);
-                    if (db) {
-                      setDoc(
-                        doc(db, "userSettings", `${currentUser}_letterhead`),
-                        letterhead,
-                      ).catch((err) =>
-                        console.error("Error saving letterhead:", err),
-                      );
-                    } else {
-                      localStorage.setItem(
-                        `pspm_letterhead_${currentUser}`,
-                        JSON.stringify(letterhead),
-                      );
-                    }
+                    // Save to Turso using savePDFTemplate
+                    const saveTursoLetterhead = async () => {
+                      try {
+                        const { savePDFTemplate } =
+                          await import("./utils/tursoConfig");
+                        await savePDFTemplate({
+                          templateId: `letterhead_${currentUser}_${Date.now()}`,
+                          uid: (localStorage.getItem("pspm_auth_uid") ??
+                            "") as string,
+                          username: currentUser,
+                          templateName: `${currentUser}_letterhead`,
+                          templateType: "letterhead",
+                          htmlContent: letterhead
+                            ? JSON.stringify(letterhead)
+                            : undefined,
+                        });
+                      } catch (err) {
+                        console.error("Error saving letterhead to Turso:", err);
+                      }
+                    };
+                    saveTursoLetterhead();
+                    // Also cache in localStorage for quick access
+                    localStorage.setItem(
+                      `pspm_letterhead_${currentUser}`,
+                      JSON.stringify(letterhead),
+                    );
                   }}
                   onDeleteLetterhead={() => deleteLetterhead(currentUser)}
                   gmailService={gmailService}

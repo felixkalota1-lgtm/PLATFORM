@@ -17,6 +17,11 @@ import {
   where,
   getDocs,
 } from "firebase/firestore";
+import {
+  initTurso,
+  insertUserProfile,
+  checkUsernameExists,
+} from "./utils/tursoConfig";
 
 /**
  * Sign up a new user with Firebase Authentication
@@ -42,20 +47,21 @@ export async function signUpWithEmailAndPassword({
   try {
     console.log("🔐 AUTH: Starting signup with email:", email);
 
-    // Check if username already exists
-    if (db) {
-      const existingUsername = await getDocs(
-        query(
-          collection(db, "userProfiles"),
-          where("username", "==", username),
-        ),
-      );
-      if (existingUsername.docs.length > 0) {
-        throw new Error("username-taken");
-      }
+    // Initialize Turso
+    console.log("🔐 AUTH: Initializing Turso...");
+    await initTurso();
+    console.log("✅ AUTH: Turso initialized");
+
+    // Check if username already exists in Turso
+    console.log("🔐 AUTH: Checking if username exists:", username);
+    const usernameExists = await checkUsernameExists(username);
+    console.log("🔐 AUTH: Username exists check result:", usernameExists);
+    if (usernameExists) {
+      throw new Error("username-taken");
     }
 
     // Step 1: Create Firebase Auth user
+    console.log("🔐 AUTH: Creating Firebase Auth user...");
     const userCredential = await createUserWithEmailAndPassword(
       auth,
       email,
@@ -70,56 +76,22 @@ export async function signUpWithEmailAndPassword({
       console.log("📧 AUTH: Email verification sent to:", email);
     } catch (emailError) {
       console.warn("⚠️ AUTH: Email verification failed:", emailError);
-      // Don't fail signup if verification email fails
     }
 
-    // Step 3: Create searchable fields
-    const companyNameSearchable = companyName.toLowerCase().trim();
-    const usernameSearchable = username.toLowerCase().trim();
-    const emailSearchable = email.toLowerCase().trim();
-
-    // Step 4: Create userProfiles document
-    const userProfileData = {
+    // Step 3: Save to Turso database
+    console.log("🔐 AUTH: Saving user profile to Turso...");
+    const profileData = {
       uid: uid,
       username: username,
-      usernameSearchable: usernameSearchable,
       email: email,
-      emailSearchable: emailSearchable,
-      companyName: companyName.trim(),
-      companyNameSearchable: companyNameSearchable,
-      activeTab: "products",
-      emailVerified: false,
-      createdAt: new Date().toISOString(),
+      password: password,
+      companyName: companyName,
+      authMethod: "email",
     };
+    console.log("🔐 AUTH: Profile data:", profileData);
 
-    if (db) {
-      await setDoc(doc(db, "userProfiles", uid), userProfileData, {
-        merge: false,
-      });
-      console.log("✅ AUTH: User profile created in userProfiles");
-    }
-
-    // Step 5: Create vendorDirectory entry
-    const vendorData = {
-      uid: uid,
-      username: username,
-      usernameSearchable: usernameSearchable,
-      email: email,
-      emailSearchable: emailSearchable,
-      companyName: companyName.trim(),
-      companyNameSearchable: companyNameSearchable,
-      phone: "",
-      address: "",
-      website: "",
-      createdAt: new Date().toISOString(),
-    };
-
-    if (db) {
-      await setDoc(doc(db, "vendorDirectory", uid), vendorData, {
-        merge: false,
-      });
-      console.log("✅ AUTH: Vendor entry created - SEARCH ENABLED");
-    }
+    await insertUserProfile(profileData);
+    console.log("✅ AUTH: User profile created in Turso");
 
     console.log("✅ AUTH: Signup complete for:", username);
     return {
@@ -130,8 +102,9 @@ export async function signUpWithEmailAndPassword({
     };
   } catch (error: any) {
     console.error("❌ AUTH: Signup error:", error);
+    console.error("❌ AUTH: Error message:", error.message);
+    console.error("❌ AUTH: Error stack:", error.stack);
 
-    // Handle specific Firebase errors
     const errorCode = error.code || error.message;
     if (errorCode === "auth/email-already-in-use") {
       throw new Error("email-already-in-use");

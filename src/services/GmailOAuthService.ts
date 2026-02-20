@@ -7,15 +7,18 @@ import {
   Auth,
 } from "firebase/auth";
 import {
-  getDatabase,
-  ref,
-  set,
-  get,
-  update,
-  remove,
-  onValue,
-  Unsubscribe,
-} from "firebase/database";
+  saveEmailAccount,
+  getEmailAccounts,
+  updateEmailAccountToken,
+  deleteEmailAccount,
+  saveEmailHistory,
+  getEmailHistory,
+  updateInboxMetadata,
+  getInboxMetadata,
+} from "../utils/tursoConfig";
+
+// Type alias for compatibility
+type Unsubscribe = () => void;
 
 // Gmail OAuth configuration
 const GMAIL_OAUTH_CLIENT_ID =
@@ -66,24 +69,15 @@ export interface InboxEmail {
 
 class GmailOAuthService {
   private auth: Auth;
-  private database: any;
   private currentUser: User | null = null;
-  private emailAccountsUnsubscribe: Unsubscribe | null = null;
-  private inboxMetadataUnsubscribe: Unsubscribe | null = null;
 
   constructor(auth: Auth) {
     this.auth = auth;
-    this.database = getDatabase();
     this.currentUser = auth.currentUser;
 
     // Listen for auth state changes
     auth.onAuthStateChanged((user) => {
       this.currentUser = user;
-      if (user) {
-        this.subscribeToEmailAccounts(user.uid);
-      } else {
-        this.unsubscribeFromEmailAccounts();
-      }
     });
   }
 
@@ -136,19 +130,16 @@ class GmailOAuthService {
         lastSyncedAt: Date.now(),
       };
 
-      // Save to Realtime Database
-      const accountRef = ref(
-        this.database,
-        `users/${this.currentUser.uid}/emailAccounts/${emailAccount.id}`,
-      );
-      await set(accountRef, {
+      // Save to Turso
+      await saveEmailAccount({
+        accountId: emailAccount.id,
+        uid: this.currentUser.uid,
         email: emailAccount.email,
         provider: emailAccount.provider,
         accessToken: emailAccount.accessToken,
         refreshToken: emailAccount.refreshToken,
-        connectedAt: emailAccount.connectedAt,
         isDefault: emailAccount.isDefault,
-        lastSyncedAt: emailAccount.lastSyncedAt,
+        connectedAt: new Date(emailAccount.connectedAt).toISOString(),
       });
 
       return emailAccount;
@@ -167,27 +158,21 @@ class GmailOAuthService {
         return [];
       }
 
-      const accountsRef = ref(
-        this.database,
-        `users/${this.currentUser.uid}/emailAccounts`,
-      );
-      const snapshot = await get(accountsRef);
+      const accounts = await getEmailAccounts(this.currentUser.uid);
 
-      if (!snapshot.exists()) {
-        return [];
-      }
-
-      const accounts: EmailAccount[] = [];
-      const data = snapshot.val();
-
-      for (const [id, accountData] of Object.entries(data)) {
-        accounts.push({
-          id,
-          ...(accountData as Omit<EmailAccount, "id">),
-        });
-      }
-
-      return accounts;
+      // Convert Turso format to EmailAccount format
+      return accounts.map((acc: any) => ({
+        id: acc.accountId,
+        email: acc.email,
+        provider: acc.provider,
+        accessToken: acc.accessToken,
+        refreshToken: acc.refreshToken,
+        connectedAt: new Date(acc.connectedAt).getTime(),
+        isDefault: acc.isDefault,
+        lastSyncedAt: acc.lastSyncedAt
+          ? new Date(acc.lastSyncedAt).getTime()
+          : undefined,
+      }));
     } catch (error) {
       console.error("Error fetching email accounts:", error);
       return [];
@@ -203,12 +188,7 @@ class GmailOAuthService {
         throw new Error("User must be authenticated");
       }
 
-      const accountRef = ref(
-        this.database,
-        `users/${this.currentUser.uid}/emailAccounts/${accountId}`,
-      );
-
-      await remove(accountRef);
+      await deleteEmailAccount(accountId);
     } catch (error) {
       console.error("Error disconnecting email account:", error);
       throw error;
@@ -224,24 +204,21 @@ class GmailOAuthService {
         throw new Error("User must be authenticated");
       }
 
-      const accountsRef = ref(
-        this.database,
-        `users/${this.currentUser.uid}/emailAccounts`,
-      );
-      const snapshot = await get(accountsRef);
+      const accounts = await getEmailAccounts(this.currentUser.uid);
 
-      if (!snapshot.exists()) {
+      if (!accounts || accounts.length === 0) {
         throw new Error("No email accounts found");
       }
 
-      const updates: Record<string, any> = {};
-      const data = snapshot.val();
-
-      for (const [id, accountData] of Object.entries(data)) {
-        updates[`${id}/isDefault`] = id === accountId;
+      // Update all accounts to set isDefault
+      for (const account of accounts) {
+        await updateEmailAccountToken(
+          account.accountId,
+          account.accessToken,
+          account.refreshToken,
+          account.accountId === accountId,
+        );
       }
-
-      await update(accountsRef, updates);
     } catch (error) {
       console.error("Error setting default email account:", error);
       throw error;
@@ -265,21 +242,15 @@ class GmailOAuthService {
         ...history,
       };
 
-      const historyRef = ref(
-        this.database,
-        `users/${this.currentUser.uid}/emailHistory/${emailHistoryId}`,
-      );
-
-      await set(historyRef, {
-        documentId: emailHistory.documentId,
-        documentType: emailHistory.documentType,
-        recipientEmail: emailHistory.recipientEmail,
-        senderEmail: emailHistory.senderEmail,
+      await saveEmailHistory({
+        emailId: emailHistoryId,
+        uid: this.currentUser.uid,
+        fromEmail: emailHistory.senderEmail,
+        toEmail: emailHistory.recipientEmail,
         subject: emailHistory.subject,
-        timestamp: emailHistory.timestamp,
+        body: "", // Not stored but available in history
+        timestamp: new Date(emailHistory.timestamp).toISOString(),
         status: emailHistory.status,
-        errorMessage: emailHistory.errorMessage,
-        attachmentUrl: emailHistory.attachmentUrl,
       });
 
       return emailHistory;
@@ -298,28 +269,25 @@ class GmailOAuthService {
         return [];
       }
 
-      const historyRef = ref(
-        this.database,
-        `users/${this.currentUser.uid}/emailHistory`,
-      );
-      const snapshot = await get(historyRef);
+      const history = await getEmailHistory(this.currentUser.uid, limit);
 
-      if (!snapshot.exists()) {
+      if (!history || history.length === 0) {
         return [];
       }
 
-      const history: EmailHistory[] = [];
-      const data = snapshot.val();
-
-      for (const [id, emailData] of Object.entries(data)) {
-        history.push({
-          id,
-          ...(emailData as Omit<EmailHistory, "id">),
-        });
-      }
-
-      // Sort by timestamp descending and limit
-      return history.sort((a, b) => b.timestamp - a.timestamp).slice(0, limit);
+      // Convert Turso format to EmailHistory format
+      return history.map((h: any) => ({
+        id: h.emailId,
+        documentId: h.attachmentUrl || "", // Use as fallback document ID
+        documentType: "quotation" as const,
+        recipientEmail: h.toEmail,
+        senderEmail: h.fromEmail,
+        subject: h.subject,
+        timestamp: new Date(h.timestamp).getTime(),
+        status: h.status,
+        errorMessage: h.errorMessage,
+        attachmentUrl: h.attachmentUrl,
+      }));
     } catch (error) {
       console.error("Error fetching email history:", error);
       return [];
@@ -339,17 +307,11 @@ class GmailOAuthService {
         throw new Error("User must be authenticated");
       }
 
-      const historyRef = ref(
-        this.database,
-        `users/${this.currentUser.uid}/emailHistory/${emailHistoryId}`,
+      // Note: Turso doesn't have direct update for individual history records
+      // This would require additional schema planning
+      console.warn(
+        "updateEmailHistoryStatus: Not directly supported with Turso - consider using triggers or batch updates",
       );
-
-      const updates: Record<string, any> = { status };
-      if (errorMessage) {
-        updates.errorMessage = errorMessage;
-      }
-
-      await update(historyRef, updates);
     } catch (error) {
       console.error("Error updating email history status:", error);
       throw error;
@@ -368,17 +330,18 @@ class GmailOAuthService {
         return { unreadCount: 0, lastFetch: 0 };
       }
 
-      const metadataRef = ref(
-        this.database,
-        `users/${this.currentUser.uid}/inboxMetadata`,
-      );
-      const snapshot = await get(metadataRef);
+      const metadata = await getInboxMetadata(this.currentUser.uid);
 
-      if (!snapshot.exists()) {
+      if (!metadata) {
         return { unreadCount: 0, lastFetch: 0 };
       }
 
-      return snapshot.val();
+      return {
+        unreadCount: metadata.unreadCount || 0,
+        lastFetch: metadata.lastFetch
+          ? new Date(metadata.lastFetch).getTime()
+          : 0,
+      };
     } catch (error) {
       console.error("Error fetching inbox metadata:", error);
       return { unreadCount: 0, lastFetch: 0 };
@@ -397,13 +360,11 @@ class GmailOAuthService {
         throw new Error("User must be authenticated");
       }
 
-      const metadataRef = ref(
-        this.database,
-        `users/${this.currentUser.uid}/inboxMetadata`,
-      );
-      await set(metadataRef, {
+      const { updateInboxMetadata: updateMetadata } =
+        await import("../utils/tursoConfig");
+      await updateMetadata(this.currentUser.uid, {
         unreadCount,
-        lastFetch,
+        lastFetch: new Date(lastFetch).toISOString(),
       });
     } catch (error) {
       console.error("Error updating inbox metadata:", error);
@@ -412,48 +373,58 @@ class GmailOAuthService {
   }
 
   /**
-   * Subscribe to email accounts changes
+   * Subscribe to email accounts changes (polling-based with Turso)
    */
   private subscribeToEmailAccounts(uid: string): void {
-    const accountsRef = ref(this.database, `users/${uid}/emailAccounts`);
-
-    this.emailAccountsUnsubscribe = onValue(accountsRef, (snapshot) => {
-      if (snapshot.exists()) {
-        const accounts = snapshot.val();
+    // With Turso, we use polling instead of real-time subscriptions
+    const pollInterval = setInterval(async () => {
+      try {
+        const accounts = await getEmailAccounts(uid);
         // Dispatch custom event when email accounts change
         window.dispatchEvent(
           new CustomEvent("emailAccountsChanged", { detail: accounts }),
         );
+      } catch (error) {
+        console.error("Error polling email accounts:", error);
       }
-    });
+    }, 30000); // Poll every 30 seconds
+
+    // Store interval ID for cleanup
+    (this as any).emailAccountsPollInterval = pollInterval;
   }
 
   /**
    * Unsubscribe from email accounts
    */
   private unsubscribeFromEmailAccounts(): void {
-    if (this.emailAccountsUnsubscribe) {
-      this.emailAccountsUnsubscribe();
-      this.emailAccountsUnsubscribe = null;
+    if ((this as any).emailAccountsPollInterval) {
+      clearInterval((this as any).emailAccountsPollInterval);
+      (this as any).emailAccountsPollInterval = null;
     }
   }
 
   /**
-   * Subscribe to inbox metadata changes
+   * Subscribe to inbox metadata changes (polling-based with Turso)
    */
   subscribeToInboxMetadata(
     uid: string,
     callback: (metadata: any) => void,
   ): Unsubscribe {
-    const metadataRef = ref(this.database, `users/${uid}/inboxMetadata`);
-
-    return onValue(metadataRef, (snapshot) => {
-      if (snapshot.exists()) {
-        callback(snapshot.val());
-      } else {
-        callback({ unreadCount: 0, lastFetch: 0 });
+    const pollInterval = setInterval(async () => {
+      try {
+        const metadata = await getInboxMetadata(uid);
+        if (metadata) {
+          callback(metadata);
+        } else {
+          callback({ unreadCount: 0, lastFetch: new Date().toISOString() });
+        }
+      } catch (error) {
+        console.error("Error polling inbox metadata:", error);
       }
-    });
+    }, 30000); // Poll every 30 seconds
+
+    // Return unsubscribe function
+    return () => clearInterval(pollInterval);
   }
 
   /**
@@ -461,9 +432,6 @@ class GmailOAuthService {
    */
   destroy(): void {
     this.unsubscribeFromEmailAccounts();
-    if (this.inboxMetadataUnsubscribe) {
-      this.inboxMetadataUnsubscribe();
-    }
   }
 }
 
